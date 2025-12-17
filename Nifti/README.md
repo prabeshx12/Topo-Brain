@@ -1,0 +1,1 @@
+Here we present a dataset of paired 3T-7T data of 10 healthy adults.
