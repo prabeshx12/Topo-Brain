@@ -502,4 +502,4 @@ Dataset: UNC Paired 3T-7T dataset (Chen et al.)
 
 ---
 
-**Need help?** Check the example notebook: `notebooks/interactive_pipeline.ipynb`
+Example notebook: `notebooks/interactive_pipeline.ipynb`
