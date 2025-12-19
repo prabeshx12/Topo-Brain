@@ -60,8 +60,12 @@ class N4BiasFieldCorrection:
             mask_path: Optional path to brain mask
             
         Returns:
-            Corrected image as numpy array
+            Corrected image as numpy array in ORIGINAL shape
         """
+        # Load ORIGINAL image with NiBabel to get reference shape
+        nib_img = nib.load(str(image_path))
+        original_shape = nib_img.shape
+        
         # Load image with SimpleITK
         image = sitk.ReadImage(str(image_path))
         image = sitk.Cast(image, sitk.sitkFloat32)
@@ -101,13 +105,26 @@ class N4BiasFieldCorrection:
             # Convert to numpy
             corrected_array = sitk.GetArrayFromImage(corrected_full)
             
+            # FIX: Ensure output matches NiBabel's shape
+            if corrected_array.shape != original_shape:
+                # SimpleITK may transpose - fix it
+                # Try common transpose patterns
+                if corrected_array.shape == original_shape[::-1]:
+                    # Complete reversal (Z,Y,X) -> (X,Y,Z)
+                    corrected_array = np.transpose(corrected_array, (2, 1, 0))
+                elif corrected_array.shape == (original_shape[2], original_shape[1], original_shape[0]):
+                    corrected_array = np.transpose(corrected_array, (2, 1, 0))
+                else:
+                    logger.warning(f"Shape mismatch: {corrected_array.shape} vs {original_shape}. Using NiBabel data.")
+                    return nib_img.get_fdata().astype(np.float32)
+            
             logger.debug(f"N4 correction completed in {corrector.GetElapsedIterations()} iterations")
             
             return corrected_array.astype(np.float32)
             
         except Exception as e:
             logger.warning(f"N4 correction failed: {e}. Returning original image.")
-            return sitk.GetArrayFromImage(image).astype(np.float32)
+            return nib_img.get_fdata().astype(np.float32)
 
 
 class SkullStripping:
