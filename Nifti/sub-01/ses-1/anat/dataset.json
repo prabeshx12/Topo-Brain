@@ -1,0 +1,13 @@
+{
+    "channel_names": {
+        "0": "MRI"
+    },
+    "labels": {
+        "background": 0,
+        "brain": 1
+    },
+    "numTraining": 11751,
+    "file_ending": ".nii.gz",
+    "name": "Dataset013_HDBETv2",
+    "licence": "internal, talk to Fabian"
+}

@@ -1,0 +1,17 @@
+{
+    "folder_with_segs_from_prev_stage": null,
+    "list_of_lists_or_source_folder": [
+        [
+            "d:\\11PrabeshX\\Projects\\major_\\Nifti\\sub-01\\ses-1\\anat\\sub-01_ses-1_T2w_defaced.nii.gz"
+        ]
+    ],
+    "num_parts": 1,
+    "num_processes_preprocessing": 4,
+    "num_processes_segmentation_export": 8,
+    "output_folder_or_list_of_truncated_output_files": [
+        "d:\\11PrabeshX\\Projects\\major_\\Nifti\\sub-01\\ses-1\\anat\\sub-01_ses-1_T2w_brain_bet.nii.gz"
+    ],
+    "overwrite": true,
+    "part_id": 0,
+    "save_probabilities": false
+}

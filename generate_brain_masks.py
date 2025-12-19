@@ -51,12 +51,27 @@ def generate_masks_hd_bet(input_files, device='cuda', mode='accurate'):
         mode: 'accurate' or 'fast'
     """
     try:
-        from hd_bet.run import run_hd_bet
-    except ImportError:
-        logger.error("HD-BET not installed. Install with: pip install HD-BET")
+        import torch
+        from HD_BET.hd_bet_prediction import get_hdbet_predictor, hdbet_predict
+        from HD_BET.checkpoint_download import maybe_download_parameters
+    except ImportError as e:
+        logger.error(f"HD-BET not installed. Error: {e}")
+        logger.error("Install with: pip install HD-BET")
         return False
     
     logger.info(f"Using HD-BET with device={device}, mode={mode}")
+    
+    # Download parameters if needed
+    logger.info("Checking/downloading HD-BET parameters...")
+    maybe_download_parameters()
+    
+    # Set device
+    torch_device = torch.device(device if torch.cuda.is_available() and device == 'cuda' else 'cpu')
+    
+    # Initialize predictor once (more efficient)
+    use_tta = (mode == 'accurate')
+    logger.info("Initializing HD-BET predictor...")
+    predictor = get_hdbet_predictor(use_tta=use_tta, device=torch_device, verbose=False)
     
     for input_path in tqdm(input_files, desc="HD-BET Processing"):
         input_path = Path(input_path)
@@ -71,16 +86,19 @@ def generate_masks_hd_bet(input_files, device='cuda', mode='accurate'):
             continue
         
         try:
-            # Run HD-BET
-            run_hd_bet(
+            # Run HD-BET prediction
+            hdbet_predict(
                 str(input_path),
-                str(output_brain.parent / output_brain.stem.replace('.nii', '')),
-                device=device,
-                mode=mode,
-                tta=1 if mode == 'accurate' else 0,
-                pp=1,  # Post-processing
-                save_mask=1,
+                str(output_brain),
+                predictor=predictor,
+                keep_brain_mask=True,
+                compute_brain_extracted_image=True
             )
+            
+            # Rename the mask file from _bet.nii.gz to _brain_mask.nii.gz
+            bet_mask = output_brain.parent / (output_brain.stem.replace('.nii', '') + '_bet.nii.gz')
+            if bet_mask.exists():
+                bet_mask.rename(output_mask)
             
             logger.info(f"✓ Processed: {input_path.name}")
             
