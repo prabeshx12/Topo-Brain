@@ -29,6 +29,8 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb_checkpoints/
+*.ipynb
+!kaggle_preprocessing_notebook.ipynb
 
 # IDE
 .vscode/
@@ -49,6 +51,21 @@ cache/
 *.nii
 *.nii.gz
 *.dcm
+Nifti/
+new/
+
+# HD-BET dependency (users should install separately)
+HD-BET/
+
+# Temporary visualization outputs
+*.png
+*.jpg
+!docs/images/*.png
+
+# Archive files
+*.tar
+*.tar.gz
+*.zip
 
 # Model checkpoints
 checkpoints/
