@@ -1,30 +1,29 @@
-# Brain MRI Preprocessing and Data Loading Pipeline
+# Topo-Brain: 3T→7T MRI Super-Resolution with GANs
 
-A production-grade, deterministic preprocessing and data loading pipeline for 3D brain MRI using MONAI and PyTorch.
+A complete pipeline for MRI preprocessing and 3T-to-7T super-resolution using 3D U-Net GANs. Includes brain extraction, preprocessing, and GAN training for generating high-field MRI images from low-field scans.
 
 ## 🎯 Features
 
-### Core Features
-- **Deterministic & Reproducible**: Patient-level splits with fixed random seeds
-- **Comprehensive Preprocessing**:
-  - Reorientation to RAS+ coordinate system
-  - N4ITK bias field correction
-  - Skull stripping (with automatic fallback)
-  - Intensity normalization (z-score, min-max, percentile)
-  - Optional isotropic resampling
-- **Flexible Configuration**: Config-driven with multiple presets (default, high-res, fast)
-- **Patient-Level Splits**: No data leakage between train/val/test sets
-- **Multi-Field Strength Support**: Handles both 3T and 7T scans
-- **Production-Ready**: Modular, extensible, well-documented code
+### Preprocessing Pipeline
+- **HD-BET Brain Extraction**: Deep learning-based skull stripping
+- **N4 Bias Field Correction**: Optional intensity non-uniformity correction
+- **Spatial Normalization**: RAS+ reorientation, isotropic resampling
+- **Intensity Normalization**: Z-score, min-max, or percentile methods
+- **Quality Control**: Automated QC metrics and outlier detection
 
-### Advanced Features (NEW)
-- **Quality Control (QC)**: Automated QC metrics (SNR, CNR, entropy), artifact detection, outlier identification, HTML reports
-- **Intensity Harmonization**: Multi-scanner harmonization for 3T/7T data (histogram matching, z-score, quantile normalization)
-- **Enhanced Augmentation**: MRI-specific augmentations (Gibbs ringing, coarse dropout)
-- **TensorBoard Integration**: Real-time monitoring of training metrics, image logging, histogram tracking
-- **Smart Caching**: Persistent disk cache and in-memory cache for faster data loading
-- **Mixed Precision Support**: Automatic Mixed Precision (AMP) for faster training
-- **Cross-Validation**: Built-in k-fold cross-validation support
+### GAN Architecture (3T→7T Super-Resolution)
+- **3D U-Net Generator**: 5-level encoder-decoder with skip connections
+- **3D PatchGAN Discriminator**: Multi-scale adversarial training
+- **Paired Dataset**: Aligned 3T-7T pairs for supervised learning
+- **Patient-Level Splits**: No data leakage between train/val/test
+- **Advanced Augmentation**: MRI-specific augmentations (rotation, intensity, Gibbs ringing)
+
+### Production Features
+- **Deterministic & Reproducible**: Fixed random seeds, saved splits
+- **Config-Driven**: Flexible configuration with multiple presets
+- **TensorBoard Integration**: Real-time training monitoring
+- **Mixed Precision Support**: AMP for faster training
+- **Kaggle/Colab Ready**: Cloud preprocessing notebook included
 
 ## 📊 Dataset Structure
 
@@ -38,24 +37,45 @@ Your dataset follows the BIDS format:
 ## 📁 Project Structure
 
 ```
-major_/
-├── config.py                      # Configuration management
-├── preprocessing.py               # Preprocessing pipeline
-├── dataset.py                     # PyTorch Dataset & DataLoader
-├── utils.py                       # Utilities (splitting, visualization, logging)
-├── quality_control.py             # QC metrics and reporting (NEW)
-├── harmonization.py               # Intensity harmonization (NEW)
-├── example_pipeline.py            # End-to-end example script
-├── example_qc_harmonization.py    # QC and harmonization examples (NEW)
-├── setup_validation.py            # Environment validation
-├── generate_brain_masks.py        # Brain mask generation tool
-├── requirements.txt               # Python dependencies
-├── README.md                      # This file
-├── IMPROVEMENTS.md                # Recommended enhancements
-├── PROJECT_SUMMARY.md             # Executive summary
-├── ARCHITECTURE.md                # Architecture overview
-└── notebooks/
-    └── interactive_pipeline.ipynb # Jupyter notebook demo
+Topo-Brain/
+├── README.md                              # This file
+├── requirements.txt                       # Python dependencies
+├── kaggle_preprocessing_notebook.ipynb    # Cloud preprocessing
+│
+├── docs/                                  # 📚 Documentation
+│   ├── ARCHITECTURE.md                    # System architecture
+│   ├── CHANGELOG.md                       # Version history
+│   ├── GAN_IMPLEMENTATION_SUMMARY.md      # GAN details
+│   ├── GAN_README.md                      # GAN documentation
+│   └── IMPROVEMENTS_IMPLEMENTED.md        # Enhancement log
+│
+├── src/                                   # 🐍 Core modules
+│   ├── __init__.py
+│   ├── config.py                          # Configuration management
+│   ├── preprocessing.py                   # Preprocessing pipeline
+│   ├── dataset.py                         # PyTorch Dataset classes
+│   ├── utils.py                           # Utility functions
+│   ├── harmonization.py                   # Intensity harmonization
+│   └── quality_control.py                 # QC metrics & reports
+│
+├── models/                                # 🧠 GAN models
+│   ├── __init__.py
+│   ├── generator_unet3d.py                # 3D U-Net generator
+│   ├── discriminator_patchgan3d.py        # PatchGAN discriminator
+│   └── paired_dataset.py                  # 3T-7T paired dataset
+│
+├── scripts/                               # 🔧 Executable scripts
+│   ├── generate_brain_masks.py            # HD-BET brain extraction
+│   ├── train_gan.py                       # GAN training script
+│   ├── eval_gan.py                        # GAN evaluation
+│   ├── test_gan.py                        # Model testing
+│   └── example_pipeline.py                # Pipeline demo
+│
+├── notebooks/                             # 📓 Jupyter notebooks
+│   └── interactive_pipeline.ipynb         # Interactive demo
+│
+└── tests/                                 # ✅ Unit tests
+    └── __init__.py
 ```
 
 ## 🚀 Quick Start
@@ -63,21 +83,37 @@ major_/
 ### 1. Installation
 
 ```bash
+# Clone repository
+git clone https://github.com/prabeshx12/Topo-Brain.git
+cd Topo-Brain
+
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Install HD-BET for brain extraction
+pip install HD-BET
 ```
 
-### 2. Basic Usage
+### 2. Preprocessing Pipeline
 
+#### Generate Brain Masks
+```bash
+python scripts/generate_brain_masks.py \
+    --method hd-bet \
+    --device cuda \
+    --mode accurate \
+    --data-root Nifti/
+```
+
+#### Preprocess MRI Data
 ```python
-from config import get_default_config
-from preprocessing import MRIPreprocessor
-from utils import discover_dataset, create_patient_level_split
-from dataset import create_data_loaders
+from src.config import get_default_config
+from src.preprocessing import MRIPreprocessor
+from src.utils import discover_dataset
 
 # Load configuration
 config = get_default_config()
@@ -85,7 +121,23 @@ config = get_default_config()
 # Discover dataset
 data_list = discover_dataset(config.data.data_root, config.data)
 
-# Create patient-level split (no data leakage!)
+# Preprocess
+preprocessor = MRIPreprocessor(config.preprocessing)
+for item in data_list:
+    preprocessor.preprocess_single(
+        item['path'],
+        output_dir=config.data.output_root
+    )
+```
+
+### 3. GAN Training (3T→7T Super-Resolution)
+
+#### Create Dataset Splits
+```python
+from src.utils import create_patient_level_split
+from models.paired_dataset import create_paired_data_list
+
+# Patient-level split (no data leakage!)
 train_data, val_data, test_data = create_patient_level_split(
     data_list,
     train_ratio=0.6,
@@ -94,159 +146,61 @@ train_data, val_data, test_data = create_patient_level_split(
     random_seed=42,
 )
 
-# Create data loaders
-train_loader, val_loader, test_loader = create_data_loaders(
-    config, train_data, val_data, test_data
-)
-
-# Iterate through data
-for batch in train_loader:
-    images = batch["image"]  # Shape: (B, 1, H, W, D)
-    subjects = batch["subject"]
-    # Your training code here...
+# Create 3T→7T pairs
+train_pairs = create_paired_data_list(train_data, modality="T1w")
 ```
 
-### 3. Run Complete Pipeline
-
+#### Train GAN
 ```bash
-# Run pipeline with preprocessing
-python example_pipeline.py --preprocess --config default
-
-# Run without preprocessing (using raw data)
-python example_pipeline.py --config fast
-
-# Available configs: default, highres, fast
+python scripts/train_gan.py \
+    --data-root preprocessed/ \
+    --output-dir checkpoints/baseline \
+    --num-epochs 100 \
+    --batch-size 2 \
+    --patch-size 64 64 64 \
+    --lambda-l1 100.0
 ```
 
-### 4. Advanced Features
-
-#### Quality Control (QC)
+#### Monitor Training
 ```bash
-# Run quality control and harmonization examples
-python example_qc_harmonization.py
+tensorboard --logdir checkpoints/baseline/logs
 ```
 
-```python
-from quality_control import PreprocessingQC, QCMetrics
-
-# Compute QC metrics for a single scan
-metrics = QCMetrics.compute_metrics("path/to/scan.nii.gz")
-print(f"SNR: {metrics['snr']:.2f}")
-print(f"CNR: {metrics['cnr']:.2f}")
-
-# Run comprehensive QC on multiple scans
-qc = PreprocessingQC(output_dir="logs/qc")
-qc_df = qc.run_qc(image_paths)
-qc.generate_report(qc_df, "qc_report.html")
+### 4. Evaluation
+```bash
+python scripts/eval_gan.py \
+    --checkpoint checkpoints/baseline/best_generator.pth \
+    --test-data preprocessed/ \
+    --output-dir results/
 ```
 
-#### Intensity Harmonization (3T/7T)
+## ⚙️ Configuration
+
+### Configuration Presets
+
 ```python
-from harmonization import IntensityHarmonizer
+from src.config import get_default_config, get_highres_config, get_fast_config
 
-# Create harmonizer
-harmonizer = IntensityHarmonizer(method='histogram')  # or 'zscore', 'quantile'
+# Default: No resampling, z-score norm, N4 disabled (preserves detail)
+config = get_default_config()
 
-# Fit on reference scans (e.g., 3T)
-harmonizer.fit(scans_3t)
-
-# Transform target scans (e.g., 7T)
-harmonized_data = harmonizer.transform(scan_7t)
-
-# Save harmonizer for later use
-harmonizer.save("harmonizer.pkl")
-```
-
-#### TensorBoard Logging
-```python
-from utils import TensorBoardLogger
-
-# Create logger
-tb_logger = TensorBoardLogger(log_dir="logs/tensorboard")
-
-# Log metrics
-tb_logger.log_scalar("train/loss", loss_value, step)
-tb_logger.log_image("train/predictions", image_tensor, step)
-tb_logger.log_volume_slices("train/volume", volume_tensor, step)
-
-# View in TensorBoard
-# tensorboard --logdir=logs/tensorboard
-```
-
-#### Enhanced Data Caching
-```python
-# Use persistent disk cache (faster restarts)
-train_loader, val_loader, test_loader = create_data_loaders(
-    config, train_data, val_data, test_data,
-    use_persistent_cache=True  # Caches to disk
-)
-
-# Use in-memory cache (faster iteration, good for small datasets)
-train_loader, val_loader, test_loader = create_data_loaders(
-    config, train_data, val_data, test_data,
-    use_memory_cache=True  # Caches to RAM
-)
-```
-
-#### Mixed Precision Training
-```python
-# Enable in config
-config.training.use_amp = True
-
-# In training loop
-from torch.cuda.amp import autocast, GradScaler
-
-scaler = GradScaler()
-
-for batch in train_loader:
-    with autocast():
-        output = model(batch["image"])
-        loss = criterion(output, target)
-    
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    scaler.update()
-```
-
-## ⚙️ Configuration Options
-
-The pipeline supports three configuration presets:
-
-### Default Configuration
-- No resampling (preserves original resolution)
-- Z-score normalization
-- N4 bias correction enabled
-- Batch size: 2
-
-### High-Resolution Configuration
-```python
-from config import get_highres_config
+# High-res: 0.5mm isotropic, 256³ volumes
 config = get_highres_config()
-# - Target spacing: 0.5mm isotropic
-# - Target size: 256³
-# - Batch size: 1
-```
 
-### Fast Configuration (for prototyping)
-```python
-from config import get_fast_config
+# Fast: 2.0mm isotropic, 96³ volumes (for prototyping)
 config = get_fast_config()
-# - Target spacing: 2.0mm isotropic
-# - Target size: 96³
-# - No bias correction
-# - Batch size: 4
 ```
 
 ### Custom Configuration
 ```python
-from config import MRIConfig
+from src.config import MRIConfig
 
 config = MRIConfig()
 
-# Customize preprocessing
+# Preprocessing
 config.preprocessing.target_spacing = (1.0, 1.0, 1.0)
-config.preprocessing.normalization_method = "percentile"
-config.preprocessing.use_bias_correction = True
+config.preprocessing.normalization_method = "zscore"
+config.preprocessing.use_bias_correction = False  # Preserves anatomical detail
 
 # Customize splits
 config.split.train_ratio = 0.7
@@ -260,44 +214,39 @@ config.training.num_workers = 8
 config.validate()
 ```
 
-## 🔬 Preprocessing Pipeline Details
+## 🔬 Pipeline Details
 
-### Step 1: Bias Field Correction
-Uses **N4ITK algorithm** (SimpleITK implementation) for intensity non-uniformity correction:
-- Adaptive for both 3T and 7T data
-- Automatic masking via Otsu thresholding
-- Configurable iterations and convergence
+### HD-BET Brain Extraction
+- Deep learning-based skull stripping (nnU-Net architecture)
+- Automatic model download (~100MB from Zenodo)
+- GPU acceleration supported
+- Modes: `fast`, `accurate`
 
-### Step 2: Skull Stripping
-- **Priority**: Uses pre-computed brain masks if available
-- **Fallback**: Simple thresholding + morphological operations
-- **Recommendation**: For production, generate masks using:
-  - HD-BET
-  - SynthStrip
-  - FSL BET
-  - ANTs
+### Preprocessing Steps
+1. **Brain Extraction**: HD-BET for accurate skull stripping
+2. **Bias Field Correction**: Optional N4ITK (disabled by default to preserve detail)
+3. **Spatial Transforms**: RAS+ reorientation, optional resampling
+4. **Intensity Normalization**: Z-score (recommended for GANs)
 
-### Step 3: Spatial Transforms
-- **Reorientation**: Converts to RAS+ orientation
-- **Resampling**: Optional isotropic spacing
-- **Padding/Cropping**: Optional fixed size
+### GAN Architecture
+- **Generator**: 3D U-Net with 5 levels, skip connections
+- **Discriminator**: 3D PatchGAN (70×70×70 receptive field)
+- **Loss**: L1 + Adversarial (λ_L1 = 100)
+- **Training**: Adam optimizer, β1=0.5, β2=0.999
+- **Input**: 64³ patches from 3T MRI
+- **Output**: 64³ synthetic 7T MRI
 
-### Step 4: Intensity Normalization
-Three methods available:
-- **Z-score**: `(x - mean) / std` (recommended for MRI)
-- **Min-Max**: `(x - min) / (max - min)`
-- **Percentile**: Robust to outliers
+## � Data Augmentation
 
-## 📈 Data Augmentation
-
-Training augmentation (enabled by default):
-- Random affine transformations (rotation, translation, scaling)
-- Random flipping (left-right)
+### Training Augmentation (GAN)
+- Random 3D affine transforms (rotation, translation, scaling)
+- Random flipping (L-R, A-P, S-I)
 - Random intensity shifts and scaling
 - Random Gaussian noise
-- Random Gaussian smoothing
+- Random Gaussian blur
+- Optional: Gibbs ringing simulation
 
-All configurable via `config.augmentation`.
+All configurable in [`models/paired_dataset.py`](models/paired_dataset.py)
 
 ## 🎯 Patient-Level Splitting
 
@@ -387,52 +336,54 @@ dataset = BrainMRIDataset(data_list, transform=custom_transform)
 
 ## 📝 File Outputs
 
-Running the pipeline creates:
 ```
-preprocessed/          # Preprocessed NIfTI files
+preprocessed/                          # Preprocessed volumes
   ├── sub-01_ses-1_T1w_preprocessed.nii.gz
   ├── sub-01_ses-1_T1w_preprocessed_metadata.json
   └── ...
 
+checkpoints/                           # GAN training checkpoints
+  ├── baseline/
+  │   ├── generator_epoch_50.pth
+  │   ├── discriminator_epoch_50.pth
+  │   ├── best_generator.pth
+  │   └── logs/                        # TensorBoard logs
+
+results/                               # Evaluation outputs
+  ├── generated_7T/
+  ├── metrics.json
+  └── visualizations/
+
 cache/
-  └── data_split.json  # Reproducible split information
+  └── data_split.json                  # Reproducible splits
 
 logs/
-  ├── pipeline.log     # Detailed execution log
-  ├── statistics/
-  │   ├── train_statistics.json
-  │   ├── val_statistics.json
-  │   └── test_statistics.json
-  └── visualizations/
-      ├── train/
-      ├── val/
-      └── test/
+  ├── pipeline.log
+  └── qc_reports/
 ```
 
 ## ⚠️ Important Notes
 
-### Skull Stripping
-The current implementation uses **simple thresholding** as a fallback. For production use:
+### HD-BET Installation
+```bash
+# Install HD-BET for brain extraction
+pip install HD-BET
 
-1. **Generate proper brain masks** using specialized tools:
-   ```bash
-   # Example with HD-BET
-   hd-bet -i input.nii.gz -o output.nii.gz
-   
-   # Example with SynthStrip (FreeSurfer)
-   mri_synthstrip -i input.nii.gz -o output.nii.gz -m mask.nii.gz
-   ```
+# Models auto-download on first use (~100MB)
+```
 
-2. Place masks following this naming convention:
-   ```
-   sub-01/ses-1/anat/sub-01_ses-1_T1w_brain_mask.nii.gz
-   ```
+### N4 Bias Correction
+- **Disabled by default** to preserve anatomical detail
+- GANs can learn to handle bias fields
+- Enable if needed: `config.preprocessing.use_bias_correction = True`
 
-### Memory Usage
-- 3D volumes can be large (especially 7T high-res)
-- Adjust `batch_size` based on available GPU memory
-- Use `num_workers > 0` for faster data loading
-- Consider `cache_data=True` for small datasets
+### Memory Requirements
+- **GPU**: 8GB+ VRAM recommended for training (batch_size=2, patch=64³)
+- **RAM**: 16GB+ for data loading
+- Adjust batch size and patch size based on available memory
+
+### Kaggle/Colab Usage
+Use [`kaggle_preprocessing_notebook.ipynb`](kaggle_preprocessing_notebook.ipynb) for cloud preprocessing with free GPU
 
 ### Determinism
 For full reproducibility:
@@ -443,63 +394,64 @@ set_random_seeds(42)  # Sets seeds for random, numpy, torch
 
 ## 🐛 Troubleshooting
 
-### Issue: Out of Memory
+### GPU Out of Memory
 ```python
 # Reduce batch size
-config.training.batch_size = 1
+python scripts/train_gan.py --batch-size 1
 
-# Reduce target size
-config.preprocessing.target_size = (96, 96, 96)
+# Reduce patch size
+python scripts/train_gan.py --patch-size 32 32 32
 
-# Disable caching
-dataset = BrainMRIDataset(data_list, cache_data=False)
+# Use CPU (slow but works)
+python scripts/train_gan.py --device cpu
 ```
 
-### Issue: Slow Data Loading
+### Import Errors After Reorganization
 ```python
-# Increase workers
-config.training.num_workers = 8
-
-# Enable prefetching
-config.training.prefetch_factor = 4
-
-# Pin memory for GPU
-config.training.pin_memory = True
+# Use new import paths
+from src.config import get_default_config  # ✅
+from config import get_default_config       # ❌ Old path
 ```
 
-### Issue: N4 Correction Fails
-```python
-# Disable bias correction
-config.preprocessing.use_bias_correction = False
-
-# Or adjust parameters
-config.preprocessing.n4_iterations = 30
+### HD-BET Model Download Issues
+```bash
+# Manual download if auto-download fails
+python -c "from HD_BET.checkpoint_download import maybe_download_parameters; maybe_download_parameters()"
 ```
 
-## 📚 References
+## 📚 Documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - System architecture overview
+- [`docs/GAN_README.md`](docs/GAN_README.md) - GAN model details
+- [`docs/GAN_IMPLEMENTATION_SUMMARY.md`](docs/GAN_IMPLEMENTATION_SUMMARY.md) - Implementation notes
+- [`docs/IMPROVEMENTS_IMPLEMENTED.md`](docs/IMPROVEMENTS_IMPLEMENTED.md) - Enhancement log
+
+## 🔗 References
 
 - **MONAI**: https://monai.io/
-- **BIDS**: https://bids.neuroimaging.io/
-- **N4ITK**: Tustison et al. (2010) IEEE TMI
-- **SimpleITK**: https://simpleitk.org/
-
-## 🤝 Contributing
-
-Suggestions for improvement:
-1. **Better skull stripping**: Integrate HD-BET or SynthStrip
-2. **Registration**: Add inter-subject/inter-session registration
-3. **Quality control**: Automated QC metrics and outlier detection
-4. **Performance**: Multi-GPU support for preprocessing
-5. **Formats**: Support DICOM input
+- **HD-BET**: https://github.com/MIC-DKFZ/HD-BET
+- **Pix2Pix**: Isola et al. (2017) - Image-to-Image Translation with Conditional Adversarial Networks
+- **3D U-Net**: Çiçek et al. (2016) - 3D U-Net: Learning Dense Volumetric Segmentation
+- **BIDS Format**: https://bids.neuroimaging.io/
 
 ## 📄 License
 
-This pipeline is provided as-is for research and educational purposes.
+MIT License - See LICENSE file for details
 
-## ✨ Acknowledgments
+## ✨ Citation
 
-Dataset: UNC Paired 3T-7T dataset (Chen et al.)
+If you use this code, please cite:
+```bibtex
+@software{topo_brain_2025,
+  author = {Your Name},
+  title = {Topo-Brain: 3T-to-7T MRI Super-Resolution with GANs},
+  year = {2025},
+  url = {https://github.com/prabeshx12/Topo-Brain}
+}
+```
 
 ---
 
-Example notebook: `notebooks/interactive_pipeline.ipynb`
+**Dataset**: UNC Paired 3T-7T MRI Dataset  
+**Interactive Demo**: [`notebooks/interactive_pipeline.ipynb`](notebooks/interactive_pipeline.ipynb)  
+**Cloud Processing**: [`kaggle_preprocessing_notebook.ipynb`](kaggle_preprocessing_notebook.ipynb)
