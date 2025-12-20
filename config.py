@@ -41,14 +41,16 @@ class PreprocessingConfig:
     
     # Target spacing for isotropic resampling (None to skip)
     # Recommended: [1.0, 1.0, 1.0] for 1mm isotropic
-    target_spacing: Optional[Tuple[float, float, float]] = None
+    # For GAN: Set to None to preserve original resolution, or match lowest resolution
+    target_spacing: Optional[Tuple[float, float, float]] = (1.0, 1.0, 1.0)
     
     # Interpolation mode for resampling
     interpolation_mode: str = "trilinear"  # or "nearest" for labels
     
     # Bias field correction (N4ITK)
-    use_bias_correction: bool = True
-    n4_iterations: int = 50
+    # NOTE: For GAN training, consider setting to False to preserve fine anatomical details
+    use_bias_correction: bool = False  # Set True for 7T data with strong bias
+    n4_iterations: int = 20  # Reduced from 50 to preserve detail
     n4_convergence_threshold: float = 0.001
     
     # Skull stripping

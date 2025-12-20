@@ -393,28 +393,29 @@ class MRIPreprocessor:
                 intermediate_path = Path(output_path).parent / f"{image_path.stem}_skull_stripped.nii.gz"
                 nib.save(nib.Nifti1Image(image_array, original_affine), str(intermediate_path))
         
-        # Step 3: Intensity normalization
-        logger.debug(f"Applying {self.config.normalization_method} normalization...")
-        image_array = self.normalizer(image_array, mask)
-        
-        # Step 4: Reorientation and resampling (MONAI)
+        # Step 3: Spatial transforms BEFORE normalization (to avoid shape issues)
         logger.debug("Applying spatial transforms...")
-        data_dict = {"image": image_path}
         
-        # Apply MONAI transforms
+        # Save as temporary file for MONAI transforms
+        temp_path = Path(output_path).parent / f"temp_{image_path.name}"
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
+        nib.save(nib.Nifti1Image(image_array, original_affine), str(temp_path))
+        
+        data_dict = {"image": str(temp_path)}
+        
+        # Apply MONAI transforms (reorientation, resampling)
         transformed = self.transforms(data_dict)
         processed_image = transformed["image"]
         
-        # Replace intensity values with normalized values
-        # Need to reshape normalized array to match transformed shape
-        if processed_image.shape[1:] == original_shape:
-            # If no resampling was done, directly use normalized array
-            processed_image[0] = torch.from_numpy(image_array)
-        else:
-            # If resampling was done, apply normalization after
-            processed_array = processed_image[0].numpy()
-            processed_array = self.normalizer(processed_array)
-            processed_image[0] = torch.from_numpy(processed_array)
+        # Clean up temp file
+        if temp_path.exists():
+            temp_path.unlink()
+        
+        # Step 4: Intensity normalization AFTER spatial transforms
+        logger.debug(f"Applying {self.config.normalization_method} normalization...")
+        processed_array = processed_image[0].numpy()
+        processed_array = self.normalizer(processed_array, mask)
+        processed_image[0] = torch.from_numpy(processed_array)
         
         # Compute statistics
         stats = self._compute_statistics(processed_image[0].numpy())
@@ -515,9 +516,11 @@ class MRIPreprocessor:
         for input_path in tqdm(input_paths, desc="Preprocessing volumes"):
             input_path = Path(input_path)
             
-            # Create output filename
+            # Create output filename maintaining BIDS structure
+            relative_path = input_path.relative_to(input_path.parent.parent.parent.parent)
             output_filename = input_path.name.replace("_defaced", "_preprocessed")
-            output_path = output_dir / input_filename
+            output_path = output_dir / relative_path.parent / output_filename
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Preprocess
             try:
