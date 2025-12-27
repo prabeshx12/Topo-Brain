@@ -87,6 +87,20 @@ class Paired3T7TDataset(Dataset):
         if volume.ndim == 4:
             volume = volume[..., 0]  # Take first volume if 4D
         
+        # Pad volume if smaller than patch size
+        pad_amounts = []
+        for i, (vol_dim, patch_dim) in enumerate(zip(volume.shape, self.patch_size)):
+            if vol_dim < patch_dim:
+                pad_before = (patch_dim - vol_dim) // 2
+                pad_after = patch_dim - vol_dim - pad_before
+                pad_amounts.append((pad_before, pad_after))
+            else:
+                pad_amounts.append((0, 0))
+        
+        if any(p[0] > 0 or p[1] > 0 for p in pad_amounts):
+            volume = np.pad(volume, pad_amounts, mode='constant', constant_values=0)
+            logger.debug(f"Padded volume from original shape to {volume.shape}")
+        
         return volume
     
     def _extract_random_patch(
