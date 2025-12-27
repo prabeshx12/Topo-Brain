@@ -11,13 +11,13 @@ from typing import Tuple, Optional, List
 class DataConfig:
     """Data paths and organization."""
     # Root directory containing BIDS-formatted dataset
-    data_root: Path = Path(r"d:\11PrabeshX\Projects\major_\Nifti")
+    data_root: Path = Path("Nifti")
     
     # Output directory for preprocessed data
-    output_root: Path = Path(r"d:\11PrabeshX\Projects\major_\preprocessed")
+    output_root: Path = Path("preprocessed")
     
     # Cache directory for intermediate results
-    cache_dir: Path = Path(r"d:\11PrabeshX\Projects\major_\cache")
+    cache_dir: Path = Path("cache")
     
     # Number of subjects in dataset
     num_subjects: int = 10
@@ -164,7 +164,7 @@ class AugmentationConfig:
 class LoggingConfig:
     """Logging and monitoring configuration."""
     # Log directory
-    log_dir: Path = Path(r"d:\11PrabeshX\Projects\major_\logs")
+    log_dir: Path = Path("logs")
     
     # Log level
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -217,7 +217,8 @@ class MRIConfig:
         assert abs(total_ratio - 1.0) < 1e-6, f"Split ratios must sum to 1.0, got {total_ratio}"
         
         # Check data root exists
-        assert self.data.data_root.exists(), f"Data root does not exist: {self.data.data_root}"
+        # assert self.data.data_root.exists(), f"Data root does not exist: {self.data.data_root}"
+        pass
         
         # Check normalization method is valid
         valid_norms = ["zscore", "minmax", "percentile"]

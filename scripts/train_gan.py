@@ -25,7 +25,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Add parent directory to path
-sys.path.append(str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent.parent))
 
 from models.generator_unet3d import UNet3DGenerator
 from models.discriminator_patchgan3d import PatchGANDiscriminator3D
@@ -110,9 +110,9 @@ class GANTrainer:
         self.device = device
         
         # Create directories
-        config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        config.visualization_dir.mkdir(parents=True, exist_ok=True)
-        config.log_dir.mkdir(parents=True, exist_ok=True)
+        self.config.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.config.visualization_dir.mkdir(parents=True, exist_ok=True)
+        self.config.log_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize models
         self.generator = UNet3DGenerator(
@@ -482,6 +482,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train 3T→7T GAN')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
     parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
+    parser.add_argument('--num_workers', type=int, default=4, help='Number of data loader workers')
     parser.add_argument('--lr_g', type=float, default=2e-4, help='Generator learning rate')
     parser.add_argument('--lr_d', type=float, default=2e-4, help='Discriminator learning rate')
     parser.add_argument('--lambda_l1', type=float, default=100.0, help='L1 loss weight')
@@ -492,6 +493,9 @@ def main():
     parser.add_argument('--device', type=str, default='cuda', help='Device (cuda/cpu)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     
+    parser.add_argument('--data-root', type=str, default=None, help='Data root directory')
+    parser.add_argument('--output-dir', type=str, default=None, help='Output directory')
+    
     args = parser.parse_args()
     
     # Setup
@@ -501,18 +505,26 @@ def main():
     gan_config = GANConfig()
     gan_config.num_epochs = args.epochs
     gan_config.batch_size = args.batch_size
+    gan_config.num_workers = args.num_workers
     gan_config.learning_rate_g = args.lr_g
     gan_config.learning_rate_d = args.lr_d
     gan_config.lambda_l1 = args.lambda_l1
     gan_config.patch_size = (args.patch_size, args.patch_size, args.patch_size)
     gan_config.num_patches_per_volume = args.num_patches
     gan_config.use_amp = args.use_amp
+    gan_config.use_amp = args.use_amp
     gan_config.modality = args.modality
     
+    if args.output_dir:
+        out_path = Path(args.output_dir)
+        gan_config.checkpoint_dir = out_path / "checkpoints"
+        gan_config.visualization_dir = out_path / "visualizations"
+        gan_config.log_dir = out_path / "logs"
+    
     # Setup logging
-    log_config = get_default_config().logging
-    log_config.log_dir = gan_config.log_dir
-    setup_logging(log_config)
+    full_config = get_default_config()
+    full_config.logging.log_dir = gan_config.log_dir
+    setup_logging(full_config)
     
     logger.info("="*80)
     logger.info("3T → 7T MRI Super-Resolution GAN")
@@ -527,7 +539,12 @@ def main():
     
     # Discover dataset
     logger.info("Discovering dataset...")
-    data_list = discover_dataset(data_config.data.preprocessed_root, data_config.data)
+    data_root = Path(args.data_root) if args.data_root else data_config.data.preprocessed_root
+    
+    # Override pattern for preprocessed data
+    data_config.data.file_pattern = "*_preprocessed.nii.gz"
+    
+    data_list = discover_dataset(data_root, data_config.data)
     
     if len(data_list) == 0:
         logger.error("No preprocessed data found!")
