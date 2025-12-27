@@ -24,8 +24,9 @@ from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+# Add parent directory to path (insert at 0 for priority)
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_project_root))
 
 from models.generator_unet3d import UNet3DGenerator
 from models.discriminator_patchgan3d import PatchGANDiscriminator3D
