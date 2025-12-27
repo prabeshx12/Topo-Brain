@@ -110,7 +110,13 @@ def discover_dataset(data_root: Path, data_config: DataConfig) -> List[Dict[str,
                     continue
                 
                 # Check if corresponding JSON exists
-                json_file = nifti_file.parent / nifti_file.name.replace("_defaced.nii.gz", ".json")
+                # Handle both _defaced and _preprocessed naming conventions
+                json_file_name = nifti_file.name
+                for suffix in ["_defaced.nii.gz", "_preprocessed.nii.gz", ".nii.gz"]:
+                    if suffix in json_file_name:
+                        json_file_name = json_file_name.replace(suffix, "_metadata.json")
+                        break
+                json_file = nifti_file.parent / json_file_name
                 metadata = {}
                 if json_file.exists():
                     try:
