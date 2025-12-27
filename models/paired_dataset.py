@@ -87,19 +87,21 @@ class Paired3T7TDataset(Dataset):
         if volume.ndim == 4:
             volume = volume[..., 0]  # Take first volume if 4D
         
-        # Pad volume if smaller than patch size
+        return volume
+    
+    def _ensure_min_size(self, volume: np.ndarray, min_size: Tuple[int, int, int]) -> np.ndarray:
+        """Pad volume to ensure it's at least min_size in each dimension."""
         pad_amounts = []
-        for i, (vol_dim, patch_dim) in enumerate(zip(volume.shape, self.patch_size)):
-            if vol_dim < patch_dim:
-                pad_before = (patch_dim - vol_dim) // 2
-                pad_after = patch_dim - vol_dim - pad_before
+        for vol_dim, min_dim in zip(volume.shape, min_size):
+            if vol_dim < min_dim:
+                pad_before = (min_dim - vol_dim) // 2
+                pad_after = min_dim - vol_dim - pad_before
                 pad_amounts.append((pad_before, pad_after))
             else:
                 pad_amounts.append((0, 0))
         
         if any(p[0] > 0 or p[1] > 0 for p in pad_amounts):
             volume = np.pad(volume, pad_amounts, mode='constant', constant_values=0)
-            logger.debug(f"Padded volume from original shape to {volume.shape}")
         
         return volume
     
@@ -172,17 +174,26 @@ class Paired3T7TDataset(Dataset):
         volume_3t = self._load_volume(pair['input_3t'])
         volume_7t = self._load_volume(pair['target_7t'])
         
+        # Ensure both volumes are at least patch_size in all dimensions
+        volume_3t = self._ensure_min_size(volume_3t, self.patch_size)
+        volume_7t = self._ensure_min_size(volume_7t, self.patch_size)
+        
+        # Ensure both volumes have the same size (use minimum of each dimension)
+        min_shape = tuple(min(a, b) for a, b in zip(volume_3t.shape, volume_7t.shape))
+        volume_3t = volume_3t[:min_shape[0], :min_shape[1], :min_shape[2]]
+        volume_7t = volume_7t[:min_shape[0], :min_shape[1], :min_shape[2]]
+        
         # Extract random patch
         patch_3t, patch_7t = self._extract_random_patch(volume_3t, volume_7t)
         
-        # Add channel dimension
-        patch_3t = patch_3t[np.newaxis, ...]  # (1, D, H, W)
-        patch_7t = patch_7t[np.newaxis, ...]  # (1, D, H, W)
+        # Add channel dimension and ensure contiguous numpy arrays
+        patch_3t = np.ascontiguousarray(patch_3t[np.newaxis, ...])  # (1, D, H, W)
+        patch_7t = np.ascontiguousarray(patch_7t[np.newaxis, ...])  # (1, D, H, W)
         
-        # Create data dict
+        # Create data dict with regular torch tensors (not MetaTensor)
         data = {
-            'input_3t': torch.from_numpy(patch_3t),
-            'target_7t': torch.from_numpy(patch_7t),
+            'input_3t': torch.from_numpy(patch_3t.copy()),
+            'target_7t': torch.from_numpy(patch_7t.copy()),
             'subject': pair.get('subject', f'pair_{pair_idx}'),
             'modality': pair.get('modality', 'T1w'),
         }
@@ -190,6 +201,11 @@ class Paired3T7TDataset(Dataset):
         # Apply transforms (augmentation)
         if self.transform is not None:
             data = self.transform(data)
+            # Convert back to regular tensors if MONAI returned MetaTensors
+            if hasattr(data['input_3t'], 'as_tensor'):
+                data['input_3t'] = data['input_3t'].as_tensor()
+            if hasattr(data['target_7t'], 'as_tensor'):
+                data['target_7t'] = data['target_7t'].as_tensor()
         
         return data
 
