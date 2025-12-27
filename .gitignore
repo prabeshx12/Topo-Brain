@@ -29,8 +29,8 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb_checkpoints/
-*.ipynb
 !kaggle_preprocessing_notebook.ipynb
+!train_colab.ipynb
 
 # IDE
 .vscode/
