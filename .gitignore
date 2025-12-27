@@ -69,7 +69,6 @@ HD-BET/
 
 # Model checkpoints
 checkpoints/
-models/
 *.pth
 *.pt
 *.ckpt
