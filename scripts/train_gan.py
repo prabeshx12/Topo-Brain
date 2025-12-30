@@ -70,6 +70,9 @@ class GANConfig:
         # Label smoothing for training stability
         self.label_smoothing_real = 0.9  # Real labels: 1.0 -> 0.9 to prevent D overconfidence
         
+        # G:D update ratio - train G this many times per D update
+        self.g_updates_per_d = 2  # Train G twice per D update for better balance
+        
         # Patch sampling
         self.patch_size = (64, 64, 64)
         self.num_patches_per_volume = 10
@@ -243,45 +246,46 @@ class GANTrainer:
             self.scaler_d.step(self.optimizer_d)
             self.scaler_d.update()
             
-            # ===== Train Generator =====
-            self.optimizer_g.zero_grad()
-            
-            with autocast(enabled=self.config.use_amp):
-                # Generate fake 7T
-                fake_7t = self.generator(input_3t)
+            # ===== Train Generator (multiple times per D update) =====
+            for g_step in range(self.config.g_updates_per_d):
+                self.optimizer_g.zero_grad()
                 
-                # L1 reconstruction loss
-                loss_g_l1 = self.criterion_l1(fake_7t, target_7t)
+                with autocast(enabled=self.config.use_amp):
+                    # Generate fake 7T
+                    fake_7t = self.generator(input_3t)
+                    
+                    # L1 reconstruction loss
+                    loss_g_l1 = self.criterion_l1(fake_7t, target_7t)
+                    
+                    # Adversarial loss (fool discriminator)
+                    pred_fake = self.discriminator(fake_7t)
+                    
+                    if self.config.adversarial_loss_type == "lsgan":
+                        label_real = torch.ones_like(pred_fake)
+                    else:
+                        label_real = torch.ones_like(pred_fake)
+                    
+                    loss_g_adv = self.criterion_adv(pred_fake, label_real)
+                    
+                    # Total generator loss
+                    loss_g = (
+                        self.config.lambda_l1 * loss_g_l1 +
+                        self.config.lambda_adv * loss_g_adv
+                    )
                 
-                # Adversarial loss (fool discriminator)
-                pred_fake = self.discriminator(fake_7t)
+                # Backward
+                self.scaler_g.scale(loss_g).backward()
                 
-                if self.config.adversarial_loss_type == "lsgan":
-                    label_real = torch.ones_like(pred_fake)
-                else:
-                    label_real = torch.ones_like(pred_fake)
+                # Gradient clipping
+                if self.config.gradient_clip_value > 0:
+                    self.scaler_g.unscale_(self.optimizer_g)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.generator.parameters(),
+                        self.config.gradient_clip_value
+                    )
                 
-                loss_g_adv = self.criterion_adv(pred_fake, label_real)
-                
-                # Total generator loss
-                loss_g = (
-                    self.config.lambda_l1 * loss_g_l1 +
-                    self.config.lambda_adv * loss_g_adv
-                )
-            
-            # Backward
-            self.scaler_g.scale(loss_g).backward()
-            
-            # Gradient clipping
-            if self.config.gradient_clip_value > 0:
-                self.scaler_g.unscale_(self.optimizer_g)
-                torch.nn.utils.clip_grad_norm_(
-                    self.generator.parameters(),
-                    self.config.gradient_clip_value
-                )
-            
-            self.scaler_g.step(self.optimizer_g)
-            self.scaler_g.update()
+                self.scaler_g.step(self.optimizer_g)
+                self.scaler_g.update()
             
             # Update metrics
             epoch_metrics['g_loss'] += loss_g.item()
