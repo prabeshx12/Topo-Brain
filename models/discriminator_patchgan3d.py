@@ -1,4 +1,4 @@
-"""
+\"\"\"
 3D PatchGAN Discriminator for 3T → 7T MRI super-resolution.
 
 Architecture:
@@ -6,9 +6,11 @@ Architecture:
 - Operates on local 3D patches
 - Outputs spatial map of real/fake predictions
 - No pooling - uses strided convolutions for downsampling
-"""
+- Spectral normalization for training stability
+\"\"\"
 import torch
 import torch.nn as nn
+from torch.nn.utils import spectral_norm
 
 
 class DiscriminatorBlock3D(nn.Module):
@@ -18,6 +20,7 @@ class DiscriminatorBlock3D(nn.Module):
     Conv3D (stride 2) -> InstanceNorm3D -> LeakyReLU
     
     Note: First block doesn't use normalization (common practice).
+    Spectral normalization can be applied for training stability.
     """
     def __init__(
         self,
@@ -29,19 +32,25 @@ class DiscriminatorBlock3D(nn.Module):
         use_norm: bool = True,
         norm_type: str = "instance",
         num_groups: int = 8,
+        use_spectral_norm: bool = True,  # NEW: Enable spectral normalization
     ):
         super().__init__()
         
-        layers = [
-            nn.Conv3d(
-                in_channels,
-                out_channels,
-                kernel_size=kernel_size,
-                stride=stride,
-                padding=padding,
-                bias=not use_norm,
-            )
-        ]
+        # Create Conv3d layer
+        conv = nn.Conv3d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=not use_norm,
+        )
+        
+        # Apply spectral normalization if enabled
+        if use_spectral_norm:
+            conv = spectral_norm(conv)
+        
+        layers = [conv]
         
         if use_norm:
             if norm_type == "instance":
@@ -132,13 +141,13 @@ class PatchGANDiscriminator3D(nn.Module):
         current_features = next_features
         
         # Final layer: output logits (no normalization, no activation)
-        layers.append(
-            nn.Conv3d(
-                current_features, 1,
-                kernel_size=4, stride=1, padding=1,
-                bias=True,
-            )
+        # Apply spectral norm to final layer too for consistency
+        final_conv = nn.Conv3d(
+            current_features, 1,
+            kernel_size=4, stride=1, padding=1,
+            bias=True,
         )
+        layers.append(spectral_norm(final_conv))
         
         self.model = nn.Sequential(*layers)
     

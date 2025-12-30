@@ -56,7 +56,7 @@ class GANConfig:
         self.num_epochs = 100
         self.batch_size = 2  # Small for 3D volumes
         self.learning_rate_g = 2e-4
-        self.learning_rate_d = 2e-4
+        self.learning_rate_d = 5e-5  # Reduced from 2e-4 to prevent D dominance
         self.beta1 = 0.5  # Adam beta1
         self.beta2 = 0.999  # Adam beta2
         
@@ -66,6 +66,9 @@ class GANConfig:
         
         # Loss type
         self.adversarial_loss_type = "lsgan"  # "lsgan" or "bce"
+        
+        # Label smoothing for training stability
+        self.label_smoothing_real = 0.9  # Real labels: 1.0 -> 0.9 to prevent D overconfidence
         
         # Patch sampling
         self.patch_size = (64, 64, 64)
@@ -216,15 +219,10 @@ class GANTrainer:
                 # Fake predictions
                 pred_fake = self.discriminator(fake_7t.detach())
                 
-                # Real/fake labels
-                if self.config.adversarial_loss_type == "lsgan":
-                    # LSGAN: real=1, fake=0
-                    label_real = torch.ones_like(pred_real)
-                    label_fake = torch.zeros_like(pred_fake)
-                else:
-                    # BCE: real=1, fake=0
-                    label_real = torch.ones_like(pred_real)
-                    label_fake = torch.zeros_like(pred_fake)
+                # Real/fake labels with label smoothing
+                # Label smoothing: real=0.9 instead of 1.0 to prevent D overconfidence
+                label_real = torch.ones_like(pred_real) * self.config.label_smoothing_real
+                label_fake = torch.zeros_like(pred_fake)  # Keep fake labels as 0
                 
                 # Discriminator losses
                 loss_d_real = self.criterion_adv(pred_real, label_real)
