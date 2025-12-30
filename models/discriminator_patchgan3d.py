@@ -1,4 +1,4 @@
-\"\"\"
+"""
 3D PatchGAN Discriminator for 3T → 7T MRI super-resolution.
 
 Architecture:
@@ -7,7 +7,7 @@ Architecture:
 - Outputs spatial map of real/fake predictions
 - No pooling - uses strided convolutions for downsampling
 - Spectral normalization for training stability
-\"\"\"
+"""
 import torch
 import torch.nn as nn
 from torch.nn.utils import spectral_norm
