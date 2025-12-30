@@ -73,6 +73,9 @@ class GANConfig:
         # G:D update ratio - train G this many times per D update
         self.g_updates_per_d = 2  # Train G twice per D update for better balance
         
+        # Warmup epochs - train G with L1 only (no D) for these epochs
+        self.warmup_epochs = 20  # First 20 epochs: L1 only, then GAN kicks in
+        
         # Patch sampling
         self.patch_size = (64, 64, 64)
         self.num_patches_per_volume = 10
@@ -209,42 +212,50 @@ class GANTrainer:
             
             batch_size = input_3t.size(0)
             
-            # ===== Train Discriminator =====
-            self.optimizer_d.zero_grad()
+            # Check if we're in warmup phase (L1 only, no D)
+            in_warmup = epoch < self.config.warmup_epochs
             
-            with autocast(enabled=self.config.use_amp):
-                # Generate fake 7T
-                with torch.no_grad():
-                    fake_7t = self.generator(input_3t)
+            # ===== Train Discriminator (skip during warmup) =====
+            if not in_warmup:
+                self.optimizer_d.zero_grad()
                 
-                # Real predictions
-                pred_real = self.discriminator(target_7t)
-                # Fake predictions
-                pred_fake = self.discriminator(fake_7t.detach())
+                with autocast(enabled=self.config.use_amp):
+                    # Generate fake 7T
+                    with torch.no_grad():
+                        fake_7t = self.generator(input_3t)
+                    
+                    # Real predictions
+                    pred_real = self.discriminator(target_7t)
+                    # Fake predictions
+                    pred_fake = self.discriminator(fake_7t.detach())
+                    
+                    # Real/fake labels with label smoothing
+                    label_real = torch.ones_like(pred_real) * self.config.label_smoothing_real
+                    label_fake = torch.zeros_like(pred_fake)
+                    
+                    # Discriminator losses
+                    loss_d_real = self.criterion_adv(pred_real, label_real)
+                    loss_d_fake = self.criterion_adv(pred_fake, label_fake)
+                    loss_d = (loss_d_real + loss_d_fake) * 0.5
                 
-                # Real/fake labels with label smoothing
-                # Label smoothing: real=0.9 instead of 1.0 to prevent D overconfidence
-                label_real = torch.ones_like(pred_real) * self.config.label_smoothing_real
-                label_fake = torch.zeros_like(pred_fake)  # Keep fake labels as 0
+                # Backward
+                self.scaler_d.scale(loss_d).backward()
                 
-                # Discriminator losses
-                loss_d_real = self.criterion_adv(pred_real, label_real)
-                loss_d_fake = self.criterion_adv(pred_fake, label_fake)
-                loss_d = (loss_d_real + loss_d_fake) * 0.5
-            
-            # Backward
-            self.scaler_d.scale(loss_d).backward()
-            
-            # Gradient clipping
-            if self.config.gradient_clip_value > 0:
-                self.scaler_d.unscale_(self.optimizer_d)
-                torch.nn.utils.clip_grad_norm_(
-                    self.discriminator.parameters(),
-                    self.config.gradient_clip_value
-                )
-            
-            self.scaler_d.step(self.optimizer_d)
-            self.scaler_d.update()
+                # Gradient clipping
+                if self.config.gradient_clip_value > 0:
+                    self.scaler_d.unscale_(self.optimizer_d)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.discriminator.parameters(),
+                        self.config.gradient_clip_value
+                    )
+                
+                self.scaler_d.step(self.optimizer_d)
+                self.scaler_d.update()
+            else:
+                # During warmup, set D losses to 0 for logging
+                loss_d = torch.tensor(0.0)
+                loss_d_real = torch.tensor(0.0)
+                loss_d_fake = torch.tensor(0.0)
             
             # ===== Train Generator (multiple times per D update) =====
             for g_step in range(self.config.g_updates_per_d):
@@ -257,15 +268,13 @@ class GANTrainer:
                     # L1 reconstruction loss
                     loss_g_l1 = self.criterion_l1(fake_7t, target_7t)
                     
-                    # Adversarial loss (fool discriminator)
-                    pred_fake = self.discriminator(fake_7t)
-                    
-                    if self.config.adversarial_loss_type == "lsgan":
+                    # Adversarial loss (skip during warmup)
+                    if not in_warmup:
+                        pred_fake = self.discriminator(fake_7t)
                         label_real = torch.ones_like(pred_fake)
+                        loss_g_adv = self.criterion_adv(pred_fake, label_real)
                     else:
-                        label_real = torch.ones_like(pred_fake)
-                    
-                    loss_g_adv = self.criterion_adv(pred_fake, label_real)
+                        loss_g_adv = torch.tensor(0.0, device=self.device)
                     
                     # Total generator loss
                     loss_g = (
