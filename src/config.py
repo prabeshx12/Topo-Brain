@@ -57,6 +57,11 @@ class PreprocessingConfig:
     use_skull_stripping: bool = True
     brain_mask_pattern: str = "*brain_mask.nii.gz"  # If masks are available
     
+    # Registration (for paired 3T-7T data) - CRITICAL for GAN training
+    use_registration: bool = True  # Register 3T to 7T space
+    registration_transform: str = "rigid"  # "rigid" (6 DOF) or "affine" (12 DOF)
+    registration_iterations: int = 200
+    
     # Intensity normalization method
     normalization_method: str = "zscore"  # Options: "zscore", "minmax", "percentile"
     

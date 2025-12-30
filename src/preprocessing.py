@@ -34,6 +34,123 @@ from .config import MRIConfig, PreprocessingConfig
 logger = logging.getLogger(__name__)
 
 
+class ImageRegistration:
+    """
+    Register 3T images to 7T space using SimpleITK.
+    Uses rigid/affine registration with mutual information metric.
+    Essential for paired 3T-7T GAN training.
+    """
+    def __init__(
+        self,
+        transform_type: str = "rigid",  # "rigid" or "affine"
+        num_iterations: int = 200,
+        learning_rate: float = 1.0,
+        num_histogram_bins: int = 50,
+    ):
+        self.transform_type = transform_type
+        self.num_iterations = num_iterations
+        self.learning_rate = learning_rate
+        self.num_histogram_bins = num_histogram_bins
+        logger.info(f"ImageRegistration initialized: {transform_type} transform, {num_iterations} iterations")
+    
+    def register(
+        self,
+        moving_image_path: Union[str, Path],  # 3T image (to be registered)
+        fixed_image_path: Union[str, Path],    # 7T image (reference)
+    ) -> Tuple[np.ndarray, np.ndarray, Any]:
+        """
+        Register moving image (3T) to fixed image (7T) space.
+        
+        Args:
+            moving_image_path: Path to 3T image (will be transformed)
+            fixed_image_path: Path to 7T image (reference, stays fixed)
+            
+        Returns:
+            Tuple of (registered_3t_array, fixed_7t_array, affine_from_7t)
+        """
+        logger.info(f"Registering {Path(moving_image_path).name} -> {Path(fixed_image_path).name}")
+        
+        # Load images with SimpleITK
+        fixed = sitk.ReadImage(str(fixed_image_path))
+        moving = sitk.ReadImage(str(moving_image_path))
+        
+        # Also load with NiBabel to get affine
+        fixed_nib = nib.load(str(fixed_image_path))
+        fixed_affine = fixed_nib.affine
+        
+        # Cast to float32
+        fixed = sitk.Cast(fixed, sitk.sitkFloat32)
+        moving = sitk.Cast(moving, sitk.sitkFloat32)
+        
+        # Initialize transform based on geometry
+        if self.transform_type == "rigid":
+            initial_transform = sitk.CenteredTransformInitializer(
+                fixed, moving,
+                sitk.Euler3DTransform(),
+                sitk.CenteredTransformInitializerFilter.GEOMETRY
+            )
+        else:  # affine
+            initial_transform = sitk.CenteredTransformInitializer(
+                fixed, moving,
+                sitk.AffineTransform(3),
+                sitk.CenteredTransformInitializerFilter.GEOMETRY
+            )
+        
+        # Setup registration method
+        registration = sitk.ImageRegistrationMethod()
+        
+        # Use mutual information (works for multi-modal)
+        registration.SetMetricAsMattesMutualInformation(
+            numberOfHistogramBins=self.num_histogram_bins
+        )
+        registration.SetMetricSamplingStrategy(registration.RANDOM)
+        registration.SetMetricSamplingPercentage(0.1)
+        
+        registration.SetInterpolator(sitk.sitkLinear)
+        
+        # Gradient descent optimizer
+        registration.SetOptimizerAsGradientDescent(
+            learningRate=self.learning_rate,
+            numberOfIterations=self.num_iterations,
+            estimateLearningRate=registration.EachIteration
+        )
+        registration.SetOptimizerScalesFromPhysicalShift()
+        
+        registration.SetInitialTransform(initial_transform, inPlace=False)
+        
+        # Multi-resolution pyramid for robustness
+        registration.SetShrinkFactorsPerLevel(shrinkFactors=[4, 2, 1])
+        registration.SetSmoothingSigmasPerLevel(smoothingSigmas=[2, 1, 0])
+        registration.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
+        
+        # Execute registration
+        try:
+            final_transform = registration.Execute(fixed, moving)
+            logger.debug(f"Registration converged. Final metric: {registration.GetMetricValue():.4f}")
+        except Exception as e:
+            logger.warning(f"Registration failed: {e}. Using identity transform.")
+            final_transform = initial_transform
+        
+        # Resample moving image to fixed image space
+        resampler = sitk.ResampleImageFilter()
+        resampler.SetReferenceImage(fixed)
+        resampler.SetInterpolator(sitk.sitkLinear)
+        resampler.SetTransform(final_transform)
+        registered = resampler.Execute(moving)
+        
+        # Convert to numpy arrays
+        registered_array = sitk.GetArrayFromImage(registered)
+        fixed_array = sitk.GetArrayFromImage(fixed)
+        
+        # SimpleITK uses (Z,Y,X) order, transpose to (X,Y,Z) for NiBabel
+        registered_array = np.transpose(registered_array, (2, 1, 0))
+        fixed_array = np.transpose(fixed_array, (2, 1, 0))
+        
+        logger.info(f"Registration complete. Output shape: {registered_array.shape}")
+        
+        return registered_array.astype(np.float32), fixed_array.astype(np.float32), fixed_affine
+
+
 class N4BiasFieldCorrection:
     """
     N4ITK bias field correction using SimpleITK.
