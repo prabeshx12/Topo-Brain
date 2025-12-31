@@ -277,11 +277,14 @@ def create_paired_data_list(preprocessed_dir, modalities):
     
     all_pairs = []
     
-    # Try multiple patterns for each modality
+    # Try multiple patterns for each modality (both compressed and uncompressed)
     file_patterns = [
         '*{modality}_preprocessed.nii.gz',
+        '*{modality}_preprocessed.nii',  # Uncompressed
         '*{modality}.nii.gz',
+        '*{modality}.nii',  # Uncompressed
         '*{modality}_*.nii.gz',
+        '*{modality}_*.nii',  # Uncompressed
     ]
     
     for modality in modalities:
