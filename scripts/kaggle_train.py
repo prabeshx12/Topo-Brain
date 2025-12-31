@@ -237,15 +237,48 @@ class Paired3T7TDataset(Dataset):
         }
     
     def _extract_random_patch(self, vol_3t, vol_7t):
+        """Extract patch, biased towards brain tissue (non-empty regions)."""
         d, h, w = vol_3t.shape
         pd, ph, pw = self.patch_size
         
-        start_d = random.randint(0, max(0, d - pd))
-        start_h = random.randint(0, max(0, h - ph))
-        start_w = random.randint(0, max(0, w - pw))
+        # Try up to 10 times to find a good patch
+        best_patch_3t = None
+        best_patch_7t = None
+        best_mean = 0.0
         
-        patch_3t = vol_3t[start_d:start_d+pd, start_h:start_h+ph, start_w:start_w+pw]
-        patch_7t = vol_7t[start_d:start_d+pd, start_h:start_h+ph, start_w:start_w+pw]
+        for _ in range(10):
+            # Bias towards center (brain is typically in center)
+            # Use truncated normal distribution centered on volume center
+            center_d, center_h, center_w = d // 2, h // 2, w // 2
+            
+            # Random offset from center with some spread
+            spread = 0.3  # 30% of volume size
+            start_d = int(center_d + random.gauss(0, d * spread) - pd // 2)
+            start_h = int(center_h + random.gauss(0, h * spread) - ph // 2)
+            start_w = int(center_w + random.gauss(0, w * spread) - pw // 2)
+            
+            # Clamp to valid range
+            start_d = max(0, min(start_d, d - pd))
+            start_h = max(0, min(start_h, h - ph))
+            start_w = max(0, min(start_w, w - pw))
+            
+            patch_3t = vol_3t[start_d:start_d+pd, start_h:start_h+ph, start_w:start_w+pw]
+            patch_7t = vol_7t[start_d:start_d+pd, start_h:start_h+ph, start_w:start_w+pw]
+            
+            # Check if this patch has good brain content
+            patch_mean = np.mean(patch_3t)
+            if patch_mean > best_mean:
+                best_mean = patch_mean
+                best_patch_3t = patch_3t
+                best_patch_7t = patch_7t
+            
+            # If patch has good content (mean > 0.1 of max), use it
+            if patch_mean > 0.1 * np.max(vol_3t):
+                break
+        
+        # Use best found patch
+        patch_3t = best_patch_3t if best_patch_3t is not None else patch_3t
+        patch_7t = best_patch_7t if best_patch_7t is not None else patch_7t
         
         if patch_3t.shape != self.patch_size:
             patch_3t = self._pad_to_size(patch_3t, self.patch_size)
@@ -606,6 +639,18 @@ def train_gan(args):
     print(f"Batch size: {args.batch_size}")
     print(f"Patch size: {patch_size}")
     
+    # Training dynamics configuration
+    WARMUP_EPOCHS = 20  # L1 only for first 20 epochs
+    LABEL_SMOOTHING = 0.9  # Real labels: 1.0 -> 0.9
+    G_UPDATES_PER_D = 2  # Train G twice per D update
+    GRADIENT_CLIP = 1.0  # Gradient clipping value
+    LAMBDA_L1 = 100.0  # L1 loss weight
+    LAMBDA_ADV = 1.0  # Adversarial loss weight
+    
+    print(f"Warmup epochs: {WARMUP_EPOCHS} (L1 only)")
+    print(f"Label smoothing: {LABEL_SMOOTHING}")
+    print(f"G:D update ratio: {G_UPDATES_PER_D}:1")
+    
     best_val_loss = float('inf')
     train_losses = []
     val_losses = []
@@ -613,12 +658,16 @@ def train_gan(args):
     for epoch in range(1, args.epochs + 1):
         epoch_start = time.time()
         
+        # Check if in warmup phase
+        in_warmup = epoch <= WARMUP_EPOCHS
+        
         # Train
         generator.train()
         discriminator.train()
         
         epoch_loss_g = 0.0
         epoch_loss_d = 0.0
+        epoch_loss_l1 = 0.0
         
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs}", leave=False)
         
@@ -626,43 +675,63 @@ def train_gan(args):
             input_3t = batch['input_3t'].to(device)
             target_7t = batch['target_7t'].to(device)
             
-            # Train D
-            optimizer_d.zero_grad()
-            
-            with autocast(enabled=use_amp):
-                fake_7t = generator(input_3t)
-                pred_real = discriminator(target_7t)
-                pred_fake = discriminator(fake_7t.detach())
+            # ===== Train Discriminator (skip during warmup) =====
+            if not in_warmup:
+                optimizer_d.zero_grad()
                 
-                real_label = torch.ones_like(pred_real)
-                fake_label = torch.zeros_like(pred_fake)
+                with autocast(enabled=use_amp):
+                    with torch.no_grad():
+                        fake_7t = generator(input_3t)
+                    
+                    pred_real = discriminator(target_7t)
+                    pred_fake = discriminator(fake_7t.detach())
+                    
+                    # Labels with smoothing
+                    real_label = torch.ones_like(pred_real) * LABEL_SMOOTHING
+                    fake_label = torch.zeros_like(pred_fake)
+                    
+                    loss_d = 0.5 * (criterion_adv(pred_real, real_label) + 
+                                   criterion_adv(pred_fake, fake_label))
                 
-                loss_d = 0.5 * (criterion_adv(pred_real, real_label) + 
-                               criterion_adv(pred_fake, fake_label))
+                scaler_d.scale(loss_d).backward()
+                scaler_d.unscale_(optimizer_d)
+                torch.nn.utils.clip_grad_norm_(discriminator.parameters(), GRADIENT_CLIP)
+                scaler_d.step(optimizer_d)
+                scaler_d.update()
+            else:
+                loss_d = torch.tensor(0.0)
             
-            scaler_d.scale(loss_d).backward()
-            scaler_d.step(optimizer_d)
-            scaler_d.update()
-            
-            # Train G
-            optimizer_g.zero_grad()
-            
-            with autocast(enabled=use_amp):
-                fake_7t = generator(input_3t)
-                pred_fake = discriminator(fake_7t)
+            # ===== Train Generator (multiple times per D update) =====
+            for g_step in range(G_UPDATES_PER_D):
+                optimizer_g.zero_grad()
                 
-                loss_adv = criterion_adv(pred_fake, real_label)
-                loss_l1 = criterion_l1(fake_7t, target_7t)
-                loss_g = loss_adv + 100.0 * loss_l1
-            
-            scaler_g.scale(loss_g).backward()
-            scaler_g.step(optimizer_g)
-            scaler_g.update()
+                with autocast(enabled=use_amp):
+                    fake_7t = generator(input_3t)
+                    loss_l1 = criterion_l1(fake_7t, target_7t)
+                    
+                    if not in_warmup:
+                        pred_fake = discriminator(fake_7t)
+                        real_label = torch.ones_like(pred_fake)
+                        loss_adv = criterion_adv(pred_fake, real_label)
+                    else:
+                        loss_adv = torch.tensor(0.0, device=device)
+                    
+                    loss_g = LAMBDA_L1 * loss_l1 + LAMBDA_ADV * loss_adv
+                
+                scaler_g.scale(loss_g).backward()
+                scaler_g.unscale_(optimizer_g)
+                torch.nn.utils.clip_grad_norm_(generator.parameters(), GRADIENT_CLIP)
+                scaler_g.step(optimizer_g)
+                scaler_g.update()
             
             epoch_loss_g += loss_g.item()
-            epoch_loss_d += loss_d.item()
+            epoch_loss_d += loss_d.item() if isinstance(loss_d, torch.Tensor) else loss_d
+            epoch_loss_l1 += loss_l1.item()
             
-            pbar.set_postfix({'G': f'{loss_g.item():.3f}', 'D': f'{loss_d.item():.3f}'})
+            if in_warmup:
+                pbar.set_postfix({'L1': f'{loss_l1.item():.4f}', 'Phase': 'Warmup'})
+            else:
+                pbar.set_postfix({'G': f'{loss_g.item():.3f}', 'D': f'{loss_d.item():.3f}'})
         
         avg_loss_g = epoch_loss_g / len(train_loader)
         avg_loss_d = epoch_loss_d / len(train_loader)
@@ -682,10 +751,14 @@ def train_gan(args):
         val_loss /= len(val_loader)
         val_losses.append(val_loss)
         
+        avg_loss_l1 = epoch_loss_l1 / len(train_loader)
+        
         epoch_time = time.time() - epoch_start
         
-        print(f"Epoch {epoch}/{args.epochs} ({epoch_time:.1f}s) - "
-              f"G: {avg_loss_g:.4f}, D: {avg_loss_d:.4f}, Val L1: {val_loss:.4f}")
+        # Logging with warmup indicator
+        phase_str = "[WARMUP] " if in_warmup else ""
+        print(f"{phase_str}Epoch {epoch}/{args.epochs} ({epoch_time:.1f}s) - "
+              f"G: {avg_loss_g:.4f}, D: {avg_loss_d:.4f}, L1: {avg_loss_l1:.4f}, Val L1: {val_loss:.4f}")
         
         # Save best
         if val_loss < best_val_loss:
