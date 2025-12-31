@@ -78,6 +78,37 @@ def find_preprocessed_data(verbose=True):
         print("=" * 70)
         print(f"Environment: {env.upper()}")
     
+    # Try multiple file patterns (in order of preference)
+    patterns = ['*_preprocessed.nii.gz', '*.nii.gz', '*.nii']
+    
+    def search_directory(search_dir, verbose_name=""):
+        """Search a directory for NIfTI files with various patterns."""
+        for pattern in patterns:
+            nifti_files = list(search_dir.rglob(pattern))
+            if nifti_files:
+                if verbose:
+                    print(f"   ✓ Found {len(nifti_files)} files matching '{pattern}' in {verbose_name}")
+                    for f in nifti_files[:3]:
+                        print(f"      - {f.name}")
+                    if len(nifti_files) > 3:
+                        print(f"      ... and {len(nifti_files) - 3} more")
+                
+                # Find the root containing subject folders (sub-XX)
+                for nifti in nifti_files:
+                    for parent in [nifti.parent, nifti.parent.parent, 
+                                   nifti.parent.parent.parent, search_dir]:
+                        if parent.exists():
+                            sub_dirs = [d for d in parent.iterdir() 
+                                       if d.is_dir() and d.name.startswith('sub-')]
+                            if sub_dirs:
+                                if verbose:
+                                    print(f"   ✓ Found subject folders in: {parent}")
+                                return parent, nifti_files
+                
+                # No sub- folders found, return the search directory
+                return search_dir, nifti_files
+        return None, []
+    
     if IS_KAGGLE:
         kaggle_input = Path('/kaggle/input')
         if verbose:
@@ -88,43 +119,38 @@ def find_preprocessed_data(verbose=True):
             if verbose:
                 print(f"   Found {len(datasets)} datasets: {[d.name for d in datasets]}")
             
-            # Search each dataset for preprocessed NIfTI files
+            # Search each dataset
             for dataset_dir in datasets:
-                nifti_files = list(dataset_dir.rglob('*_preprocessed.nii.gz'))
-                if nifti_files:
-                    # Find the root containing subject folders
-                    for nifti in nifti_files:
-                        for parent in [nifti.parent, nifti.parent.parent, nifti.parent.parent.parent]:
-                            if parent.exists():
-                                sub_dirs = [d for d in parent.iterdir() if d.is_dir() and d.name.startswith('sub-')]
-                                if sub_dirs:
-                                    return parent, nifti_files
-                    return dataset_dir, nifti_files
+                if verbose:
+                    print(f"\n   Searching '{dataset_dir.name}'...")
+                result_path, nifti_files = search_directory(dataset_dir, dataset_dir.name)
+                if result_path:
+                    return result_path, nifti_files
         
         # Check working directory
         for working_path in [Path('/kaggle/working/preprocessed'), 
                             Path('/kaggle/working/preprocessed_no_n4')]:
             if working_path.exists():
-                nifti_files = list(working_path.rglob('*_preprocessed.nii.gz'))
-                if nifti_files:
-                    return working_path, nifti_files
+                result_path, nifti_files = search_directory(working_path, str(working_path))
+                if result_path:
+                    return result_path, nifti_files
     
     elif IS_COLAB:
         for colab_path in [Path('/content/preprocessed'),
                           Path('/content/drive/MyDrive/preprocessed')]:
             if colab_path.exists():
-                nifti_files = list(colab_path.rglob('*_preprocessed.nii.gz'))
-                if nifti_files:
-                    return colab_path, nifti_files
+                result_path, nifti_files = search_directory(colab_path, str(colab_path))
+                if result_path:
+                    return result_path, nifti_files
     
     else:
         # Local paths
         for local_path in [Path('./preprocessed'), Path('./preprocessed_registered'),
                           _project_root / 'preprocessed']:
             if local_path.exists():
-                nifti_files = list(local_path.rglob('*_preprocessed.nii.gz'))
-                if nifti_files:
-                    return local_path, nifti_files
+                result_path, nifti_files = search_directory(local_path, str(local_path))
+                if result_path:
+                    return result_path, nifti_files
     
     return None, []
 
@@ -242,6 +268,7 @@ def create_paired_data_list(preprocessed_dir, modalities):
     """
     Create list of paired 3T-7T volumes.
     Assumes: ses-1 = 3T, ses-2 = 7T
+    Handles files with or without '_preprocessed' suffix.
     """
     preprocessed_dir = Path(preprocessed_dir)
     
@@ -250,19 +277,51 @@ def create_paired_data_list(preprocessed_dir, modalities):
     
     all_pairs = []
     
+    # Try multiple patterns for each modality
+    file_patterns = [
+        '*{modality}_preprocessed.nii.gz',
+        '*{modality}.nii.gz',
+        '*{modality}_*.nii.gz',
+    ]
+    
     for modality in modalities:
         print(f"🔍 Searching for {modality} pairs...")
         
         files_by_subject = {}
-        for file in preprocessed_dir.rglob(f"*{modality}_preprocessed.nii.gz"):
-            parts = file.stem.replace('_preprocessed', '').split('_')
-            subject = parts[0]
-            session = parts[1]
-            
-            if subject not in files_by_subject:
-                files_by_subject[subject] = {}
-            files_by_subject[subject][session] = file
         
+        # Try each pattern
+        for pattern_template in file_patterns:
+            pattern = pattern_template.format(modality=modality)
+            for file in preprocessed_dir.rglob(pattern):
+                # Parse filename to extract subject and session
+                # Expected formats:
+                #   sub-01_ses-1_T1w_preprocessed.nii.gz
+                #   sub-01_ses-1_T1w.nii.gz
+                stem = file.stem.replace('.nii', '')  # Handle .nii.gz
+                
+                # Remove common suffixes
+                for suffix in ['_preprocessed', '_registered', '_brain']:
+                    stem = stem.replace(suffix, '')
+                
+                parts = stem.split('_')
+                
+                # Find subject and session
+                subject = None
+                session = None
+                for part in parts:
+                    if part.startswith('sub-'):
+                        subject = part
+                    elif part.startswith('ses-'):
+                        session = part
+                
+                if subject and session:
+                    if subject not in files_by_subject:
+                        files_by_subject[subject] = {}
+                    # Only store if not already found (prefer _preprocessed)
+                    if session not in files_by_subject[subject]:
+                        files_by_subject[subject][session] = file
+        
+        # Create pairs from found files
         for subject, sessions in files_by_subject.items():
             if 'ses-1' in sessions and 'ses-2' in sessions:
                 all_pairs.append({
@@ -274,6 +333,12 @@ def create_paired_data_list(preprocessed_dir, modalities):
         
         n_pairs = sum(1 for p in all_pairs if p['modality'] == modality)
         print(f"   ✓ Found {n_pairs} {modality} pairs")
+        
+        # Show sample files found
+        if files_by_subject:
+            sample_subj = list(files_by_subject.keys())[0]
+            sample_files = files_by_subject[sample_subj]
+            print(f"   Sample: {sample_subj} has sessions: {list(sample_files.keys())}")
     
     return all_pairs
 
