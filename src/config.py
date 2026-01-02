@@ -11,13 +11,17 @@ from typing import Tuple, Optional, List
 class DataConfig:
     """Data paths and organization."""
     # Root directory containing BIDS-formatted dataset
-    data_root: Path = Path(r"d:\11PrabeshX\Projects\major_\Nifti")
+    # Use environment variable or default to relative path
+    data_root: Path = Path.cwd() / "Nifti"
     
     # Output directory for preprocessed data
-    output_root: Path = Path(r"d:\11PrabeshX\Projects\major_\preprocessed")
+    output_root: Path = Path.cwd() / "preprocessed"
+    
+    # Output directory for registered data
+    registered_root: Path = Path.cwd() / "preprocessed_registered"
     
     # Cache directory for intermediate results
-    cache_dir: Path = Path(r"d:\11PrabeshX\Projects\major_\cache")
+    cache_dir: Path = Path.cwd() / "cache"
     
     # Number of subjects in dataset
     num_subjects: int = 10

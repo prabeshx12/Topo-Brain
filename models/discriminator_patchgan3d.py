@@ -6,18 +6,21 @@ Architecture:
 - Operates on local 3D patches
 - Outputs spatial map of real/fake predictions
 - No pooling - uses strided convolutions for downsampling
+- Spectral normalization for training stability
 """
 import torch
 import torch.nn as nn
+from torch.nn.utils import spectral_norm
 
 
 class DiscriminatorBlock3D(nn.Module):
     """
-    Discriminator convolutional block.
+    Discriminator convolutional block with spectral normalization.
     
     Conv3D (stride 2) -> InstanceNorm3D -> LeakyReLU
     
     Note: First block doesn't use normalization (common practice).
+    Spectral normalization applied to all Conv layers for stability.
     """
     def __init__(
         self,
@@ -29,19 +32,24 @@ class DiscriminatorBlock3D(nn.Module):
         use_norm: bool = True,
         norm_type: str = "instance",
         num_groups: int = 8,
+        use_spectral_norm: bool = True,
     ):
         super().__init__()
         
-        layers = [
-            nn.Conv3d(
-                in_channels,
-                out_channels,
-                kernel_size=kernel_size,
-                stride=stride,
-                padding=padding,
-                bias=not use_norm,
-            )
-        ]
+        # Convolutional layer with optional spectral normalization
+        conv_layer = nn.Conv3d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=not use_norm,
+        )
+        
+        if use_spectral_norm:
+            conv_layer = spectral_norm(conv_layer)
+        
+        layers = [conv_layer]
         
         if use_norm:
             if norm_type == "instance":
@@ -61,7 +69,7 @@ class DiscriminatorBlock3D(nn.Module):
 
 class PatchGANDiscriminator3D(nn.Module):
     """
-    3D PatchGAN Discriminator for MRI.
+    3D PatchGAN Discriminator for MRI with Spectral Normalization.
     
     Classifies whether 3D patches are real (7T) or fake (generated).
     Output is a spatial map of predictions rather than a single scalar.
@@ -76,6 +84,7 @@ class PatchGANDiscriminator3D(nn.Module):
         num_layers: Number of discriminator layers
         norm_type: Normalization type ("instance" or "group")
         num_groups: Number of groups for GroupNorm
+        use_spectral_norm: Whether to use spectral normalization (recommended)
     """
     def __init__(
         self,
@@ -84,26 +93,29 @@ class PatchGANDiscriminator3D(nn.Module):
         num_layers: int = 3,
         norm_type: str = "instance",
         num_groups: int = 8,
+        use_spectral_norm: bool = True,
     ):
         super().__init__()
         
         self.in_channels = in_channels
         self.base_features = base_features
         self.num_layers = num_layers
+        self.use_spectral_norm = use_spectral_norm
         
         # Build discriminator layers
         layers = []
         
-        # First layer: no normalization
+        # First layer: no normalization but with spectral norm
         layers.append(
             DiscriminatorBlock3D(
                 in_channels, base_features,
                 kernel_size=4, stride=2, padding=1,
                 use_norm=False,  # No norm in first layer
+                use_spectral_norm=use_spectral_norm,
             )
         )
         
-        # Middle layers: with normalization
+        # Middle layers: with normalization and spectral norm
         current_features = base_features
         for i in range(1, num_layers):
             next_features = min(current_features * 2, 512)  # Cap at 512
@@ -114,6 +126,7 @@ class PatchGANDiscriminator3D(nn.Module):
                     use_norm=True,
                     norm_type=norm_type,
                     num_groups=num_groups,
+                    use_spectral_norm=use_spectral_norm,
                 )
             )
             current_features = next_features
@@ -127,18 +140,21 @@ class PatchGANDiscriminator3D(nn.Module):
                 use_norm=True,
                 norm_type=norm_type,
                 num_groups=num_groups,
+                use_spectral_norm=use_spectral_norm,
             )
         )
         current_features = next_features
         
         # Final layer: output logits (no normalization, no activation)
-        layers.append(
-            nn.Conv3d(
-                current_features, 1,
-                kernel_size=4, stride=1, padding=1,
-                bias=True,
-            )
+        final_conv = nn.Conv3d(
+            current_features, 1,
+            kernel_size=4, stride=1, padding=1,
+            bias=True,
         )
+        if use_spectral_norm:
+            final_conv = spectral_norm(final_conv)
+        
+        layers.append(final_conv)
         
         self.model = nn.Sequential(*layers)
     

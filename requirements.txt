@@ -1,53 +1,107 @@
-# Brain MRI Preprocessing Pipeline - Requirements
+# Topo-Brain: 3T→7T MRI Enhancement Pipeline Requirements
+# Three-Stage Pipeline: GAN → Persistent Homology → Latent Diffusion
 # Python 3.8+
 
-# Core Deep Learning Frameworks
+# ====================
+# Core Deep Learning
+# ====================
 torch>=2.0.0
 torchvision>=0.15.0
+einops>=0.7.0  # For tensor operations
 
+# ====================
 # Medical Imaging
+# ====================
 monai>=1.3.0
 nibabel>=5.0.0
 SimpleITK>=2.3.0
 pydicom>=2.4.0
 
+# ====================
+# Topology (Persistent Homology)
+# ====================
+# Install ONE of these:
+gudhi>=3.8.0  # Recommended for persistent homology
+# OR
+# giotto-tda>=0.6.0  # Alternative topology library
+
+# ====================
 # Scientific Computing
+# ====================
 numpy>=1.24.0
 scipy>=1.10.0
 
+# ====================
 # Data Processing
+# ====================
 pandas>=2.0.0
 scikit-learn>=1.3.0
 
+# ====================
 # Visualization
+# ====================
 matplotlib>=3.7.0
 seaborn>=0.12.0
+plotly>=5.17.0  # For interactive plots
 
-# Progress Bars
+# ====================
+# Progress & Logging
+# ====================
 tqdm>=4.65.0
-
-# Logging and Configuration
 pyyaml>=6.0
 tensorboard>=2.13.0
+wandb>=0.16.0  # For experiment tracking (optional)
 
+# ====================
 # Image Quality Metrics
+# ====================
 scikit-image>=0.21.0
+lpips>=0.1.4  # Perceptual loss metric
+pytorch-fid>=0.3.0  # Fréchet Inception Distance
 
-# Optional: For Jupyter notebook usage
+# ====================
+# Additional Utilities
+# ====================
+pillow>=10.0.0
+opencv-python>=4.8.0
+
+# ====================
+# Jupyter (Optional)
+# ====================
 jupyter>=1.0.0
 ipywidgets>=8.0.0
+jupyterlab>=4.0.0
 
-# Optional: For advanced brain extraction
-# Note: These require additional setup/installation
-# antspyx>=0.3.8  # For ANTs-based processing
-# HD-BET  # For skull stripping (install separately)
-# SynthStrip  # For skull stripping (install separately)
-
-# Optional: For GPU acceleration
-# cupy-cuda11x>=12.0.0  # Match with your CUDA version
-
-# Testing and Development (optional)
+# ====================
+# Testing & Development
+# ====================
 pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.0.0  # Code formatter
+flake8>=6.0.0  # Linter
+mypy>=1.5.0  # Type checker
+
+# ====================
+# Installation Notes
+# ====================
+
+# 1. Install PyTorch with CUDA support:
+#    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# 2. Install gudhi for topology:
+#    conda install -c conda-forge gudhi
+#    # OR
+#    pip install gudhi
+
+# 3. For GPU acceleration (optional):
+#    pip install cupy-cuda11x  # Match with your CUDA version
+
+# 4. For advanced skull stripping (optional):
+#    # HD-BET (included in repo)
+#    cd HD-BET && pip install -e .
+#
+#    # OR SynthStrip
+#    # Follow: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/
 pytest-cov>=4.1.0
 black>=23.7.0
 flake8>=6.1.0

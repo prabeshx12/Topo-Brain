@@ -539,6 +539,180 @@ class MRIPreprocessor:
         return output_paths
 
 
+class ImageRegistration:
+    """
+    3T to 7T image registration using SimpleITK.
+    Implements rigid and affine registration with mutual information metric.
+    """
+    def __init__(
+        self,
+        registration_type: str = "rigid",  # "rigid" or "affine"
+        num_iterations: int = 100,
+        learning_rate: float = 1.0,
+        sampling_percentage: float = 0.01,
+        num_histogram_bins: int = 50,
+    ):
+        self.registration_type = registration_type
+        self.num_iterations = num_iterations
+        self.learning_rate = learning_rate
+        self.sampling_percentage = sampling_percentage
+        self.num_histogram_bins = num_histogram_bins
+    
+    def register(
+        self,
+        moving_image_path: Path,
+        fixed_image_path: Path,
+        output_path: Path,
+        return_transform: bool = False,
+    ) -> Union[Path, Tuple[Path, sitk.Transform]]:
+        """
+        Register moving image (3T) to fixed image (7T) space.
+        
+        Args:
+            moving_image_path: Path to 3T image
+            fixed_image_path: Path to 7T image (reference)
+            output_path: Where to save registered 3T
+            return_transform: Whether to return transform object
+            
+        Returns:
+            Path to registered image (and optionally the transform)
+        """
+        # Load images
+        fixed_image = sitk.ReadImage(str(fixed_image_path), sitk.sitkFloat32)
+        moving_image = sitk.ReadImage(str(moving_image_path), sitk.sitkFloat32)
+        
+        # Initialize registration method
+        registration = sitk.ImageRegistrationMethod()
+        
+        # Similarity metric: Mutual Information (best for multi-modal)
+        registration.SetMetricAsMattesMutualInformation(
+            numberOfHistogramBins=self.num_histogram_bins
+        )
+        registration.SetMetricSamplingStrategy(registration.RANDOM)
+        registration.SetMetricSamplingPercentage(self.sampling_percentage)
+        
+        # Interpolator
+        registration.SetInterpolator(sitk.sitkLinear)
+        
+        # Optimizer
+        registration.SetOptimizerAsGradientDescent(
+            learningRate=self.learning_rate,
+            numberOfIterations=self.num_iterations,
+            convergenceMinimumValue=1e-6,
+            convergenceWindowSize=10
+        )
+        registration.SetOptimizerScalesFromPhysicalShift()
+        
+        # Initial transform
+        if self.registration_type == "rigid":
+            initial_transform = sitk.CenteredTransformInitializer(
+                fixed_image,
+                moving_image,
+                sitk.Euler3DTransform(),
+                sitk.CenteredTransformInitializerFilter.GEOMETRY
+            )
+        elif self.registration_type == "affine":
+            initial_transform = sitk.CenteredTransformInitializer(
+                fixed_image,
+                moving_image,
+                sitk.AffineTransform(3),
+                sitk.CenteredTransformInitializerFilter.GEOMETRY
+            )
+        else:
+            raise ValueError(f"Unknown registration_type: {self.registration_type}")
+        
+        registration.SetInitialTransform(initial_transform, inPlace=False)
+        
+        # Multi-resolution framework
+        registration.SetShrinkFactorsPerLevel(shrinkFactors=[4, 2, 1])
+        registration.SetSmoothingSigmasPerLevel(smoothingSigmas=[2, 1, 0])
+        registration.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
+        
+        # Execute registration
+        logger.info(f"Registering {moving_image_path.name} to {fixed_image_path.name}")
+        final_transform = registration.Execute(fixed_image, moving_image)
+        
+        # Log metrics
+        final_metric = registration.GetMetricValue()
+        stop_condition = registration.GetOptimizerStopConditionDescription()
+        logger.info(
+            f"Registration completed: final_metric={final_metric:.4f}, "
+            f"stop_condition={stop_condition}"
+        )
+        
+        # Resample moving image to fixed space
+        resampler = sitk.ResampleImageFilter()
+        resampler.SetReferenceImage(fixed_image)
+        resampler.SetInterpolator(sitk.sitkLinear)
+        resampler.SetDefaultPixelValue(0)
+        resampler.SetTransform(final_transform)
+        
+        registered_image = resampler.Execute(moving_image)
+        
+        # Save
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        sitk.WriteImage(registered_image, str(output_path))
+        logger.info(f"Saved registered image: {output_path}")
+        
+        if return_transform:
+            return output_path, final_transform
+        return output_path
+    
+    def validate_registration(
+        self,
+        registered_image_path: Path,
+        fixed_image_path: Path,
+        output_checkerboard_path: Optional[Path] = None,
+    ) -> Dict[str, float]:
+        """
+        Validate registration quality using correlation and mutual information.
+        
+        Args:
+            registered_image_path: Path to registered 3T image
+            fixed_image_path: Path to 7T reference
+            output_checkerboard_path: Optional path to save checkerboard visualization
+            
+        Returns:
+            Dictionary with quality metrics
+        """
+        # Load images
+        registered_img = sitk.ReadImage(str(registered_image_path))
+        fixed_img = sitk.ReadImage(str(fixed_image_path))
+        
+        # Convert to numpy for correlation
+        reg_array = sitk.GetArrayFromImage(registered_img).flatten()
+        fixed_array = sitk.GetArrayFromImage(fixed_img).flatten()
+        
+        # Pearson correlation
+        from scipy.stats import pearsonr
+        correlation, _ = pearsonr(reg_array, fixed_array)
+        
+        # Normalized cross-correlation
+        ncc = np.corrcoef(reg_array, fixed_array)[0, 1]
+        
+        # Mean squared error
+        mse = np.mean((reg_array - fixed_array) ** 2)
+        
+        # Optional: Save checkerboard visualization
+        if output_checkerboard_path is not None:
+            checkerboard = sitk.CheckerBoard(
+                registered_img,
+                fixed_img,
+                checkerboardPattern=[8, 8, 8]
+            )
+            sitk.WriteImage(checkerboard, str(output_checkerboard_path))
+            logger.info(f"Saved checkerboard: {output_checkerboard_path}")
+        
+        metrics = {
+            'correlation': float(correlation),
+            'normalized_cross_correlation': float(ncc),
+            'mse': float(mse),
+        }
+        
+        logger.info(f"Registration metrics: {metrics}")
+        return metrics
+
+
 if __name__ == "__main__":
     # Example usage
     from config import get_default_config
@@ -549,7 +723,7 @@ if __name__ == "__main__":
     preprocessor = MRIPreprocessor(config.preprocessing)
     
     # Test on a single file
-    test_file = Path(r"d:\11PrabeshX\Projects\major_\Nifti\sub-01\ses-1\anat\sub-01_ses-1_T1w_defaced.nii.gz")
+    test_file = Path.cwd() / "Nifti" / "sub-01" / "ses-1" / "anat" / "sub-01_ses-1_T1w_defaced.nii.gz"
     
     if test_file.exists():
         output_path = config.data.output_root / "test_output.nii.gz"
