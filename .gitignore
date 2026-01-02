@@ -53,6 +53,7 @@ cache/
 *.dcm
 Nifti/
 new/
+Aligned/
 
 # HD-BET dependency (users should install separately)
 HD-BET/

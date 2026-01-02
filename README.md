@@ -1,53 +1,122 @@
-# Topo-Brain: 3T→7T MRI Super-Resolution with GANs
+# 🧠 Topo-Brain: 3T→7T MRI Super-Resolution with GANs
 
-A complete pipeline for MRI preprocessing and 3T-to-7T super-resolution using 3D U-Net GANs. Includes brain extraction, preprocessing, and GAN training for generating high-field MRI images from low-field scans.
+**End-to-end pipeline for 3T-to-7T MRI super-resolution using 3D U-Net GANs**
+
+Transform low-field (3T) brain MRI scans into high-field (7T) quality images using deep learning.
+
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-orange)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Colab](https://img.shields.io/badge/Colab-Ready-yellow)](https://colab.research.google.com/)
+
+---
+
+## 🚀 Quick Start
+
+### **Google Colab (Recommended)**
+1. Open `gan_training_colab_aligned.ipynb` in Colab
+2. Mount your Google Drive with Aligned dataset
+3. Run all cells → Start training immediately! 🎉
+
+### **Local Setup**
+```bash
+git clone https://github.com/prabeshx12/Topo-Brain.git
+cd Topo-Brain
+pip install -r requirements.txt
+python scripts/train_gan.py
+```
+
+---
 
 ## 🎯 Features
 
-### Preprocessing Pipeline
-- **HD-BET Brain Extraction**: Deep learning-based skull stripping
-- **N4 Bias Field Correction**: Optional intensity non-uniformity correction
-- **Spatial Normalization**: RAS+ reorientation, isotropic resampling
-- **Intensity Normalization**: Z-score, min-max, or percentile methods
-- **Quality Control**: Automated QC metrics and outlier detection
+### **Preprocessing Pipeline**
+✅ **HD-BET Skull Stripping** - Deep learning brain extraction  
+✅ **N4 Bias Correction** - Optional intensity uniformity (disabled by default)  
+✅ **Spatial Alignment** - Pre-registered dataset (256×304×308)  
+✅ **Intensity Normalization** - Z-score on brain tissue  
+✅ **Quality Control** - Automated visualizations and metrics  
 
-### GAN Architecture (3T→7T Super-Resolution)
-- **3D U-Net Generator**: 5-level encoder-decoder with skip connections
-- **3D PatchGAN Discriminator**: Multi-scale adversarial training
-- **Paired Dataset**: Aligned 3T-7T pairs for supervised learning
-- **Patient-Level Splits**: No data leakage between train/val/test
-- **Advanced Augmentation**: MRI-specific augmentations (rotation, intensity, Gibbs ringing)
+### **GAN Architecture**
+🔥 **3D U-Net Generator** - 5-level encoder-decoder with skip connections  
+🔥 **3D PatchGAN Discriminator** - Multi-scale adversarial training  
+🔥 **Paired Training** - Supervised learning with aligned 3T-7T pairs  
+🔥 **Patient-Level Splits** - No data leakage (60/20/20 train/val/test)  
+🔥 **Smart Augmentation** - MRI-specific transforms (rotation, intensity, noise)  
 
-### Production Features
-- **Deterministic & Reproducible**: Fixed random seeds, saved splits
-- **Config-Driven**: Flexible configuration with multiple presets
-- **TensorBoard Integration**: Real-time training monitoring
-- **Mixed Precision Support**: AMP for faster training
-- **Kaggle/Colab Ready**: Cloud preprocessing notebook included
+### **Production Ready**
+⚡ **Colab Optimized** - Lightweight models for T4 GPU (32 base features)  
+⚡ **Google Drive Integration** - Automatic data persistence  
+⚡ **On-the-fly Normalization** - No preprocessing needed for quick start  
+⚡ **Mixed Precision** - AMP for faster training  
+⚡ **TensorBoard Logging** - Real-time monitoring  
 
-## 📊 Dataset Structure
+---
 
-Your dataset follows the BIDS format:
-- **10 subjects** (sub-01 to sub-10)
-- **2 sessions per subject**:
+## 📊 Dataset
+
+**UNC 3T-7T Paired Brain MRI Dataset**
+
+- **Subjects:** 10 (sub-01 to sub-10)
+- **Sessions:** 
   - `ses-1`: 3T scans
-  - `ses-2`: 7T scans (~7T)
-- **Modalities**: T1w and T2w
+  - `ses-2`: 7T scans
+- **Modalities:** T1-weighted, T2-weighted
+- **Format:** BIDS-compliant NIfTI (.nii.gz)
+- **Spatial Alignment:** Pre-registered in `Aligned/` folder (256×304×308)
 
-## 📁 Project Structure
+---
+
+## 📁 Directory Structure
 
 ```
 Topo-Brain/
-├── README.md                              # This file
-├── requirements.txt                       # Python dependencies
-├── kaggle_preprocessing_notebook.ipynb    # Cloud preprocessing
+├── 📓 Notebooks
+│   ├── gan_training_colab_aligned.ipynb    ⭐ Main GAN training (Colab)
+│   └── preprocessing_pipeline_colab.ipynb  ⭐ Preprocessing pipeline (Colab)
 │
-├── docs/                                  # 📚 Documentation
-│   ├── ARCHITECTURE.md                    # System architecture
-│   ├── CHANGELOG.md                       # Version history
-│   ├── GAN_IMPLEMENTATION_SUMMARY.md      # GAN details
-│   ├── GAN_README.md                      # GAN documentation
-│   └── IMPROVEMENTS_IMPLEMENTED.md        # Enhancement log
+├── 📦 Source Code
+│   ├── src/
+│   │   ├── preprocessing.py                # N4, skull stripping, normalization
+│   │   ├── config.py                       # Configuration management
+│   │   ├── dataset.py                      # PyTorch datasets
+│   │   ├── quality_control.py              # QC metrics
+│   │   └── utils.py                        # Utilities
+│   └── models/
+│       ├── generator_unet3d.py             # 3D U-Net generator
+│       ├── discriminator_patchgan3d.py     # 3D PatchGAN discriminator
+│       └── paired_dataset.py               # Paired 3T-7T loader
+│
+├── 🔧 Scripts
+│   ├── scripts/
+│   │   ├── train_gan.py                    # Training script
+│   │   ├── test_gan.py                     # Inference script
+│   │   ├── eval_gan.py                     # Evaluation metrics
+│   │   └── generate_brain_masks.py         # HD-BET wrapper
+│   └── notebooks/
+│       └── interactive_pipeline.ipynb      # Interactive analysis
+│
+├── 📊 Data (not in repo - too large)
+│   ├── Nifti/                              # Raw BIDS data
+│   ├── Aligned/                            # Pre-registered (use this!)
+│   └── preprocessed/                       # Optional preprocessing output
+│
+├── 📝 Documentation
+│   ├── docs/
+│   │   ├── ARCHITECTURE.md
+│   │   ├── GAN_README.md
+│   │   └── CHANGELOG.md
+│   ├── README.md                           # This file
+│   ├── DIRECTORY_STRUCTURE.md              # Detailed structure
+│   └── requirements.txt                    # Dependencies
+│
+└── 📂 Output (generated during runtime)
+    ├── cache/                              # Temporary files
+    ├── logs/                               # Training logs
+    └── models/                             # Saved checkpoints
+```
+
+**See [DIRECTORY_STRUCTURE.md](DIRECTORY_STRUCTURE.md) for complete details.**
 │
 ├── src/                                   # 🐍 Core modules
 │   ├── __init__.py

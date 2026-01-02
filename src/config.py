@@ -69,8 +69,10 @@ class PreprocessingConfig:
     clip_lower_percentile: float = 0.5
     clip_upper_percentile: float = 99.5
     
-    # Padding/Cropping to fixed size (None to skip)
-    target_size: Optional[Tuple[int, int, int]] = None  # e.g., (128, 128, 128)
+    # Padding/Cropping to fixed size (IMPORTANT for paired GAN training!)
+    # Set to common size to ensure 3T and 7T images match
+    # For UNC dataset: Use (167, 256, 320) based on common 3T size, or None for variable sizes
+    target_size: Optional[Tuple[int, int, int]] = (167, 256, 320)  # Set for consistent paired training
     
     # Number of workers for parallel processing
     num_workers: int = 4
