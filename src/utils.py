@@ -13,17 +13,16 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import nibabel as nib
 
+from .config import MRIConfig, DataConfig
+
+logger = logging.getLogger(__name__)
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_AVAILABLE = True
 except ImportError:
     TENSORBOARD_AVAILABLE = False
     logger.warning("TensorBoard not available. Install with: pip install tensorboard")
-
-from .config import MRIConfig, DataConfig
-
-
-logger = logging.getLogger(__name__)
 
 
 def setup_logging(config: MRIConfig) -> None:

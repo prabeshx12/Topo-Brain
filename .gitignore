@@ -29,8 +29,10 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb_checkpoints/
+# Keep only the main notebooks
 *.ipynb
-!kaggle_preprocessing_notebook.ipynb
+!notebooks/colab_training.ipynb
+!notebooks/interactive_pipeline.ipynb
 
 # IDE
 .vscode/
