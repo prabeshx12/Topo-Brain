@@ -102,3 +102,4 @@ dmypy.json
 # Keep important files
 !Nifti/dataset_description.json
 !Nifti/README.md
+*.md
