@@ -60,11 +60,22 @@ def register_dataset(
         subject_id = subject_dir.name
         
         # Find 3T and 7T files (ses-1 = 3T, ses-2 = 7T)
-        t1w_3t = subject_dir / "ses-1" / "anat" / f"{subject_id}_ses-1_T1w_preprocessed.nii.gz"
-        t1w_7t = subject_dir / "ses-2" / "anat" / f"{subject_id}_ses-2_T1w_preprocessed.nii.gz"
+        # Try both filename patterns: with and without '_defaced'
+        t1w_3t = subject_dir / "ses-1" / "anat" / f"{subject_id}_ses-1_T1w_defaced_preprocessed.nii.gz"
+        if not t1w_3t.exists():
+            t1w_3t = subject_dir / "ses-1" / "anat" / f"{subject_id}_ses-1_T1w_preprocessed.nii.gz"
         
-        t2w_3t = subject_dir / "ses-1" / "anat" / f"{subject_id}_ses-1_T2w_preprocessed.nii.gz"
-        t2w_7t = subject_dir / "ses-2" / "anat" / f"{subject_id}_ses-2_T2w_preprocessed.nii.gz"
+        t1w_7t = subject_dir / "ses-2" / "anat" / f"{subject_id}_ses-2_T1w_defaced_preprocessed.nii.gz"
+        if not t1w_7t.exists():
+            t1w_7t = subject_dir / "ses-2" / "anat" / f"{subject_id}_ses-2_T1w_preprocessed.nii.gz"
+        
+        t2w_3t = subject_dir / "ses-1" / "anat" / f"{subject_id}_ses-1_T2w_defaced_preprocessed.nii.gz"
+        if not t2w_3t.exists():
+            t2w_3t = subject_dir / "ses-1" / "anat" / f"{subject_id}_ses-1_T2w_preprocessed.nii.gz"
+        
+        t2w_7t = subject_dir / "ses-2" / "anat" / f"{subject_id}_ses-2_T2w_defaced_preprocessed.nii.gz"
+        if not t2w_7t.exists():
+            t2w_7t = subject_dir / "ses-2" / "anat" / f"{subject_id}_ses-2_T2w_preprocessed.nii.gz"
         
         subject_report = {
             'subject': subject_id,
@@ -198,8 +209,12 @@ def main():
     
     args = parser.parse_args()
     
-    # Setup logging
-    setup_logging(level=args.log_level)
+    # Setup logging (simple version without config)
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
     
     # Convert paths
     input_dir = Path(args.input)

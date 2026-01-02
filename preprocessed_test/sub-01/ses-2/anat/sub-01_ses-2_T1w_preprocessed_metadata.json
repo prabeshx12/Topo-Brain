@@ -1,0 +1,34 @@
+{
+  "original_path": "Nifti\\sub-01\\ses-2\\anat\\sub-01_ses-2_T1w_defaced.nii.gz",
+  "original_shape": [
+    256,
+    304,
+    308
+  ],
+  "processed_shape": [
+    1,
+    167,
+    198,
+    308
+  ],
+  "statistics": {
+    "mean": 3.068440079800894e-08,
+    "std": 1.0000001192092896,
+    "min": -0.6342791318893433,
+    "max": 4.444723606109619,
+    "median": -0.5543466806411743,
+    "p01": -0.6342791318893433,
+    "p99": 3.878162384033203
+  },
+  "preprocessing_config": {
+    "orientation": "RAS",
+    "spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "normalization": "zscore",
+    "bias_correction": false,
+    "skull_stripping": false
+  }
+}

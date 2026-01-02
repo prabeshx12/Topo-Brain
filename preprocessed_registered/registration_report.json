@@ -1,0 +1,122 @@
+[
+  {
+    "subject": "sub-01",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-02",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-03",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-04",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-05",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-06",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-07",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "Exception thrown in SimpleITK ImageRegistrationMethod_Execute: D:\\a\\SimpleITK\\SimpleITK\\bld\\ITK-prefix\\include\\ITK-5.4\\itkMattesMutualInformationImageToImageMetricv4.hxx:311:\nITK ERROR: MattesMutualInformationImageToImageMetricv4(000002467521B790): All samples map outside moving image buffer. The images do not sufficiently overlap. They need to be initialized to have more overlap before this metric will work. For instance, you can align the image centers by translation.\n"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-08",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-09",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  },
+  {
+    "subject": "sub-10",
+    "status": "partial_failure",
+    "modalities": {
+      "T1w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      },
+      "T2w": {
+        "error": "CheckerBoard() got an unexpected keyword argument 'checkerboardPattern'. Did you mean 'checkerPattern'?"
+      }
+    }
+  }
+]

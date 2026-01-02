@@ -58,7 +58,7 @@ class PreprocessingConfig:
     n4_convergence_threshold: float = 0.001
     
     # Skull stripping
-    use_skull_stripping: bool = True
+    use_skull_stripping: bool = False  # Disabled - different masks cause registration issues
     brain_mask_pattern: str = "*brain_mask.nii.gz"  # If masks are available
     
     # Intensity normalization method

@@ -322,7 +322,8 @@ class MRIPreprocessor:
         transforms_list = [
             LoadImaged(keys=["image"], image_only=False, ensure_channel_first=True),
             EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
-            Orientationd(keys=["image"], axcodes=self.config.target_orientation),
+            # Skip Orientationd to avoid metadata issues - handle orientation with nibabel instead
+            # Orientationd(keys=["image"], axcodes=self.config.target_orientation),
         ]
         
         # Add resampling if target spacing is specified
@@ -577,82 +578,120 @@ class ImageRegistration:
         Returns:
             Path to registered image (and optionally the transform)
         """
-        # Load images
-        fixed_image = sitk.ReadImage(str(fixed_image_path), sitk.sitkFloat32)
-        moving_image = sitk.ReadImage(str(moving_image_path), sitk.sitkFloat32)
+        # Load images with nibabel first to check dimensions
+        nib_fixed = nib.load(str(fixed_image_path))
+        nib_moving = nib.load(str(moving_image_path))
         
-        # Initialize registration method
-        registration = sitk.ImageRegistrationMethod()
+        fixed_data = nib_fixed.get_fdata()
+        moving_data = nib_moving.get_fdata()
         
-        # Similarity metric: Mutual Information (best for multi-modal)
-        registration.SetMetricAsMattesMutualInformation(
-            numberOfHistogramBins=self.num_histogram_bins
-        )
-        registration.SetMetricSamplingStrategy(registration.RANDOM)
-        registration.SetMetricSamplingPercentage(self.sampling_percentage)
-        
-        # Interpolator
-        registration.SetInterpolator(sitk.sitkLinear)
-        
-        # Optimizer
-        registration.SetOptimizerAsGradientDescent(
-            learningRate=self.learning_rate,
-            numberOfIterations=self.num_iterations,
-            convergenceMinimumValue=1e-6,
-            convergenceWindowSize=10
-        )
-        registration.SetOptimizerScalesFromPhysicalShift()
-        
-        # Initial transform
-        if self.registration_type == "rigid":
-            initial_transform = sitk.CenteredTransformInitializer(
-                fixed_image,
-                moving_image,
-                sitk.Euler3DTransform(),
-                sitk.CenteredTransformInitializerFilter.GEOMETRY
-            )
-        elif self.registration_type == "affine":
-            initial_transform = sitk.CenteredTransformInitializer(
-                fixed_image,
-                moving_image,
-                sitk.AffineTransform(3),
-                sitk.CenteredTransformInitializerFilter.GEOMETRY
-            )
+        # Handle 4D images (squeeze out channel dimension if present)
+        if fixed_data.ndim == 4:
+            logger.debug(f"Fixed image is 4D: {fixed_data.shape}, squeezing...")
+            fixed_data = np.squeeze(fixed_data)
+            # Save as temporary 3D file
+            temp_fixed = Path(str(fixed_image_path).replace('.nii.gz', '_temp3d.nii.gz'))
+            nib.save(nib.Nifti1Image(fixed_data, nib_fixed.affine), str(temp_fixed))
+            fixed_image_path_to_use = temp_fixed
         else:
-            raise ValueError(f"Unknown registration_type: {self.registration_type}")
+            temp_fixed = None
+            fixed_image_path_to_use = fixed_image_path
         
-        registration.SetInitialTransform(initial_transform, inPlace=False)
+        if moving_data.ndim == 4:
+            logger.debug(f"Moving image is 4D: {moving_data.shape}, squeezing...")
+            moving_data = np.squeeze(moving_data)
+            # Save as temporary 3D file
+            temp_moving = Path(str(moving_image_path).replace('.nii.gz', '_temp3d.nii.gz'))
+            nib.save(nib.Nifti1Image(moving_data, nib_moving.affine), str(temp_moving))
+            moving_image_path_to_use = temp_moving
+        else:
+            temp_moving = None
+            moving_image_path_to_use = moving_image_path
         
-        # Multi-resolution framework
-        registration.SetShrinkFactorsPerLevel(shrinkFactors=[4, 2, 1])
-        registration.SetSmoothingSigmasPerLevel(smoothingSigmas=[2, 1, 0])
-        registration.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
-        
-        # Execute registration
-        logger.info(f"Registering {moving_image_path.name} to {fixed_image_path.name}")
-        final_transform = registration.Execute(fixed_image, moving_image)
-        
-        # Log metrics
-        final_metric = registration.GetMetricValue()
-        stop_condition = registration.GetOptimizerStopConditionDescription()
-        logger.info(
-            f"Registration completed: final_metric={final_metric:.4f}, "
-            f"stop_condition={stop_condition}"
-        )
-        
-        # Resample moving image to fixed space
-        resampler = sitk.ResampleImageFilter()
-        resampler.SetReferenceImage(fixed_image)
-        resampler.SetInterpolator(sitk.sitkLinear)
-        resampler.SetDefaultPixelValue(0)
-        resampler.SetTransform(final_transform)
-        
-        registered_image = resampler.Execute(moving_image)
-        
-        # Save
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        sitk.WriteImage(registered_image, str(output_path))
-        logger.info(f"Saved registered image: {output_path}")
+        try:
+            # Load images with SimpleITK
+            fixed_image = sitk.ReadImage(str(fixed_image_path_to_use), sitk.sitkFloat32)
+            moving_image = sitk.ReadImage(str(moving_image_path_to_use), sitk.sitkFloat32)
+            
+            # Initialize registration method
+            registration = sitk.ImageRegistrationMethod()
+            
+            # Similarity metric: Mutual Information (best for multi-modal)
+            registration.SetMetricAsMattesMutualInformation(
+                numberOfHistogramBins=self.num_histogram_bins
+            )
+            registration.SetMetricSamplingStrategy(registration.RANDOM)
+            registration.SetMetricSamplingPercentage(self.sampling_percentage)
+            
+            # Interpolator
+            registration.SetInterpolator(sitk.sitkLinear)
+            
+            # Optimizer
+            registration.SetOptimizerAsGradientDescent(
+                learningRate=self.learning_rate,
+                numberOfIterations=self.num_iterations,
+                convergenceMinimumValue=1e-6,
+                convergenceWindowSize=10
+            )
+            registration.SetOptimizerScalesFromPhysicalShift()
+            
+            # Initial transform
+            if self.registration_type == "rigid":
+                initial_transform = sitk.CenteredTransformInitializer(
+                    fixed_image,
+                    moving_image,
+                    sitk.Euler3DTransform(),
+                    sitk.CenteredTransformInitializerFilter.GEOMETRY
+                )
+            elif self.registration_type == "affine":
+                initial_transform = sitk.CenteredTransformInitializer(
+                    fixed_image,
+                    moving_image,
+                    sitk.AffineTransform(3),
+                    sitk.CenteredTransformInitializerFilter.GEOMETRY
+                )
+            else:
+                raise ValueError(f"Unknown registration_type: {self.registration_type}")
+            
+            registration.SetInitialTransform(initial_transform, inPlace=False)
+            
+            # Multi-resolution framework
+            registration.SetShrinkFactorsPerLevel(shrinkFactors=[4, 2, 1])
+            registration.SetSmoothingSigmasPerLevel(smoothingSigmas=[2, 1, 0])
+            registration.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
+            
+            # Execute registration
+            logger.info(f"Registering {moving_image_path.name} to {fixed_image_path.name}")
+            final_transform = registration.Execute(fixed_image, moving_image)
+            
+            # Log metrics
+            final_metric = registration.GetMetricValue()
+            stop_condition = registration.GetOptimizerStopConditionDescription()
+            logger.info(
+                f"Registration completed: final_metric={final_metric:.4f}, "
+                f"stop_condition={stop_condition}"
+            )
+            
+            # Resample moving image to fixed space
+            resampler = sitk.ResampleImageFilter()
+            resampler.SetReferenceImage(fixed_image)
+            resampler.SetInterpolator(sitk.sitkLinear)
+            resampler.SetDefaultPixelValue(0)
+            resampler.SetTransform(final_transform)
+            
+            registered_image = resampler.Execute(moving_image)
+            
+            # Save
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            sitk.WriteImage(registered_image, str(output_path))
+            logger.info(f"Saved registered image: {output_path}")
+            
+        finally:
+            # Clean up temporary files
+            if temp_fixed and temp_fixed.exists():
+                temp_fixed.unlink()
+            if temp_moving and temp_moving.exists():
+                temp_moving.unlink()
         
         if return_transform:
             return output_path, final_transform
@@ -698,7 +737,7 @@ class ImageRegistration:
             checkerboard = sitk.CheckerBoard(
                 registered_img,
                 fixed_img,
-                checkerboardPattern=[8, 8, 8]
+                checkerPattern=[8, 8, 8]
             )
             sitk.WriteImage(checkerboard, str(output_checkerboard_path))
             logger.info(f"Saved checkerboard: {output_checkerboard_path}")
