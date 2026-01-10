@@ -343,7 +343,7 @@ Examples:
     logger.info(f"Data root: {data_root}")
     
     # Find all input files
-    input_files = sorted(data_root.glob("**/*_defaced.nii.gz"))
+    input_files = sorted(data_root.glob("**/*_defaced_registered.nii.gz"))
     
     if len(input_files) == 0:
         logger.error(f"No *_defaced.nii.gz files found in {data_root}")
