@@ -1,0 +1,42 @@
+# Dataset Configuration for 3T-7T MRI Synthesis
+# Implements Blueprint Section 6 (Data Formulation for Learning)
+
+# Path to preprocessed data
+preprocessed_root: derivatives/topobrain-preproc
+
+# Patch extraction settings (Section 6.2)
+patch:
+  size: [64, 64, 64]  # 64³ patches per blueprint recommendation
+  patches_per_volume: 32  # Number of patches sampled per volume per epoch
+  min_brain_fraction: 0.1  # Minimum brain tissue in patch
+  overlap_ratio: 0.5  # For inference patch stitching
+
+# Input configuration (Section 6.1, 6.3)
+input:
+  modality: T1w  # Primary input modality
+  use_t2: false  # Multi-modal T1+T2 input (future enhancement)
+
+# Target configuration
+target:
+  modality: T1w  # Output is always 7T T1w
+
+# Data splitting (Section 6.4)
+split:
+  n_folds: 10  # Use 10-fold for 10 subjects (LOOCV)
+  use_loocv: true  # Leave-one-out cross-validation
+  val_fold: 0  # Initial validation fold
+  seed: 42
+
+# DataLoader settings
+loader:
+  batch_size: 4
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
+
+# Augmentation (paired - same transform to input and target)
+augmentation:
+  enabled: true
+  random_flip: true
+  random_rotation: true
+  intensity_jitter: false  # Disabled for synthesis task

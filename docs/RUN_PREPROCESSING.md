@@ -38,6 +38,31 @@ Outputs
 - Logs: `derivatives/topobrain-preproc/logs/preprocess.log`
 - QC mask overlays (sampled): `derivatives/topobrain-preproc/qc/*.png`
 
+## Enhanced Quality Control (Optional)
+
+After preprocessing, you can run enhanced QC to verify:
+- **Alignment QC**: Checkerboard and edge overlays for 3T-7T alignment verification
+- **Mask Quality**: Volume checks, boundary detection, connected components analysis
+- **MRIQC Integration**: Parses existing MRIQC JSON metrics if available
+
+```bash
+python scripts/run_qc.py \
+  --preprocessed-root /path/to/BIDS/derivatives/topobrain-preproc
+```
+
+Options:
+- `--alignment-only`: Run only 3T-7T alignment QC (generates visualizations)
+- `--mask-only`: Run only mask quality validation
+- `--mriqc-only`: Run only MRIQC metric integration
+- `--max-alignment-samples N`: Limit alignment QC to N pairs
+- `--output-dir PATH`: Custom output directory for QC results
+
+Outputs:
+- `qc/alignment/*.png`: Alignment QC visualizations per subject
+- `qc/alignment/alignment_qc_results.json`: Alignment scores (NCC, edge MSE)
+- `qc/masks/mask_qc_results.json`: Mask validation results
+- `qc/mriqc/mriqc_integration.json`: MRIQC metrics if available
+
 Training and evaluation (using preprocessed data)
 
 Train GAN:

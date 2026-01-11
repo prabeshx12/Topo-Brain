@@ -24,7 +24,22 @@ from .utils import (
     set_random_seeds,
 )
 from .harmonization import HistogramMatcher, IntensityHarmonizer
-from .quality_control import QCMetrics, PreprocessingQC
+from .quality_control import (
+    QCMetrics,
+    PreprocessingQC,
+    AlignmentQC,
+    MaskQualityValidator,
+    MRIQCParser,
+)
+from .synthesis_dataset import (
+    PairedPatchDataset,
+    SubjectSplitter,
+    InferencePatchSampler,
+    PatchConfig,
+    SplitConfig,
+    load_pairs_manifest,
+    create_synthesis_dataloaders,
+)
 
 __all__ = [
     # Config
@@ -42,6 +57,14 @@ __all__ = [
     'save_data_split',
     'load_data_split',
     'compute_dataset_statistics',
+    # Synthesis Dataset
+    'PairedPatchDataset',
+    'SubjectSplitter',
+    'InferencePatchSampler',
+    'PatchConfig',
+    'SplitConfig',
+    'load_pairs_manifest',
+    'create_synthesis_dataloaders',
     # Utils
     'setup_logging',
     'discover_dataset',
@@ -61,4 +84,7 @@ __all__ = [
     # Quality Control
     'QCMetrics',
     'PreprocessingQC',
+    'AlignmentQC',
+    'MaskQualityValidator',
+    'MRIQCParser',
 ]

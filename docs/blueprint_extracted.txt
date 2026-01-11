@@ -1,0 +1,2191 @@
+Research Blueprint: Topology-Preserving 3T-to-7T
+MRI Enhancement for Early Alzheimer’s Detection
+1. Problem Re-Formulation (First Principles)
+Restating the Challenge: We aim to synthesize ultra-high-field 7 Tesla (7T) brain MRI from standard 3T MRI
+in a way that preserves true anatomical topology and clinical biomarkers. In practical terms, this means
+enhancing  3T  scans  to  “7T-quality” so  that  fine  structural  details  (e.g.  cortical  layers,  hippocampal
+subfields) become visible without introducing artifacts. The motivation is that 7T MRI offers superior
+resolution,  signal-to-noise  ratio  (SNR),  and  gray/white  matter  contrast,  enabling  detection  of  subtle
+neurodegenerative  changes  (like  early  Alzheimer’s  disease  pathology)  that  3T  often  misses
+.
+However, 7T scanners are extremely scarce (only ~100 worldwide vs ~20,000 3T scanners
+) due to
+high cost and technical complexity
+. Bridging this gap via 3T-to-7T image synthesis would democratize
+ultra-high-field imaging benefits for research and clinical care.
+Relevance in 2024–2025: This problem remains highly relevant and timely. Active research in the past few
+years  shows  continued  interest  in  3T-to-7T  MRI  synthesis
+.  Recent  works  (2020–2025)  propose
+various deep learning approaches – from convolutional regression
+ and conditional GANs
+ to wavelet-
+domain CNNs
+ and diffusion models
+ – indicating the field is not saturated. On the contrary, each
+new approach addresses shortcomings of previous ones (e.g. GAN artifacts, loss of fine details, limited data
+issues), suggesting room for genuine innovation. Furthermore, ultra-high-field MRI is gaining traction in
+studying diseases like Alzheimer’s: 7T MRI reveals structural changes (hippocampal atrophy, microinfarcts,
+cortical layer thinning) that 3T cannot
+. Enabling such insights from 3T data is an unmet need in
+neuroimaging.
+Potential Need for Reframing: We must ensure our formulation targets a publishable novelty. Simply doing
+“yet another 3T-to-7T GAN” is incremental now. The problem can be reframed to emphasize anatomical
+fidelity and clinical validity over purely visual super-resolution. In other words, instead of just generating
+sharp-looking 7T-like images, we ensure the synthetic images preserve brain topology (no spurious holes or
+disconnected structures) and maintain biomarker integrity (volumes, cortical thickness, hippocampal shape,
+etc.). This reframing addresses what reviewers and clinicians care about: Does the synthetic 7T image lead to
+better neurobiological analysis? We can also position the work as enhancing early Alzheimer’s detection –
+by  demonstrating  that  certain  AD-related  features  (e.g.  subtle  hippocampal  CA1  shrinkage
+ or
+microbleeds) become discernible on synthetic 7T images. This integration of a downstream diagnostic goal
+elevates the problem beyond generic image enhancement.
+Why It’s Worth a Q1 Paper: A successful solution would be the  first to combine ultra-high-field MRI
+synthesis with topology preservation and clinical validation. It would allow widespread exploitation of
+7T’s benefits using existing 3T data – effectively “software upgrading” installed MRI scanners. This has broad
+impact in neuroimaging and could improve studies in Alzheimer’s and other diseases by providing richer
+MRI data without new hardware. Moreover, our approach will contribute methodological innovations (e.g. a
+novel  topology-aware  loss  or  multi-task  training  with  segmentation)  that  generalize  to  other  image
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+1
+2
+14
+1
+enhancement problems. The significance, methodological rigor, and demonstrated clinical relevance are
+exactly what high-tier journals seek.
+Problem Scope Decisions: We will focus on  structural T1-weighted MRI as the primary modality for
+synthesis, because T1w images are the clinical standard for morphology (atrophy measurement, cortical
+thickness) in Alzheimer’s disease
+. T2-weighted images are also available in our dataset, but will be used
+as needed for complementary information rather than as the main target. Specifically, our pipeline will
+synthesize 7T T1w images from 3T T1w inputs, ensuring that critical anatomical features (e.g. hippocampal
+subfields, cortical microstructure) are faithfully enhanced. We choose T1w as the focus over T2w or other
+MRI types because T1w at 7T provides the most pronounced improvements in gray–white matter contrast
+and small structure visibility for AD research
+. In summary, the refined research question is: 
+“How can we generate anatomically and clinically faithful 7T-like T1-weighted brain MR images from 3T scans, in a
+way that preserves topology and enhances early Alzheimer’s biomarkers?”
+By grounding the problem in first principles (MRI physics and neurobiology) and aligning it with pressing
+needs (access to 7T-quality data, early AD detection), we ensure it remains relevant and compelling for a Q1
+audience.
+2. Research Landscape & Positioning (2021–2025)
+Before designing our solution, we must map the recent landscape to identify prevailing approaches and
+open gaps:
+What  Everyone  Is  Doing: Early  works  (pre-2020)  on  MRI  up-scaling  or  cross-field  synthesis  used
+straightforward  architectures  –  e.g.  linear  or  random  forest  mappings
+,  or  basic  CNN  regressors
+minimizing MSE
+. From ~2018 onward, deep learning became dominant, with convolutional neural
+networks (CNNs) learning the non-linear 3T→7T mapping. A common baseline is a 3D U-Net trained with
+voxel-wise losses (L1/L2). For example, Bahrami et al. 2016 applied a plain CNN with MSE loss for 3T-to-7T
+synthesis
+.  Soon  after,  generative  models  emerged:  GAN-based  approaches (e.g.  Nie  et  al.,  2018)
+introduced adversarial training to better hallucinate high-frequency details
+. GAN variants (Pix2Pix,
+CycleGAN if unpaired) were widely tried, as they can produce sharper, more realistic textures by learning the
+target distribution. 
+Recent Trend – Multi-Scale and Domain Fusion: Researchers realized that 3T→7T involves changes in
+both  resolution and  contrast. Recent methods incorporate multi-scale information or frequency-domain
+priors to handle this complexity. For instance, Qu et al. (2020) proposed a wavelet-based CNN (WATNet) that
+explicitly models low-frequency tissue contrast and high-frequency details via a wavelet transform
+.
+By modulating CNN feature maps with wavelet coefficients, they preserved fine anatomical details better
+than vanilla CNNs
+. Similarly, Zhang et al. (2019) introduced a dual-domain network working in image
+and  k-space  domains  to  enforce  structural  consistency
+.  These  methods  show  a  trend  toward
+incorporating  prior  knowledge  (multi-resolution,  physics,  etc.) into  deep  models  to  overcome  the
+limitations of purely data-driven approaches.
+Transformer and Diffusion Rise: In the 2021–2025 window, two major paradigm shifts occurred in the
+broader deep learning field – Vision Transformers (ViTs) and Diffusion Models – and they have started to
+1
+15
+1
+16
+17
+18
+19
+10
+11
+20
+21
+22
+23
+2
+influence medical imaging. Vision Transformers, with their attention mechanism, can capture long-range
+context better than CNNs, which could be beneficial for 3D MRI where global anatomical context matters.
+Diffusion probabilistic models (score-based generative models) have shown state-of-the-art image quality in
+other domains and address some GAN issues (mode collapse, training instability). Indeed, by 2024, we see
+the first diffusion-based 3T→7T synthesis: Li et al. (NeuroImage 2025) used a conditional denoising diffusion
+model to synthesize 7T SWI (susceptibility-weighted images) from 3T
+. They reported that diffusion
+yielded more reliable microvascular detail than GANs, avoiding the notorious GAN training pitfalls
+.
+This reflects a rising direction: leveraging diffusion models for MRI enhancement to improve fidelity of fine
+structures that GANs might distort.
+Reviewer Fatigue – What’s Overdone: It’s clear that a generic GAN or CNN approach without a strong new
+twist is now old news. Reviewers are increasingly tired of papers that simply apply an off-the-shelf GAN (e.g.
+CycleGAN, Pix2Pix) to a new dataset without novel insight. By 2025, one can assume every variant of basic
+GAN for image translation has been seen. Especially in top venues, a method that is “just a U-Net + GAN loss
++ maybe a known perceptual loss” with marginal gains will be labeled incremental. Also, purely 2D slice-by-
+slice  approaches  are  now  considered  suboptimal  –  they  ignore  3D  context  and  often  result  in
+discontinuities. Using 2D methods when 3D data is available will attract criticism for not fully utilizing spatial
+information
+. Simpler CNNs that lack any integration of domain knowledge or novel learning technique
+might be deemed too weak. In summary, outdated ideas include: naive upsampling + CNN, vanilla GANs
+without accounting for anatomy, and any approach that focuses only on visual metrics while neglecting
+downstream utility.
+Acceptable but Weak Directions: Some approaches are not outright wrong but may not wow reviewers.
+For example, a pure supervised learning approach on this small dataset (10 subjects) without addressing
+data scarcity could be seen as lacking robustness – it might work, but reviewers know it could overfit or fail
+on broader data. A transformer-based model could be acceptable (transformers are “modern”), but if one
+naively replaces a CNN with a ViT and gets similar results, reviewers might question the benefit given the
+complexity. Similarly, a diffusion model that  only improves perceptual quality but doesn’t tackle the core
+issue of anatomical accuracy might be viewed as a fancy tool applied without solving the key problems.
+Weakly innovative ideas might include using a known architecture (say, Swin-Unet or ViTGAN) for 3T-to-7T
+with minimal novelty beyond “we used it on a new dataset”.
+Genuinely  Modern  &  Defensible  Directions: To  position  our  work  strongly,  we  should  embrace
+approaches that align with current cutting-edge trends and unresolved challenges. These include: -
+Diffusion or Score-Based Generative Models: These are hot in 2024+ and have a sound theoretical basis.
+Using diffusion with a clever conditioning mechanism for MRI (and possibly improving its efficiency for 3D)
+would be seen as novel. The recent success in SWI synthesis
+ indicates reviewers are aware of GAN limits
+and will appreciate a diffusion approach that demonstrably preserves more detail (e.g. veins or small
+hippocampal features)
+. -  Transformer-augmented Models: Combining convolutional backbones
+with transformers or attention modules to capture global context is defensible. For example, a UNet where
+the latent features go through a self-attention block to ensure consistent global anatomy could address
+issues like mismatched structure shapes. However, pure ViTs can be data-hungry; a hybrid (CNN + attention)
+might be more suitable. If we include transformers, we need to show it helps preserve long-range structural
+dependencies (like symmetric structures in two hemispheres, or consistent topology). - Multi-Modal and
+Multi-Task Learning: Incorporating the T2-weighted images (available in our dataset) as additional inputs
+or outputs can set our work apart. A truly modern approach might synthesize both T1w and T2w at 7T from
+3T inputs, leveraging the fact that multi-contrast MRI provides complementary information
+. Even if we
+13
+13
+24
+8
+25
+13
+26
+3
+focus on T1w as output, using T2w 3T as an input channel in addition to T1w 3T can enhance fidelity (since
+T2 may help disambiguate certain tissues). Similarly, multi-task learning – for example, training the model
+to not only produce an image but also predict something like a segmentation or a risk score – is seen as a
+cutting-edge way to enforce meaningful features. Reviewers find multi-task setups appealing when they
+clearly improve the main task. - Anatomy-Aware Constraints: Introducing losses or constraints based on
+anatomical knowledge (topology, segmentation, surfaces) is a novel angle that directly addresses the
+clinical  fidelity issue.  Topology-preserving  losses  using  concepts  from  persistent  homology  or
+morphological metrics are emerging in segmentation tasks and could be first applied in image synthesis
+by us
+. For instance, TopoGAN (2020) showed that adding a topological loss (MMD between persistence
+diagrams of real vs fake images) improved structural faithfulness
+. Bringing such ideas to 3D MRI
+synthesis would be cutting-edge. Likewise, using actual neuroanatomical segmentations (from FreeSurfer,
+etc.) to guide the training – e.g. ensure the synthetic image yields the same segmentation as the real 7T – is
+a very  2025-relevant direction emphasizing  outcome-driven generation
+. -  Physics-Informed or Data-
+Harmonization Approaches: An alternative modern angle is incorporating MRI physics knowledge. For
+example, one could enforce that the synthetic 7T image, when downsampled or filtered, should reproduce
+the 3T image (cycle-consistency in the sense of forward physics). Some recent works on reconstruction and
+enhancement have taken physics-informed GAN approaches that embed the MR signal model or known
+constraints
+. If we can encode known 7T vs 3T intensity relationships (like bias field patterns or T1
+relaxation differences) into the model or training, that would be innovative. However, we must justify
+complexity vs payoff – any physics-based addition should clearly target a known issue (e.g. 7T images often
+have bias inhomogeneity; maybe our model can learn a bias field map explicitly as part of the pipeline).
+Our Positioning: Considering all this, we will position our project at the intersection of  these rising
+directions. We reject the tired route of a plain cGAN, and instead embrace a diffusion-based framework
+with anatomy-aware enhancements as our core novelty. We will also evaluate with segmentation and
+clinical metrics, aligning with the latest expectations that synthetic images be judged by their usefulness,
+not just pixel-wise similarity
+. By doing so, we ensure our approach is not only modern in method
+but also tuned to what reviewers are actively looking for: works that push beyond superficial image quality
+into maintaining scientific utility of the data.
+In summary, our literature survey tells us to avoid one-dimensional GAN papers and to adopt a strategy
+that merges state-of-the-art generative modeling (diffusion, transformers) with domain-specific knowledge
+(MRI physics, neuroanatomy constraints). This combination – if executed well – will differentiate us in the
+current landscape and address the exact weaknesses that have prevented earlier 3T-to-7T works from being
+truly impactful (e.g. failing to preserve the hippocampus, or ignoring clinical validation)
+.
+3. Architecture Direction (Before Any Coding)
+We now narrow down to 1–2 candidate architecture paradigms that can fulfill our goals, and we’ll justify
+each  against  alternatives  (GANs,  naive  approaches,  etc.).  Ultimately,  we  will  converge  on  a  single
+recommended architecture.
+Candidate A: Anatomy-Guided Conditional Diffusion Model
+Core Idea: Use a  Conditional Denoising Diffusion Probabilistic Model (DDPM) to generate 7T images
+from 3T input, augmented with anatomy guidance. In practice, this means we have a diffusion
+model  where  the  conditioning is  the  3T  image  (and  possibly  additional  inputs  like  a  tissue
+27
+27
+28
+29
+30
+31
+32
+28
+33
+• 
+4
+segmentation or second modality), and the model learns to iteratively refine pure noise into a
+realistic 7T image. The network architecture for the diffusion model’s denoiser could be a 3D UNet,
+enhanced with attention mechanisms to capture long-range dependencies (e.g. a UNet with self-
+attention blocks or a Transformer UNet). We will incorporate a  topology/anatomy loss during
+training: for example, we can feed the output (or intermediate) into a pre-trained segmentation
+network and penalize differences from the ground-truth segmentation, ensuring the model learns to
+respect organ boundaries and connectivity. Thus, the architecture is essentially  diffusion model +
+auxiliary anatomy constraint. No explicit GAN discriminator is used; instead, realism comes from the
+diffusion probabilistic training.
+Why It Beats GAN-Based Approaches: Diffusion models have a more stable training objective
+(modeled  as  maximizing  likelihood  via  denoising)  and  do  not  suffer  from  mode  collapse  or
+discriminator oscillation
+. GAN-based 3T→7T methods often produce sharp images, but they can
+hallucinate structures or drop details because the adversarial loss is not very sensitive to topological
+correctness – it only cares if the image  looks plausible. Our diffusion model, by contrast, directly
+learns the conditional distribution of 7T given 3T and can be guided to put probability mass on
+anatomically correct solutions. Recent evidence supports this: the diffusion approach for 3T SWI
+synthesis achieved image quality on par with real 7T (no significant difference in key vessel visibility)
+whereas GAN methods struggled with microvascular details
+. In essence, diffusion gives us
+high fidelity and reliability. By adding our topology-guidance (which GAN papers have not done for
+this problem), we further ensure that the synthetic images don’t just pass visual muster, but also
+preserve connectivity of structures (no missing gyri or split hippocampi).
+Why It Beats a Naïve Diffusion (baseline diffusion without special design): We anticipate that a
+naive diffusion (just conditioning on the 3T image and training with pixel loss implicitly through
+diffusion’s loss) would improve perceptual quality but might still not guarantee clinical fidelity. Our
+architectural twist is the injection of anatomical context. This could be via adding a segmentation
+map or edges as additional conditioning channels, or using a hybrid loss (diffusion + deterministic
+loss). By explicitly including a penalty for topological errors or segmentation differences, we guide
+the diffusion model to sample images that are not only likely in the pixel sense but also correct in the
+anatomical sense. This addresses a known limitation of vanilla diffusion: it optimizes pixel-level
+likelihood and may still introduce subtle shape distortions if not constrained. The architecture might
+also use  latent diffusion (operating on a lower-dimensional latent space of an autoencoder) to
+manage  memory  for  3D  data,  which  speeds  up  sampling  without  losing  detail  –  another
+improvement over a naive high-dimensional diffusion. Overall, our conditional diffusion is  MRI-
+tailored: it incorporates domain knowledge (like a segmentation network or known tissue priors) so
+it outperforms a generic diffusion that doesn’t “know” what the structures are.
+Suitability  for  MRI  and  Topology: Diffusion  models  by  design  sample  through  many  small
+denoising steps, which gives the opportunity to enforce constraints at various steps (e.g. ensure
+intermediate samples don’t stray too far anatomically). They can naturally handle output at the same
+resolution as input (we can generate full 3D volumes). By using a 3D UNet with attention, the model
+can capture the global brain layout – ensuring, for instance, if a certain sulcus is present in the 3T
+image, the model consistently enhances it rather than produces a disjoint pattern. The topology
+preservation can be enforced by, say, adding a persistent homology loss or comparing the Euler
+characteristic of structures in output vs input (or ground truth) images. Because diffusion models
+allow easy guidance (one can guide generation with an auxiliary model or condition), we can plug in
+• 
+13
+25
+13
+• 
+• 
+5
+a “segmentation guidance” at generation time if needed. This is harder to do in GANs. In summary, a
+diffusion framework is very flexible and controllable, which is ideal for meeting the strict topology
+and clinical criteria of our task.
+Modern  Elements  Covered: This  direction  inherently  uses  a  foundation-model-like  approach
+(diffusion is a type of foundation generative model). We can incorporate Transformer attention in
+the UNet. We leverage  multi-modal input if we condition on T1 and T2. And we can integrate
+anatomy constraints (persistent homology or segmentation nets) easily thanks to the diffusion
+model’s iterative nature which can accommodate guided sampling. Thus, candidate A aligns with all
+ genuinely modern directions identified earlier.
+Candidate B: Multi-Task Transformer-Enhanced GAN (Topology-Aware GAN)
+(We include a GAN-based option for comparison, but ultimately will recommend Candidate A over this.)
+Core Idea: Develop a  multi-task generative model that simultaneously produces a synthetic 7T
+image and a set of auxiliary outputs (such as segmentation probability maps, or even a predicted
+clinical score), using a shared latent representation. The backbone could be a  Transformer-UNet
+hybrid:  for  example,  an  encoder  that  is  convolutional  to  extract  local  features,  plus  a  Vision
+Transformer layer to encode global context, and a decoder that outputs the image. We would add a
+second decoder head that outputs a brain tissue segmentation or other structural representation.
+The  training  would  use  a  weighted  combination  of  losses:  an  adversarial  loss  (GAN)  and
+reconstruction  loss  on  the  image  output,  plus  a  segmentation  loss  (cross-entropy)  on  the
+segmentation head, plus possibly a  topology regularization (for instance, a loss ensuring the
+segmentation of the synthetic image matches the segmentation of the input or ground truth).
+Essentially, this is like a TopoGAN++: a GAN that is informed by topological features
+ and also by
+an auxiliary task. We could use a PatchGAN discriminator focusing on local texture realism, while the
+generator is constrained to keep global structure via the multi-task setup.
+Why It Could Beat Traditional GANs: By infusing the network with a Transformer component, we
+allow it to capture relationships across the whole volume (e.g., the symmetry between left and right
+hippocampi, or the continuity of a vessel) better than a pure CNN GAN. Standard GAN generators
+can sometimes introduce inconsistencies because convolution is local; a transformer mitigates that.
+Moreover, the segmentation multi-task forces the generator to learn features that are relevant for
+anatomical structure. It can’t just produce any plausible 7T-looking patch; it must produce one that
+the segmentation head can decipher correctly. This acts as a regularizer that keeps the generator
+“honest” to the underlying anatomy. In effect, the segmentation loss is a proxy for topology – if the
+segmentation of output is wrong (say it predicts two disconnected pieces of hippocampus), that
+incurs a loss and thus the generator must avoid such outputs. This approach acknowledges the
+positive results from TopoGAN
+, which demonstrated improved structural fidelity by adding a
+topological loss, but we integrate it into a modern architecture with transformers and multi-task
+learning. The GAN’s adversarial part will ensure high-frequency details and realistic textures (sharp
+edges, proper noise characteristics) that pure L1/L2 losses would smooth out.
+Why We Still Lean Toward Diffusion over This GAN: While this Transformer-GAN with multi-task
+constraint is a strong approach, GAN training is inherently fickle. Ensuring stability while juggling
+multiple  losses  (adversarial,  reconstruction,  segmentation)  is  complex.  Diffusion  offers  a  more
+• 
+• 
+27
+• 
+27
+• 
+6
+straightforward optimization (no min-max game) and has recently surpassed GANs in fidelity. The
+GAN approach might achieve similar end results, but at the cost of more training tricks (e.g. learning
+rate tuning, careful loss weighting, possibly needing a perceptual loss to assist, etc.). Additionally,
+the diffusion model naturally provides a likelihood-based framework, which makes quantitative
+evaluation easier (one could compute log-likelihood or uncertainty in outputs), whereas GANs only
+offer the discriminator’s opinion. Given unlimited compute and time, one could certainly refine a
+GAN to work, but from a research novelty perspective, diffusion is seen as more groundbreaking in
+2025. Many reviewers might actually view a GAN, even a fancy one, as a bit behind the times unless it
+does something truly new. 
+Still, Why Consider Candidate B: We consider it to make sure we’re not dismissing potentially
+effective solutions. A transformer-based GAN with topology loss would still be novel (no prior work
+has exactly that for MRI). It directly addresses topology by design and could leverage existing GAN
+knowledge. If for some reason diffusion proves impractical for 3D (e.g. too slow or data-hungry), this
+is our plan B. It retains  multi-modal capability (we can feed T1 and T2 as channels into the
+generator),  and  the  transformer  ensures  global  context.  Importantly,  it  might  be  easier  to
+incorporate a physics-informed block here: for instance, a differentiable module that mimics a 7T
+bias field could be inserted in the generator. In diffusion, doing that would be harder as it’s iterative.
+So Candidate B could allow a  modular architecture where one part explicitly models known MRI
+physics (like intensity nonlinearity at 7T).
+Final Recommendation: We will pursue Candidate A: the Anatomy-Guided Conditional Diffusion Model
+as our primary architecture. This choice is driven by the latest evidence of diffusion models’ superior fidelity
+for  high-field  MRI  synthesis
+,  their  training  stability,  and  their  flexibility  in  incorporating  guidance
+(segmentation/topology constraints). Candidate A aligns best with a Q1-worthy contribution because it
+adopts a cutting-edge generative paradigm and pushes it further with domain-specific innovation (multi-
+modal  conditioning  and  topology-aware  training).  Candidate  B  (Transformer-based  GAN)  is  a  viable
+alternative, but it carries higher risk (GAN instabilities) and is less aligned with the current momentum in
+the field. We will keep the insights from Candidate B (e.g. multi-task learning, possible use of transformer
+blocks) and potentially integrate those into the diffusion framework (for example, using a transformer in
+the diffusion UNet, or adding an auxiliary segmentation loss to the diffusion training). This way, we harness
+the best of both worlds while sticking to the fundamentally stronger diffusion approach. In summary, our
+architecture will be: a conditional diffusion model with a 3D Transformer-UNet backbone, leveraging
+multi-contrast inputs and guided by a topology/anatomy preserving loss.
+4. System Topology (Paper-Figure Level Description)
+Let’s describe the entire system as one would in a figure for a paper, enumerating the modules, data flow,
+and where key constraints apply. The system can be viewed as a pipeline with distinct stages:
+Input & Preprocessing Modules: The pipeline begins with the 3T MRI scans (for each subject, T1-weighted
+3T is the primary input). If we include multi-contrast, the 3T T2-weighted image of the same subject is
+another input channel. The first module is a  Preprocessing block (details in Section 5) that takes the raw
+images  and  outputs  normalized,  registered  brain  volumes  (for  instance,  I_{3T,T1}  and  optionally
+I_{3T,T2} ), all aligned in the same space. Alongside the image, we also feed in any available prior
+information: for example, a  brain mask or  segmentation map of the 3T image can be included (the
+segmentation could be precomputed once using an existing tool on the 3T image). In our dataset, we have
+• 
+13
+7
+annotation maps (FreeSurfer segmentations) for each subject
+; these can be used here to provide the
+model with explicit anatomical labels (though this is optional, it’s an added input that could help preserve
+topology if used as conditioning).
+So, the system inputs are: 3T T1w image (aligned, skull-stripped), 3T T2w image (aligned), and anatomical priors
+(mask or segmentation). In a figure, this would be the leftmost part, perhaps with two arrows (for T1 and T2)
+merging into the main network, and a dotted arrow for an optional segmentation prior.
+Generative Model (Core Network): Next is the  conditional generation module. This is depicted as a
+neural network with an encoder–decoder structure (like a UNet). The 3T images enter the encoder, which
+progressively downsamples and extracts features. If we use a diffusion model, conceptually we would
+illustrate it as a series of refinement steps: e.g., a noise input that gets transformed into an image
+conditioned on the encoder features of the 3T image. However, in a static figure, it might be easier to
+represent the denoising UNet at a single step and note that it’s repeated in a diffusion process. Alternatively,
+we might illustrate the diffusion process as a separate plate: showing that during training, the model takes
+a noised version of the target 7T and learns to denoise it with the 3T image as context.
+For clarity, we can present the core network as a two-branch UNet: - One branch encodes the input 3T (and
+possibly  segmentation)  into  a  latent  representation  capturing  multi-scale  anatomical  features.  -  The
+decoder branch outputs the synthetic 7T T1-weighted image ( I_{7T,T1}^{synth} ).
+If multi-task learning is implemented, there could be a  secondary output head in the decoder that
+produces, for example, a  segmentation of the synthetic image. In a figure, this would look like the
+decoder splitting into two heads: one goes to the synthetic image, another goes to a segmentation map.
+The segmentation head would be supervised to match a reference segmentation (which we have from the
+real 7T or from the 3T, since they should be the same anatomical labels).
+Within the network, we highlight special components: - Attention/Transformer module: at the bottleneck
+of the UNet (and/or in skip connections), an attention mechanism ensures global coherence. We would label
+this in the figure as “Global Context Module” that takes all features and reweights them based on global
+interactions  (to  ensure,  e.g.,  distributed  regions  like  ventricles  or  cortex  are  treated  consistently).  -
+Topology-Preserving Constraint: We can illustrate this as an auxiliary block during training that checks the
+output’s structures. For example, in the figure, after the synthetic image is output, we apply a “Topology
+Check” or “Anatomy Loss” by comparing the synthetic image (or its segmentation) to the ground truth. This
+might be drawn as a loop or a dashed arrow from the output going into a loss function that involves a
+segmentation network or a known template. In text near the figure, we’d mention: “Topology loss computed
+by comparing output segmentation to ground truth segmentation” or “persistent homology loss between synthetic
+and real image”.
+Data Flow – Training Path: During training, the  3T input flows through the network to produce the
+synthetic 7T. In parallel, the corresponding  ground-truth 7T image (from the paired dataset) is fed in to
+compute losses. Specifically: - We calculate an L1/L2 loss directly between I_{7T}^{synth}  and the real
+I_{7T}  (this ensures voxel-wise fidelity for large structures). - The synthetic and real 7T images both can
+be passed through an external segmentation model (say, FreeSurfer or a simpler CNN we train) – we then
+compute a difference between the segmentations (ensuring that the synthetic image yields the same
+anatomy labeling as the real). This enforces the topology/structure. In the figure, this could be drawn as
+both real and synthetic outputs going into a common “Segmentation Module” and then a loss between the
+34
+8
+two segmentation outputs. - If using adversarial training (less likely in diffusion, but for architecture
+completeness): the synthetic image would also go to a Discriminator module, which compares it to real 7T
+in terms of realism. The figure might show the discriminator receiving real and fake 7T and outputting a
+probability, with a GAN loss backpropagated to the generator. - If diffusion, we might illustrate one training
+iteration where the model tries to predict the noise added to the real 7T image (diffusion target). But that
+might complicate the figure; we can keep it conceptual: “Our model is trained with a diffusion probabilistic
+loss and additional supervised losses ensuring image and segmentation consistency.”
+Inference Path: At test time (inference), only the 3T inputs are available. The figure should depict that
+pipeline:  the  3T  image  goes  through  the  generator  network,  producing  the  synthetic  7T  image.  Any
+auxiliary outputs (like segmentation) can also be produced if we keep those heads active during inference
+(for example, we might output a predicted segmentation of the synthetic image as a byproduct, which could
+be useful for analysis). The final output is a 3D volume that mimics a 7T T1 MRI for that subject. It will
+have higher resolution/contrast and is aligned to the input.
+We should also note where clinical relevance is injected: This occurs in two places: 1. During training via
+multi-task loss: The inclusion of segmentation (or a task like Alzheimer’s prediction if we had labels) in the
+training objective directly ties the image generation to clinical endpoints. In the figure, this was the second
+decoder head and the segmentation comparison – that is effectively injecting clinical knowledge (since
+segmentation of hippocampus, etc., is clinically relevant for AD). 2.  During evaluation (and possibly
+inference): After obtaining the synthetic 7T, we will perform downstream analyses – e.g., feed it into an
+Alzheimer’s classifier or morphometry pipeline. While this is outside the core generation model, the system
+diagram might have a block to represent this in the evaluation pipeline. For instance, after synthetic 7T is
+output, an arrow might go to an “AD Analysis Module” which could be something like “run hippocampal
+volume measurement or an ML model to predict diagnosis”. We won’t have that inside the training loop
+(since we don’t have AD labels for training), but it is part of the overall project flow to validate that the
+synthetic images are useful. So perhaps in a figure, this is drawn as a post-processing: synthetic 7T goes to
+“Downstream Task (e.g., cortical thickness, AD classifier)” and we show that the performance is improved
+compared to using 3T image alone.
+Where  Topology  is  Enforced: We  explicitly  enforce  topology  in  the  loss  functions during  training.
+Graphically, one can show a Topology Loss coming from either a comparison of segmentations or from a
+computed topological signature. For example, imagine a “Compute Persistent Homology” block that takes
+the synthetic and real images and outputs a difference measure that the loss optimizes (as TopoGAN did
+using  MMD  between  persistence  diagrams
+).  Another  simpler  depiction:  highlight  that  the
+segmentation loss inherently forces topology preservation. Perhaps annotate the segmentation loss as
+“(ensures structural consistency)” in the figure legend.
+Where  Clinical  Relevance  is  Injected: Aside  from  training-time  segmentation  guidance,  we  might
+incorporate anatomical indices in the loss. For example, we could calculate hippocampal volume from the
+synthetic image (via the segmentation) and compare it to hippocampal volume from the input or known
+values – penalizing if they differ significantly. This would specifically push the network to preserve the size/
+shape of the hippocampus, which is relevant to AD. While we might not implement a volume loss explicitly
+(that could be unstable), this indicates the mindset: every design choice ensures the synthetic image isn’t
+just visually pretty but quantitatively faithful to clinical markers. In a system diagram, this might not appear
+as a separate module, but in the text we will emphasize it. The segmentation path covers a lot of it, as
+volumes can be derived from segmentation.
+35
+27
+9
+Data Flow Summary: - Training: (3T T1, 3T T2) --> [Generator UNet] --> Synthetic 7T; also (Real 7T) provided
+for loss. Compute image diff loss, plus segmentation loss: (Synthetic 7T -> SegNet, Real 7T -> SegNet,
+compare segmentations) for topology; plus adversarial loss if applicable. The figure might show multiple
+loss arrows coming out of the outputs. - Inference: (3T inputs) --> [Generator] --> Synthetic 7T (then used
+for analysis).
+We  can  describe  the  system  in  a  figure  caption-like  paragraph:  “Our  topology-preserving  3T-to-7T
+enhancement framework consists of a conditional generation network and auxiliary loss modules. The 3T MRI
+(T1w ± T2w) is input into a Transformer-UNet generator, which produces a synthetic 7T T1w image. During
+training, the synthetic output is supervised with the ground-truth 7T image using intensity-based losses (e.g. L1)
+and a topology-aware loss. The topology loss is computed by feeding both synthetic and real 7T images into a pre-
+trained segmentation model and comparing the resulting anatomical label maps, ensuring the synthetic image
+preserves all brain structures correctly. In inference, only the 3T image is needed to generate a 7T-like image,
+which can then be fed into downstream analysis pipelines (such as segmentation or Alzheimer’s disease classifiers)
+to evaluate its clinical utility.”
+By describing the system at this level, a reader (or a viewer of the conceptual figure) can see all the key
+pieces:  Input -> Preprocess -> Generator (with possibly multi-task output) -> Synthetic Output with
+losses for pixel, topology, and (if used) adversarial, plus an indication that the output goes on to analysis.
+This  modular  view  will  correspond  to  sections  in  the  paper  (preprocessing,  model,  losses,  evaluation
+methods), demonstrating a clear logical flow from raw data to results.
+5. Preprocessing Pipeline (Extremely Detailed)
+A robust preprocessing pipeline is critical – not only to feed the model quality data, but also to satisfy
+reviewers that our comparisons are fair and not confounded by trivial misalignments or artifacts. We will
+implement each step with justification and mention reviewer concerns if skipped. Below is the step-by-
+step preprocessing procedure, aligned with BIDS standards and common neuroimaging best practices:
+5.1 BIDS Organization & Field-Strength Identification: Our dataset is organized in BIDS format
+,
+meaning each subject has sessions “ses-1” (3T) and “ses-2” (7T), and modalities “T1w” and “T2w”. We will
+write preprocessing code to automatically iterate through subjects and sessions in the BIDS directory. The
+first task is to confirm which session is 3T vs 7T – typically, this is by convention (the dataset authors stated
+3T = ses-1, 7T = ses-2
+) and can be double-checked via the JSON metadata for each NIfTI (the JSON
+should contain "MagneticFieldStrength": 3  or 7 ). We’ll parse those JSON files to be certain we label
+data correctly. Why? Mis-labeling a 7T as input and 3T as output would invert the problem, so we must be
+absolutely sure of identifying field strength from metadata.
+5.2 Loading & DICOM Conversion: The data providers already converted DICOM to NIfTI using MRIcroGL
+, so we will use their NIfTI files. No need for us to handle DICOM directly (which simplifies things and
+avoids introducing orientation errors). However, if we had to ingest new raw data, we’d follow similar steps:
+use  dcm2niix  or  MRIcroGL  for  DICOM->NIfTI  to  ensure  no  scanner-scale  bias  remains,  and  preserve
+orientation info.
+5.3  Defacing  (Anonymization): The  dataset  was  already  defaced  with  PyDeface
+ (removing  facial
+features). We mention this mainly to show awareness, though it doesn’t impact our model training except
+36
+37
+38
+38
+10
+that some skull parts are removed. It’s already done, so no action needed from us, but a reviewer might
+appreciate knowing privacy was handled.
+5.4 Registration & Alignment: This is crucial. The dataset provides “Original” and “Aligned” images
+. The
+aligned images were produced by linear registration: specifically, they registered 3T T1 and 7T T2 to the 7T
+T1 space, and then aligned 3T T2 to 3T T1
+. In practical terms, all aligned images for a subject share the
+same voxel space (same orientation, resolution ~0.65 mm, dimensions) – meaning a given voxel index
+corresponds to the same anatomical point across 3T and 7T images. We will use these aligned images for
+training. This choice is because having input and target pre-registered greatly simplifies learning; the
+network  can  do  a  direct  voxel-wise  mapping  without  worrying  about  shifting  structures.  If  we  used
+unaligned “Original” images, differences between 3T and 7T scans (due to positioning or slight scaling)
+could  be  wrongly  learned  by  the  model  as  if  they  were  field-strength  differences,  which  is  clearly
+undesirable. By using the authors’ FLIRT-based aligned data, we avoid that pitfall. We will verify the quality
+of alignment: for each subject, we’ll load 3T and 7T images and perhaps subtract or overlay them to ensure
+major structures line up. The authors mention using FSL FLIRT (6 dof for within-subject presumably)
+,
+which usually is accurate for same-subject rigid alignment. We anticipate small differences might remain
+(due to susceptibility distortions at 7T), but they should be minor. If during QC we find any misalignment
+(say edges of brain don’t overlap well), we’ll consider a refinement: possibly a nonlinear registration (using
+ANTs  or  SPM)  of  3T  to  7T.  However,  nonlinearly  warping  one  to  another  could  actually  remove  real
+differences (e.g. 7T might have slightly expanded brain edges due to less distortion). We’ll likely stick to the
+provided linear alignment for fairness – since the evaluation should be on the model, not on doing heavy
+warping. 
+Justification: If  we  skip  registration  (i.e.,  train  on  original  images),  the  model  would  have  to  learn
+translation/rotation along with enhancement, which is a waste of capacity and prone to errors. Reviewers
+would immediately ask:  are you sure differences aren’t due to mis-registration? By using aligned pairs, we
+preempt that criticism. The Sci Data paper explicitly provides aligned data to facilitate exactly our use-case
+, so not using them would be a mistake.
+5.5 Skull-Stripping (Brain Extraction): We will perform skull-stripping on the 3T and 7T images (likely on
+the aligned 3T T1, and apply the mask to 3T T2 and 7T T1 as well). This yields images where non-brain
+tissues (skull, scalp) are removed or zeroed out. Why? Because the presence of skull and background can
+confound intensity distributions and network focus. At 7T, fat and bone can appear differently (due to B0
+inhomogeneities causing shading or different intensity scaling), and we do not want the network to waste
+effort modeling how skull brightness changes between 3T and 7T. By stripping the brain, we ensure the
+model concentrates on brain tissue only – which is where our topology and clinical markers are. Moreover,
+skull edges might introduce artificial topology (e.g., openings at the foramen or eye sockets) that have
+nothing to do with brain anatomy. Removing them simplifies any topological loss to just brain structures.
+We will use a proven tool for this: likely HD-BET (a deep learning brain extraction) or FSL’s BET on the T1
+images. We do have FreeSurfer outputs, which include a brain mask and surfaces
+, so actually we can
+directly take the FreeSurfer brainmask from the “annotation” data. Using FreeSurfer’s mask is robust
+(FreeSurfer tends to get brain outline right after bias correction). If available, that’s ideal to avoid any extra
+errors.
+Reviewers’ likely concern: If we didn’t strip skull, they might worry the model could simply be learning to
+map the bright skull differently (since 7T might have different coil shading making the skull brighter or
+darker). That would be a trivial cue (“cheating”) that doesn’t reflect improving brain detail. Also, including
+34
+38
+38
+34
+34
+11
+the skull means more heterogeneity in intensities (air vs bone vs tissue) which can destabilize training. One
+might argue the PLOS 2025 study achieved good results without skull stripping
+, but they compensated
+by using segmentation-based evaluation to catch errors. Given our focus on topology, having the skull in
+images would complicate computing topological similarity (lots of irrelevant connected components from
+skull). So we will skull-strip to make the problem well-contained. We will, however, mention this decision in
+the paper and justify it – as leaving the skull could allow the model to produce a full head 7T image. But
+since our end goal is brain analysis, we are justified in focusing on the brain. If a reviewer asks “does your
+method rely on skull stripping?”, we will respond that it is a standard practice to focus the enhancement on
+the brain region and that the method in principle could work with whole-head images but would need more
+data to avoid distractions.
+5.6  Bias  Field  Correction: 7T  MRI  often  suffers  from  B1  inhomogeneity,  leading  to  intensity  non-
+uniformity (parts of the brain appear darker or brighter not due to anatomy but due to coil sensitivity). The
+dataset used an MP2RAGE sequence for T1 at 7T, which actually mitigates some bias (MP2RAGE provides a
+uniform image to a degree), but there could still be residual bias. 3T images can have bias too, though less
+severe. We will apply N4 bias field correction (a widely used algorithm) to each image (3T and 7T) after
+skull-stripping. This will remove smooth intensity gradients. Why? We do not want the network to waste
+capacity learning bias field differences between 3T and 7T. The risk is the network might focus on global
+shading differences rather than genuine tissue contrast differences. By doing N4, we make the intensities
+more homogeneous across space, so the model can concentrate on tissue-specific changes. We’ll run N4
+with standard parameters on each volume. We have to be careful to not overcorrect (N4 can sometimes
+over-smooth intensities), so we’ll verify that after N4, white matter is still distinguishable from gray matter
+(N4 should preserve contrast, just remove low-frequency bias). If skipping this: reviewers might say “7T has
+strong bias – did you account for it or is your model output just adding a bias field?” By doing bias
+correction, we ensure that any intensity differences the model learns are presumably due to tissue contrast,
+not an artifact of coil profiles.
+5.7  Intensity  Normalization: This  step  standardizes  the  range  and  distribution  of  intensities  across
+subjects and modalities. We plan a two-pronged approach: - Within-image normalization: For each image,
+we will scale/normalize intensities to a consistent scale. A robust method is to compute the mean and
+standard deviation of intensities within the brain mask and then subtract the mean and divide by std (z-
+score normalization). Alternatively, we could normalize by a percentile (e.g., set the 99th percentile intensity
+to 1.0, and 1st percentile to 0) to roughly map each image’s dynamic range to [0,1]. We need to be cautious:
+7T images might have different overall contrast, but if we independently scale each image, we might
+remove that difference. We likely choose a scheme that preserves relative contrast differences between 3T
+and 7T while removing subject-specific variability. One approach: use the 3T image’s brain mean as a
+reference – scale all 3T images to mean 0, std 1, and apply the same linear scaling to the 7T of that subject
+(since 3T and 7T are paired, we could normalize them together). However, since the physical units are
+arbitrary, simpler is: perform a standard intensity normalization separately for input and output domains.
+We will do: for 3T images, subtract mean and divide by std; likewise for 7T images. This yields both in a zero-
+mean, unit-variance space. The network training (especially diffusion) benefits from inputs roughly in a
+similar numeric range. We will, of course, apply the same normalization consistently to training and
+validation  data  (computed  per  image  to  avoid  information  leakage  across  subjects).  -  Cross-subject
+normalization: After z-scoring, we might still want to ensure no outlier intensities (maybe due to some
+noise spikes) throw things off. We can clamp extreme values (e.g. anything beyond ±5 sigma can be clipped)
+for stability. Given MRI intensities roughly follow a tissue distribution, this just prevents occasional weird
+voxels from affecting training.
+28
+12
+Rationale: If we skip normalization, the network has to handle potentially large intensity scale differences
+between subjects or modalities. One subject’s 7T might be overall brighter if scanner gain was different, etc.
+That can slow training or cause one batch to dominate loss. Normalizing addresses a reviewer concern: “Did
+you intensity-normalize? Because otherwise your results might reflect trivial intensity scaling.” We will explicitly
+say we did, so reviewers know our model isn’t just learning to multiply intensities by a factor (which would
+not be publishable). Instead, it has to truly alter the image’s detailed contrast and texture. 
+We will note that we do preserve the fundamental contrast difference between 3T and 7T in a relative sense.
+For example, at 7T gray matter vs white matter intensity ratio may be higher than at 3T
+. By normalizing
+each image to its own stats, do we lose that? Actually, if we z-score each image, we remove absolute
+differences in contrast amplitude. Another strategy: perform histogram matching from 3T to 7T globally,
+but that could actually remove differences we want the model to learn. Better is to let the model learn the
+contrast change. So perhaps a compromise: we do a mild normalization (like each image median to 1) but
+not fully equalizing contrasts. We might do: normalize each image by dividing by its median brain intensity.
+This will put all images on roughly similar scale (since median of brain might correlate across subjects), but
+it won’t force the distributions to unit variance. Then the network can learn contrast differences. For clarity
+to reviewers, we’ll mention we tried a few normalization schemes and picked one that gave best results on
+validation (we’ll justify selection in the paper). The key is we explain our choice. Likely, saying "we applied z-
+score normalization of each volume’s intensities within the brain mask" is acceptable, as many works do
+that. We’ll then rely on the network to handle contrast differences via training on paired data.
+5.8 Resolution Harmonization: The 3T and 7T images originally had different resolution (0.8 mm vs 0.65
+mm). In the aligned images, the authors resampled everything to 0.65 mm isotropic (the 7T T1 reference
+space)
+. Therefore, our data is already resolution-matched – every aligned image has the same voxel
+size and dimensions. This is perfect for our model, since we want to output an image at the higher 7T
+resolution. We will double-check one detail: when upsampling the 3T 0.8→0.65 mm, interpolation was used
+(likely trilinear in FLIRT). This means the 3T images have been slightly super-sampled. They will still look
+smoother than the true 7T because they contain no new high-frequency info, but at least they are on the
+same grid. We will not alter the resolution further – we will train the model to produce outputs on that 0.65
+mm grid. If some reviewers are very pedantic, they might ask: “So you effectively are doing super-resolution
+from 0.8 to 0.65 mm? Are you sure the difference is due to field strength, not just resolution?” We can
+answer: 0.8 vs 0.65 is a minor difference in linear dimension (~20% finer). The field strength also affects
+contrast and SNR, which our model accounts for. And importantly, our input is already resampled to the
+output resolution, so the model’s task is not simply interpolation – it must generate details that were
+missing. We could mention that point. No further smoothing or anything is needed; we trust the provided
+alignment pipeline (which used sinc interpolation likely by default). 
+If we skipped this harmonization (i.e., left 3T at 0.8 and 7T at 0.65), the model would have had to do both
+upsampling and enhancement. We decoupled the upsampling by doing it via registration. This is a legitimate
+approach and we’ll clarify it in the methods. 
+5.9 Optional Spatial Normalization: This is about whether to align images to a common template (like
+MNI space). The dataset is in each subject’s native space after alignment (subject space). We likely keep it
+that way to preserve subject-specific fine details without additional interpolation. We do not need to bring
+to MNI, since we have one-to-one pairs. Some pipelines might warp to MNI for ease of evaluating metrics
+across subjects (voxel-wise), but that would distort individual topology slightly. We prefer to operate in
+native space. So we will not do a nonlinear normalization to a template. Instead, we evaluate metrics either
+15
+39
+38
+13
+in native space (which is fine since images are paired) or by using the provided surfaces/segmentations for
+each subject. This avoids any unnecessary degradation. We note this decision in case reviewers wonder. We
+justify: given only 10 subjects, adding a group-wise registration step could reduce the already limited
+unique details (makes brains more similar, possibly hiding differences). We want to preserve genuine
+anatomical variability for the model to handle.
+5.10 Quality Control & Logging: Throughout preprocessing, we will implement thorough QC: - After skull
+stripping, we will generate quicklook images (like axial slices) with the brain mask overlay to ensure no
+brain tissue was cut off and minimal non-brain remains. We’ll log if any subject had poor mask (we can
+manually fix that subject by tweaking the mask or using the FreeSurfer mask). - After registration, we can
+create an overlay: e.g., overlap 3T and 7T edges or use a checkerboard visualization to verify alignment. We
+expect very close alignment given rigid reg on same subject; any large mismatch we flag. If a subject shows
+mismatch, we might rerun FLIRT or use a different cost function (maybe 7T T1 vs 3T T1 might have contrast
+differences that confused FLIRT; if that happened, we can actually align via the T2 modalities or use mutual
+information). The Sci Data authors likely did a good job, but we won’t assume blindly. - We will record basic
+image stats (mean, std, SNR from MRIQC JSON) before and after normalization to ensure the normalization
+did what we expect (for instance, after z-scoring, means should be ~0). - We’ll also inspect intensity
+histograms of 3T vs 7T after preprocessing. Ideally, the 7T should show higher gray-white contrast. If our
+normalization accidentally removed that (e.g., if both end up similar histograms), we might adjust the
+strategy. For example, if z-scoring each image, both 3T and 7T will have mean0, std1, so their histograms
+are standardized – the difference will then be subtle (maybe higher-order moments differ). Maybe that’s
+okay as the network can still learn that GM intensities relative to WM differ. We just need to ensure we
+haven’t made 3T and 7T trivially identical in distribution. A possible tweak: only normalize 3T, and apply
+same linear scaling to 7T, preserving ratio. But since pair sizes are small, per-image normalization is fine.
+We'll keep an error log: if any step fails (e.g. one subject’s FreeSurfer segmentation might have
+failed – though authors likely ensured it succeeded for all), we log and address it. If something like
+MRIQC flagged a poor image (maybe motion or artifact), we note that. All our data are healthy
+adults, so likely high quality, but one never knows (e.g., some 7T could have lower SNR in temporal
+lobes due to B1 drop-off).
+5.11 Preprocessing Fail-Safes: We anticipate possible failure modes: - Skull-strip failure: If the algorithm
+mistakenly erodes brain (e.g. sometimes frontal poles get cut if contrast is weird), the synthetic image
+training could suffer because input brain is incomplete. To detect this, we’ll specifically check the brain mask
+volume or edges. We can use the T2 image or combined probability to improve mask if needed (since T2
+might help find CSF vs skull). In case of any doubt, we prefer using the FreeSurfer-derived mask which is
+usually reliable. - Registration error: If one subject’s 7T had distortion that linear reg couldn’t fix, we might
+see a slight misalignment in outer cortex. To detect, we rely on QC overlays. If misalignment is small, it
+might not kill the model, but we strive for pixel-accurate alignment. We could do an optional nonlinear warp
+from 3T to 7T T1 for that subject. But note: Nonlinear warp would basically give the model an even easier
+task (as it would correct for any shape differences too). That might be too much – arguably, we want the
+model to possibly learn any systematic shape difference due to, say, susceptibility (e.g., maybe 7T brains
+appear slightly larger in certain regions or ventricles shape a bit differently?). However, those differences
+are probably negligible between 3T and 7T for structural images, if both are high-res. - Intensity outlier: If
+any image has unusual intensity scaling (maybe one subject’s 7T was acquired differently), MRIQC metrics
+would catch it (like high CJV or EFC
+). We will examine MRIQC outputs (they provided JSON with IQMs
+). If, say, one subject’s 7T had a very high noise, we might consider excluding that subject from training
+• 
+40
+41
+14
+to not confuse the model, or handle it separately. But with only 10 subjects, we’d try to include all unless
+truly problematic.
+5.12 Reviewer Hotspots in Preprocessing: We explicitly note in our write-up that we addressed common
+criticisms: - “Did you ensure 3T and 7T are aligned?” – Yes, using provided aligned images (rigid registration)
+. - “Did you remove non-brain elements that could bias results?” – Yes, skull stripped and bias-corrected to
+focus on brain tissue. -  “Intensity normalization?” – Yes, we normalized intensities to a common scale,
+avoiding trivial intensity mapping. - “Reproducibility of preprocessing?” – We will mention tool versions (FSL,
+ANTs, etc.). For example, we’ll state we used FSL FLIRT with 6 DOF and correlation ratio cost, N4 from ANTs
+with default 50 iterations, etc., so others can replicate. Also mention any manual interventions if done. -
+“What happens if a preprocessing step is skipped?” – We can preempt this by short reasoning: if no skull strip,
+how would it harm? If no alignment, how? (We might even run an experiment: train a model without
+alignment and show it fails, but that might not be necessary to include in paper, can just reason). - “Are the
+images pre-filtered or denoised?” – We haven’t mentioned denoising; we could consider applying a mild
+denoising if needed. However, the images likely are already pretty clean (MP2RAGE is quite clean). Too much
+filtering could remove detail. We likely skip any extra denoising, except what bias correction does. We will
+however mention that no additional smoothing was applied (so we don’t inadvertently remove fine details
+that the model should learn to create). - “How do you ensure quality consistency across the dataset?” – We rely
+on the authors’ MRIQC. They reported that all images have good contrasts and structural detail
+. We’ll
+cite that all images had acceptable MRIQC metrics, meaning no major artifacts.
+In  conclusion,  our  preprocessing  pipeline  takes  raw  paired  3T/7T  data  and  produces  clean,  aligned,
+normalized brain volumes ready for model training. Each step (defacing, alignment, skull stripping, bias
+correction, normalization) exists for a reason: to remove confounds and reduce the problem to its essence
+(field-strength related differences). We won’t allow sloppy preprocessing to undermine the science – by the
+time we feed the data to the network, we have high confidence that any differences to be learned are true
+differences due to 3T vs 7T, not due to position, orientation, or other artifacts
+. This meticulous
+approach  will  reassure  reviewers  that  our  results  are  attributable  to  the  model’s  capabilities,  not
+preprocessing quirks.
+6. Data Formulation for Learning
+With preprocessed data in hand, we need to define how we will present it to the model during training,
+ensuring no information leakage and making the most of our limited sample size. Key considerations are
+how to pair inputs and targets, whether to use patches or full volumes, and how to incorporate multi-
+contrast information.
+6.1 Input–Target Construction: Each training sample will consist of an input (source domain) and a target
+(ground  truth  in  target  domain).  For  our  main  formulation:  -  Input  =  3T  T1-weighted  MRI (after
+preprocessing, aligned & normalized). -  Target = 7T T1-weighted MRI of the same subject (aligned &
+normalized identically). These form a pair. If using additional modalities: - We can augment the input by
+including the 3T T2-weighted MRI as a second channel. In practice, the network’s input tensor could be 2-
+channel (channel0 = T1_3T, channel1 = T2_3T), and the output is 1-channel (T1_7T). - We could also feed in
+the  brain mask or segmentation as extra channels if we choose. For example, a simplistic approach:
+multiply the input by its mask (effectively done by skull stripping already). Or append a “segmentation”
+channel where each voxel contains an index or probability of tissue class. However, providing segmentation
+as input might leak too much high-level information and risk the network overly relying on it. Instead, we
+38
+40
+38
+34
+15
+prefer to use segmentation in the loss, not necessarily as an input (though one could input a mask to
+delineate brain boundary clearly).
+We will formulate the training pairs as strictly within-subject pairs of images. There are 10 subjects × (in
+principle) maybe 1 image per subject (though each has two sessions: we have effectively 10 pairs if each
+subject yields one 3T and one 7T). Actually, our dataset has possibly two sessions (maybe repeated scans?),
+but it says ses-1 and ses-2 correspond to field strengths, not separate time points with same field. So each
+subject yields exactly 1 paired example. That’s extremely small (N=10). To mitigate this, we will exploit the
+3D nature of the data: - We can extract multiple patches or sub-volumes from each 3D image, treating
+each patch as a training sample (with corresponding patch in target). - Or we can use data augmentation to
+simulate more examples (see below).
+6.2 Patch vs. Full-Volume Training: Training on full 3D volumes (which are ~300×300×250 voxels) with
+heavy models like diffusion or transformers is computationally expensive and might not fit in GPU memory,
+especially with diffusion’s multiple time steps. Also, with only 10 volumes, full-volume training might overfit
+quickly and has only 10 samples per epoch. Instead, we will adopt a patch-based training strategy: - We
+will sample many small 3D sub-volumes (cubes) from each subject’s data. For instance, patches of size
+64×64×64 or 96×96×96 voxels. Each patch from the 3T forms the input, and the corresponding patch
+location from the 7T forms the target. - Because the data is aligned, extracting a patch at a certain
+coordinate from 3T and the same coordinate from 7T yields a perfectly matched pair of regions. - This
+dramatically increases the number of training samples: if each volume yields thousands of possible patches,
+we effectively augment our dataset size. - We will ensure patches cover all parts of the brain over training
+iterations, not just one region. We’ll use random sampling for patch centers, possibly biased to pick mostly
+brain voxels (we don’t need patches that are mostly background outside the brain). - Patches allow us to
+incorporate translation invariance: the network can learn locally and it doesn’t matter where in the brain the
+patch came from, as long as the context in that patch is enough. One caveat: some global context might be
+needed (e.g., to know if a patch is from frontal lobe vs occipital, if that matters for AD or bias fields). We
+partly address that by using a network with some global awareness (the transformer or large receptive
+field). - We might also consider multi-scale patch approach: e.g., 64^3 patches for fine detail learning, and
+occasional larger patches or downsampled full volumes to capture coarse structure.
+Why not train on full images? Primarily memory and data efficiency. Patch training is a common strategy
+in super-resolution tasks and was used in the literature: the PLOS 2025 study used 64×64×64 patches in a
+3D U-Net and found it optimal for low-data regime
+. By using patches, we also effectively do data
+augmentation by position – each patch can be seen as a shifted version of the volume. We just have to be
+careful at inference to tile the output (discussed below).
+6.3 Multi-Contrast Usage (T1+T2): If we incorporate the T2 channel, each patch will include corresponding
+T2 voxels. The aligned dataset ensures that for any given patch coordinates, we have T1_3T and T2_3T and
+T1_7T. We suspect adding T2 could help, because T2 might highlight different tissue boundaries (e.g., CSF vs
+tissue  edges).  For  instance,  if  a  subtle  structure  is  not  well-defined  in  T1  input,  T2  might  give  a
+complementary cue, enabling the model to synthesize it more accurately in T1 output. However, we must
+weigh  complexity:  requiring  T2  means  the  approach  is  only  directly  applicable  if  both  contrasts  are
+available. Many clinical scans do include both T1 and T2, so it’s not unreasonable. We will likely explore two
+modes: - Single-modal input (T1→T1) as the primary path (for generality, and because T1 is key for AD). -
+Multi-modal input (T1+T2 → T1) as an experiment to see if it boosts performance. This can be an ablation
+study: does the T2 help significantly? We anticipate some improvement in visual quality or certain regions
+42
+43
+16
+(maybe white matter lesions or CSF spaces). - If the improvement is big, we could include multi-modal as a
+main result. If it’s minor, we might keep the method single-modal for simplicity and mention the multi-
+modal in discussion. 
+Choice rationalization: We lean toward using  T1w as the main target because early AD changes (like
+atrophy) are primarily assessed on T1. T2 could be used to identify vascular lesions or edema, but for AD
+specifically, T2 is less critical. So our synthetic target is only T1 7T. We’re not, for example, trying to also
+synthesize 7T T2 (though that’s theoretically possible). That would double output channels and complexity,
+with little AD payoff. So one target (7T T1) is the plan.
+6.4 Avoiding Data Leakage: With such a small dataset, we must be vigilant about train/test separation. We
+will set aside some subjects as test (and possibly some as validation). A likely scheme: use a  cross-
+validation or leave-one-subject-out approach. For example, train on 8 subjects, validate on 1, test on 1, and
+rotate. Or train on 9, test on 1, and do 10-fold LOOCV given only 10 subjects. For final results, we might
+report the average over folds. Alternatively, since each subject yields many patches, we could do an 80/20
+split at the patch level – but that is incorrect, because patches from the same subject would appear in both
+train and test, causing leakage. So we will do splitting at subject level, not at patch level, to ensure no
+leakage. Each subject’s images are treated as a unit.
+Important: We must ensure that if we use any augmentations (like flips), we do them only on training
+patches, not on validation/test, obviously. Also, if we do any hyperparameter tuning, we use a separate
+validation set (or cross-val as above) to avoid biasing the test results.
+We will also avoid using  7T data in any way to augment 3T in training except paired as target. The semi-
+supervised idea from literature was to use unpaired 7T volumes to help. If we had extra 7T data (the PLOS
+paper used 20 unpaired 7T volumes
+), we could incorporate that via an adversarial or consistency loss to
+teach the generator what real 7T distribution looks like beyond our 10. In our case, we might consider using
+the existing 10 7T themselves as “unpaired” in some semi-supervised fashion to augment. But since they’re
+paired anyway, that wouldn’t add new info. If we get access to any other public 7T data (maybe Human
+Connectome 7T images or something), we could incorporate them as unpaired to strengthen the diffusion
+model’s prior. That’s a potential extension if needed. We’ll mention domain adaptation possibility, but
+careful: it could be out of scope to implement fully. For now, our plan is purely supervised with these 10
+pairs.
+6.5 Handling the Small-N Regime: With only 10 subjects, overfitting is a major risk. We tackle it in multiple
+ways: -  Data Augmentation: We will apply aggressive augmentation to the training patches. This can
+include: - Spatial transformations: random small rotations (e.g., ±10 degrees), random flips (LR flip effectively
+swaps hemispheres – since our model shouldn’t assume left-right asymmetry except maybe for pathology,
+but in healthy brains it’s okay), random scaling (a few percent zoom in/out), and elastic deformations (to
+simulate slight anatomical variability). However, one must be cautious: a large elastic warp could make the
+3T–7T pair no longer exactly aligned. Ideally, we apply identical augmentation to both input and target
+patch, so the mapping remains correct. Yes, we will do paired augmentations: any spatial transform applied
+to the 3T patch will be applied to the 7T patch in the same way (since we know the ground truth output). -
+Intensity augmentations: random bias field addition (simulate some intensity non-uniformity, again applied
+to both input and target to not confuse mapping? Or perhaps applied only to input to simulate different 3T
+coil effects – but that breaks the exact correspondence, so better to apply identically or not at all). We could
+also add Gaussian noise, though that might not be necessary if images already have noise; still, adding
+44
+17
+slight noise can make the model robust to noise variations. -  Dropout of modality: If using T1+T2 input,
+maybe sometimes drop T2 to force reliance on T1; but that’s more advanced, probably not needed. - Blur or
+resolution variation: We could slightly blur the 3T input patch with a random small kernel to simulate
+variability in scanner resolution. But since our data is consistent and we pre-fixed resolution, we might skip
+that. - These augmentations effectively create an infinite stream of unique training samples from 10
+subjects. We have to ensure we do not do augmentation on validation/test (except maybe the flips if we are
+doing cross-val and count that separately). - Semi-supervised or transfer learning: Another approach from
+literature is to use unpaired data. If needed, and if we find publicly available 7T images (like from another
+study), we could incorporate them with a cycle-consistency or adversarial training. For instance, train a
+diffusion or GAN on unpaired 3T and 7T to capture distribution, then fine-tune on our paired small set. The
+PLOS paper did something similar by adding 20 unpaired 7T and employing a consistency loss
+. We
+will consider this if baseline training on 10 paired is not sufficient. It might complicate training but it’s a
+backup  to  improve  generalization.  If  we  do,  we  have  to  ensure  any  additional  data  is  properly
+acknowledged and its differences (site, etc.) accounted for. - Cross-Validation for Evaluation: Because any
+single split could be unstable (with 10 subjects, picking 2 for test might drastically swing results depending
+on which), we likely will do LOOCV or repeated experiments. This not only helps robustness of evaluation
+but also uses data more efficiently: eventually, every subject gets to be in training in some folds. However,
+one must be careful – if we tune hyperparameters on cross-val, we might still overfit to these 10 in general.
+But given the scarcity, cross-val is a fair approach to show consistency. Reviewers often worry about small N,
+but cross-val is an acceptable mitigation if properly done (report mean and std of metrics). - Regularization
+in model: We will use weight decay and maybe dropout in the model’s layers to reduce overfitting. Also, the
+multi-task (segmentation) acts as a regularizer – it prevents the network from just blindly copying input
+intensities because it has to also make meaningful segmentation. That should help low-data learning by
+injecting prior knowledge.
+6.6 Patch Aggregation at Inference: One must consider how to reconstruct a full 7T volume from patches
+at test time: - Easiest is to slide a window over the 3T volume, generating patches, run each through the
+network, and place them into an output volume. If we do that, we need to blend the patch outputs to avoid
+seam artifacts. Commonly, one would average overlapping regions or use a blending window (like raised
+cosine) on patch edges. - Alternatively, if we have enough GPU memory at inference, we could process the
+whole volume in one go by stacking the operations (some frameworks allow large input if done carefully).
+With diffusion, we might try to do patch-by-patch for sampling as well. - For now, we’ll plan to use patch
+inference with overlap. We’ll probably pick an overlap of 50% so that each voxel is predicted multiple times
+from different patches and then average. This smooths any patch boundary differences. We should verify
+the model is approximately shift-invariant (likely yes if using conv and appropriate handling). - Because the
+data is small, we can also simply evaluate on a patch basis if needed (like compute SSIM per patch and
+average). But better to reconstruct the full image and compute metrics on that to account for global
+consistency.
+6.7 Avoiding Information Leakage in Multi-Task: If we use segmentation in training, we must ensure the
+segmentation labels we use are from the training set only. Since segmentations are derived from the same
+MRI, it’s fine. But consider: if we used a pre-trained segmentation model (like from all subjects) and applied
+to input, that’s not really leakage because segmentation is a deterministic function of input, not using test
+outputs. So that’s okay. But if we were to incorporate something like “we know the hippocampal volume of
+the target and use that in loss”, that would be using target info beyond what input provides. That could be
+considered as peeking at ground truth labels. However, since we have ground truth 7T during training,
+45
+44
+18
+that’s fine to use in loss. In testing, obviously we don’t use ground truth. So no issue as long as all
+supervised signals are legitimate.
+6.8 Small-N Handling with Pretraining: Another thought: We could pretrain the model on a similar task
+with more data. For example, pretrain on synthesizing T2 from T1 (like GAN-MAT did) on a larger dataset
+, or pretrain on 1.5T to 3T (some bigger dataset might exist for 1.5T to 3T). Or even use a self-supervised
+pretraining on the 3T images alone (like masked autoencoding or denoising on 3T). Then fine-tune on our
+10 paired data for 3T→7T. This could give the model a starting point of general MRI feature extraction. If
+time permits, we could do something like train a VQ-VAE on a bunch of open 3T MRIs and use it in a latent
+diffusion. But that might be beyond scope unless needed for performance. We will mention it as a possible
+extension if reviewers are concerned about small data – showing that we have considered using larger
+datasets via transfer learning.
+6.9 Ensuring the Model Doesn’t Cheat: “Cheating” here means the model exploiting any unintended clues.
+Since we have perfect alignment and same resolution, one might think there’s no obvious cheat (like
+watermark etc.). But subtle: if we left some header info (like DICOM tag saying field strength) – not
+applicable here since input is just image array. Or if intensity ranges were not normalized, the model could
+possibly just learn a global scaling to mimic 7T mean intensity (if all 7T have say higher mean). We
+normalized to stop that. We also ensure that any augmentation doesn’t introduce scenario where input
+contains part of output. Paired augmentation is safe. So likely no cheating paths remain.
+6.10 Pairs and Batches: We will treat each patch pair independently in training. For diffusion, each will
+generate many noise-augmented pairs internally. We’ll shuffle patches each epoch. A batch may contain
+patches from different subjects, which is fine after normalization (they’re all roughly standardized). We must
+ensure batch mixing doesn’t cause an issue with losses – it shouldn’t, as each patch has its own target. 
+6.11 Summarizing Data Preparation: We have 10 paired volumes, we generate thousands of paired
+patches from them for training, using both T1 and optionally T2 as inputs, with each patch’s target being
+the  corresponding  7T  T1  patch.  The  small  sample  size  is  addressed  by  heavy  patch  sampling  and
+augmentation. Data splits are by subject to avoid any overlap. This way, when we evaluate on a left-out
+subject,  the  model  has  never  seen  any  part  of  that  subject’s  image  during  training,  giving  a  fair
+generalization test.
+Reviewers’ likely questions on data formulation: - “Why patches? The brain has global context – could patch
+training miss that?” We will justify that our network (with transformer attention) still captures large context
+even from a patch, and our patch size (e.g. 96^3) is large enough to include significant anatomical context
+(it might cover, say, half a hemisphere). Also, patch training is a proven strategy in similar works
+,
+especially given GPU constraints. - “Could overlapping patch predictions cause seams?” We will note that at
+inference  we  use  overlap  and  blending  to  avoid  seams.  We  can  also  mention  we  didn’t  observe
+discontinuities  in  synthetic  images  (and  we  can  show  a  full  reconstruction  in  the  paper’s  figures  to
+demonstrate it looks natural). - “Why not use all data in one network (like 10 images is not huge)?” If asked, we
+can say we did try or consider full volume training, but patch training gave better generalization and
+allowed more effective data augmentation. Also, full 3D diffusion with 10 volumes might severely overfit or
+be unstable; patches effectively multiply our training examples. - “Multi-contrast – is it fair to require T2? – We
+can respond that it’s an extension we explored, but our core results use only T1 as input, meaning our
+method works with the minimal common clinical acquisition (T1). The T2 input variant is optional for
+situations where T2 is available and one desires maximum accuracy. - “Data leakage and evaluation fairness?”
+26
+24
+42
+19
+– We will clearly state that test subjects were held-out and that we perhaps did cross-validation due to
+sample size. We’ll also mention the use of statistical testing to ensure results are not noise (discussed in
+Evaluation).
+By carefully constructing our training data pipeline as above, we ensure the model learns the legitimate
+3T→7T mapping without distraction, and that our evaluation is rigorous given the small N scenario.
+7. Training Strategy
+Training a high-capacity generative model on limited data requires a well-planned strategy. We will outline
+the loss functions, training phases, and regularization techniques to ensure convergence to a model that
+meets our objectives (visual fidelity, anatomical accuracy, and clinical relevance). We will also discuss how to
+detect and address failure patterns during training.
+7.1 Loss Functions:
+Our training loss will be a weighted combination of several components, each serving a purpose:
+Pixel-wise Reconstruction Loss: We will use an L1 (mean absolute error) loss between the synthetic
+7T image and the ground-truth 7T image. L1 is chosen over L2 because L1 tends to preserve edges
+better and is more robust to outliers (L2 would overly penalize occasional spikes, potentially blurring
+the output). This loss ensures  global and local intensity accuracy. It trains the model to get tissue
+intensities and contrasts right on average. We expect L1 to enforce large-scale structures (e.g., brain
+shape, ventricle size) to match, since any deviation is penalized.
+Perceptual (Feature) Loss: A perceptual loss compares high-level features of output and target,
+rather than raw pixels. We will implement this by passing synthetic and real 7T images through a
+pre-trained feature extractor and computing the difference in feature activations
+. A common
+choice is the VGG-19 network pretrained on ImageNet, taking a certain layer’s output (e.g., conv3_3)
+. Even though VGG is trained on natural images, it has been surprisingly effective as a perceptual
+metric for medical images as well, capturing textural similarity. Alternatively or additionally, we could
+use a network trained on brain MRI segmentation (like a shallow network we train on our data’s
+labels) as a feature extractor. But to keep it simple, VGG or a standard perceptual loss (LPIPS) can be
+used. This loss encourages the synthetic image to feel like the real image in terms of texture and fine
+details, beyond just pixel matching. It helps prevent the output from being overly smooth (a typical
+result of L1/L2 alone). We’ll weigh this loss such that it complements L1: too high and it might
+introduce noise/artifacts chasing perceptual similarity, too low and it has no effect. We might start
+with a small weight (like 0.1 relative to L1) and tune on validation.
+Topology/Anatomy Loss: This is the crux of our topology-preserving objective. We propose two
+implementations and might use one or a combination:
+Segmentation Consistency Loss: As discussed, we take a segmentation model (like FastSurfer or a
+simpler UNet trained to segment brain structures) and generate label maps for both synthetic and
+real 7T. Let’s denote $S_{synth}$ and $S_{real}$ as the segmentation outputs (could be one-hot label
+volumes or probability maps). We then compute a loss $L_{seg} = \mathcal{L}(S_{synth}, S_{real})$. If
+• 
+• 
+46
+46
+• 
+• 
+20
+we have discrete labels, a straightforward choice is the Dice loss or cross-entropy on each class,
+comparing synthetic’s segmentation to the real’s segmentation (which we have from the dataset
+annotations). Essentially, we want them to match. This ensures things like: if the real 7T had a single
+connected hippocampus segment, the synthetic 7T’s intensities must be such that a segmentation
+model also finds a single connected hippocampus of the same size. This is a direct measure of
+topology and anatomy. We might simplify by focusing on key regions: e.g., restrict this loss to certain
+“regions of interest” that matter (like hippocampus, ventricles, cortex), which we can weight more
+heavily. If using all brain regions, the model is encouraged to get all structures right – which is great
+for topology, though we must ensure the segmentation of real data is accurate (FreeSurfer can have
+minor errors, but we assume it’s decent).
+Direct Topological Loss (Persistent Homology): For a more direct approach, we can calculate
+topological features of the images. For example, using a persistence diagram of sub-level sets of the
+image or segmented structures. A simpler measure could be counting connected components or
+holes in a thresholded version of the image (like binarizing at certain intensity to approximate white
+matter). However, doing this directly on intensity is tricky because intensity doesn’t directly give
+topology of anatomy unless segmented. So a better approach might be computing topology on the
+segmentation as above. The literature suggests using persistent homology metrics and maximizing
+their similarity
+. We could implement: compute persistence diagrams for cortical gray matter
+surfaces or something and penalize differences. This is complex and computationally heavy, so a
+more practical surrogate is the segmentation loss above, which inherently tries to preserve shape
+connectivity.
+Another idea: incorporate a surface distance loss using the provided pial/white surfaces
+. We have the
+actual cortical surface from real 7T (via FreeSurfer). We could require that if we run the same surface
+extraction on synthetic, the vertex coordinates align. But running FreeSurfer inside training is not feasible.
+Instead,  maybe  sample  points  from  real  surfaces  and  ensure  synthetic  intensities  have  appropriate
+gradients at those points to indicate a surface. That’s too convoluted. So we stick to segmentation-based.
+We’ll implement $L_{seg}$ by perhaps training a small 3D UNet to map T1 to a few label classes (e.g.,
+background, gray, white, ventricle) using the annotation maps. Then hold that network fixed during training
+and compare outputs. Or we could skip training our own and directly use the FreeSurfer labels as $S_{real}$
+and attempt to predict them from synthetic by including a segmentation head in our generator (multi-task
+as earlier). Actually, the multi-task approach is elegant: the generator itself outputs a segmentation and an
+image. Then we have ground truth labels from real 7T to compare to the segmentation output (with cross-
+entropy). This way we don't need a separate segmentation network, and the generator is jointly learning to
+ensure those labels are correct. This effectively couples the image generation with segmentation implicitly –
+if the image does not align with those labels, the segmentation head will struggle and incur loss, pushing
+the image to improve. We likely will do this multi-task design as it is simpler to implement and efficient. The
+topology loss weight will be set such that the model doesn’t ignore it. Possibly initially lower weight then
+increased once image starts to be reasonable (we can use a curriculum for that, see below). 
+To justify, the PLOS study introduced segmentation-based metrics after training to evaluate
+, but did not
+enforce it in training; we go further by including it in training to directly optimize for that.
+Adversarial Loss (if applicable): If we incorporate a GAN discriminator (particularly if we ended up
+with Candidate B or a hybrid approach), this would be a term $L_{GAN}$ that encourages the
+synthetic output to be indistinguishable from real 7T. It typically is of the form: for the generator,
+minimize $-\log D(I_{7T}^{synth})$ (if using a log-loss) or an equivalent WGAN-GP loss etc. This
+• 
+47
+27
+34
+28
+• 
+21
+pushes the generator to produce realistic textures that fool D. As we favor diffusion, we might not
+include  a  discriminator.  However,  one  could  still  incorporate  an  adversarial  element  even  with
+diffusion by fine-tuning with GAN for sharper details. But let’s say our primary plan is no adversarial
+loss at first. If we see outputs are too smooth, we might add a PatchGAN discriminator that focuses
+on high-frequency detail (like edges, fine patterns in cortex). That discriminator would look at small
+patches of the synthetic vs real to see if textures (like gyral patterns, micro vessels) look real. We
+need to carefully weight adversarial loss to not conflict with segmentation loss (adversarial might try
+to invent “realistic” textures that segmentation might not expect). A balanced approach: use a low-
+weight adversarial loss primarily to add variation. If diffusion is used, we might not need this at all;
+diffusion inherently can produce noise patterns well. We will keep it as an optional component in
+case.
+Regularization  Losses: These  include  weight  decay  on  network  weights  (L2  norm  of  weights,
+typically already included in optimizer settings). Also, if using diffusion, it has its own internal loss
+(the KL or noise prediction loss) which is primary. Actually, clarify: In diffusion training, the main loss
+is the MSE between predicted noise and true noise at random timesteps. If we use a conditional
+diffusion, that’s our base loss. So when saying L1/L2 loss above, we must reconcile with diffusion:
+In diffusion model training, we do not explicitly have an L1 image loss; instead, we train the model to
+denoise. However, to incorporate our additional constraints (segmentation loss, etc.), we can treat
+those as auxiliary losses added to the diffusion loss. This means total loss = diffusion denoising loss +
+λ_seg * segmentation loss + etc. This is an uncommon but feasible approach: we are basically
+guiding the diffusion model’s training with extra terms. 
+Alternatively, we could do a two-stage training: first train the diffusion purely on pixel loss
+(denoising), then fine-tune it with segmentation constraint. But joint training should be fine if
+weighted properly.
+We also consider feature matching loss (used often in GANs): if a discriminator is used, one can add a loss
+that the generator tries to match intermediate features of the real vs fake (stabilizing training). If needed,
+we can incorporate that to help the generator produce more realistic outputs without strictly adversarial
+push.
+7.2 Multi-Task Learning: We have effectively a multi-task setup if we output both the synthetic image and
+the segmentation. The segmentation head introduces an additional supervised signal (with cross-entropy or
+Dice loss with the ground truth labels from real 7T). This multi-task approach has multiple benefits: - It acts
+as regularization (network must learn meaningful features for segmentation, not just brute-force pixel
+mapping). - It ensures anatomical correctness explicitly. - It provides an additional evaluation output for free
+(we can check if segmentation performance on synthetic vs real are close).
+We will design the network such that the encoder is shared, and then we have two decoders: one for image
+reconstruction and one for segmentation. The segmentation decoder could be a lighter branch (since
+segmentation is easier in some sense than generating intensities). They may share early decoder layers and
+only branch out near the end.
+We’ll weigh the segmentation loss relative to image loss to ensure neither dominates. In early training, the
+image may be very noisy (especially in diffusion) which will make segmentation difficult; if segmentation
+• 
+• 
+• 
+22
+loss is too high early, it might confuse training. We might do a staged training where segmentation loss is
+introduced or increased after some epochs (see curriculum below).
+7.3 Regularization Strategies: -  Weight Decay: Use a modest weight decay (e.g., 1e-5 or 1e-6) to keep
+model weights from growing and to encourage simpler solutions. - Dropout: If using dropout (especially if a
+transformer  or  any  fully  connected  layers  present),  we  can  drop  some  activations  during  training  to
+generalize better. For convolutional layers, dropout can still be applied (e.g., drop filters randomly). Perhaps
+not crucial in diffusion (which has inherent noise injection), but if we go with a GAN or direct network,
+dropout might help. We’ll monitor if overfitting occurs (loss on train >> loss on val). - Augmentation as reg:
+Already discussed heavy augmentation which is a key regularizer given small data. - Loss weighting: We
+consider that effectively as reg – too high weight on adversarial could cause instability, too high on
+segmentation could cause the network to ignore image fidelity. We’ll tune these on validation: e.g., try λ_seg
+= 1.0 vs 0.1, see which yields better val SSIM and segmentation accuracy trade-off. - Early Stopping: Given
+risk of overfitting, we’ll employ early stopping based on validation loss or a composite metric. E.g., if after
+some epoch, val perceptual loss or val segmentation accuracy starts to worsen, we stop. With few subjects,
+we might not have a big separate val set, but in cross-val, in each fold we can hold one subject as val while
+training on others, then test on another. Or simply watch training vs augmented data.
+7.4 Curriculum or Staged Training: This can greatly help with stability: - Stage 1: Warm-up on simpler
+losses. For example, first train the model with only L1 and maybe a little perceptual loss, without adversarial
+or topology loss, until it learns a reasonable mapping (e.g., reaches decent PSNR). This avoids the model
+being overwhelmed by too many objectives at start. In the MDPI stroke paper, they did exactly this: first 60
+epochs pixel losses only
+. We can adopt similar. Specifically, we might not include segmentation loss for the
+first few epochs or set its weight low. This is because if the image is very poor initially, segmentation loss is
+meaningless (it will just penalize everything). - Stage 2: Introduce topology loss and/or adversarial. Once
+the pixel loss plateau is reached (or after X epochs), we start ramping up the segmentation loss weight. The
+model at this point has learned to produce something close to 7T in appearance; now segmentation loss
+will fine-tune it to correct subtle errors in structure. We can do a linear weight ramp or just turn it on fully at
+epoch N. Similarly, if using a GAN, perhaps start adversarial loss after the model has some baseline quality
+(this avoids GAN causing divergence early). This approach of gradually adding objectives is known to
+stabilize multi-objective training
+. - Stage 3: Fine-tune on full objective. After everything is introduced,
+train until convergence. Possibly do a lower learning rate fine-tuning for final epochs to refine details. -
+Optionally,  Stage 4: (if diffusion) we could fine-tune the model as a deterministic generator (like the
+network weights from diffusion used in a standard UNet) with an L1 loss for a few epochs to directly
+minimize error. But likely unnecessary if diffusion is done right.
+We will design triggers for stage transitions. For example: - “Transition to Stage 2 when validation SSIM > X”
+or after fixed number of epochs, whichever first. - Or manually: e.g., 50 epochs stage1, then stage2 onward.
+This is something we’ll note in method details. - We saw a reference where stage progression was triggered
+by hitting certain PSNR/SSIM goals
+, which is a clever adaptive approach. We might or might not do that
+automatically, but we can plan approximate epoch counts.
+7.5 Optimizer and Training Hyperparams: - We’ll use an optimizer like  Adam (with perhaps β1=0.9,
+β2=0.999 typical). In MDPI example, they used Adam with separate LR for generator and discriminator
+. -
+Learning rate: likely around 1e-4 for generator, 1e-4 for diffusion if used. If GAN, discriminator also ~1e-4.
+For diffusion specifically, some use smaller LR due to many steps, but we’ll experiment. - We may use an
+exponential moving average (EMA) of model weights (common in diffusion training) to stabilize and get a
+48
+48
+48
+49
+23
+slightly better final model
+. This means maintain a copy of the model that is an EMA of training weights
+(with decay ~0.999), and use that for sampling or final results – it often yields cleaner outputs. - Batch size:
+Possibly around 4–8 patches per batch depending on patch size and model complexity, to fit in memory.
+We’ll try to maximize batch size to stabilize training (bigger batch smooths gradients a bit), but given 3D
+patches, memory is a limit. -  Number of iterations: Because we have effectively an infinite stream of
+patches, we won’t count epochs in the usual sense (since one “epoch” if defined as going through all
+possible patches is not meaningful). Instead, we’ll define a number of training iterations. Roughly, if each
+subject yields, say, 1000 patch samples per epoch (just by random sampling), then an epoch is 10k samples.
+We might train for the equivalent of, e.g., 100 epochs = 1,000,000 patch samples. We’ll monitor when losses
+converge or when validation metrics stop improving.
+7.6 Failure Patterns and Detection:
+During training, we will watch for: - Overfitting: If training loss keeps decreasing but validation loss (on
+held-out subject patches) bottoms out then rises, that’s classic overfit. Given heavy augmentation and small
+network (if we keep parameters in check) plus segmentation reg, we hope to push overfitting limit. But if we
+see it, we could: - Increase augmentation diversity. - Stop early. - Potentially reduce model capacity (fewer
+channels or layers). - Mode collapse (in GAN case): If we used a GAN and see that the generator starts
+producing nearly identical outputs for different inputs (a sign of collapse) or the discriminator loss goes to
+zero (discriminator overpowering generator). To detect: visually inspect a variety of outputs or check output
+variance. If collapse, remedy by lowering adversarial weight, using regularization like spectral norm, or
+using diffusion instead of GAN. - Oscillations: Especially with GAN or with too high learning rate, losses
+might oscillate wildly. We would then reduce LR or add gradient clipping (the MDPI paper clipped grad
+norm to 5.0
+ which we can also do to avoid rare huge gradients). With diffusion, oscillation is less likely if
+properly set. - Loss imbalance: If one loss term is orders of magnitude larger than others, training might
+bias towards optimizing it while neglecting others. We will monitor the magnitude of each loss component.
+For example, adversarial losses are often much smaller numeric values compared to pixel loss; if not scaled,
+the generator might ignore them. So we ensure to multiply losses by appropriate weights to have them on
+roughly comparable scale. Similarly, segmentation loss (being a classification loss) might produce values in
+a  different  range  than  pixel  loss,  so  adjust  accordingly.  -  Output  quality  issues: We  should  inspect
+intermediate outputs periodically. For diffusion, we might not have an output until we sample after training,
+but we can generate from time to time using current model to see how images look. For GAN, we can
+always run the generator on some validation input and see output. If we notice issues like: - Blurriness
+(means possibly too high L1 weight or insufficient perceptual/adversarial). - Noise or speckle (maybe
+adversarial weight too high or model capacity issues). - Anatomical mismatches (like a sulcus missing or
+extra): that’s precisely what segmentation loss should catch. If we still see it, maybe segmentation branch
+not  effective  enough  or  weight  too  low.  -  Over-sharpening  or  hallucinated  edges  (could  happen  if
+adversarial or perceptual overshoots): then maybe ease those losses. - Hippocampus asymmetry error
+(PLOS  noted  significant  asymmetry  in  hippocamp  segmentation  with  their  method
+).  We  will
+specifically check if our synthetic images yield symmetric structures if input was symmetric (healthy brains
+should be roughly symmetric anatomically). If we find the model, say, made left hippocampus smaller than
+right unpredictably, that’s a problem. Segmentation loss across hemispheres should catch it if the ground
+truth was symmetric. If not, we could add a small symmetry constraint ourselves (maybe too niche). -
+Training time issues: Diffusion models can be slow to train. With 3D data, if it’s taking too long, we might
+simplify  network  or  reduce  time  steps.  We  plan  early  experiments  to  calibrate  this.  -  Convergence
+plateaus: If training seems stuck (no improvement for long time), possibly learning rate too low or the task
+too hard initially. Then we might need to adjust. For example, we might find diffusion is not learning well
+49
+49
+31
+32
+24
+from scratch on 10 subjects – maybe it needs a pretraining or a simpler approach first (like first train a
+deterministic UNet with L1 then use it to initialize diffusion model).
+We will maintain logs of these metrics and possibly use a tool (TensorBoard or similar) to observe training
+curves and sample outputs. Because the dataset is small, visual inspection of outputs for each subject is
+feasible and should be done to ensure no obvious failures on any case.
+7.7 Handling Diffusion Specifics (if chosen): Just to clarify, if using diffusion: - We need to choose number
+of diffusion steps (T). We might use a smaller T like 100 or 200 for efficiency (since 1000-step DDPM might
+be too slow for 3D). Many modern diffusion use noise schedules that allow fewer steps (or use Denoising
+Diffusion Implicit Models for fewer steps). We might try a DDIM sampler at inference for speed. But training
+still goes through T steps each sample – heavy. - Alternatively, consider a  latent diffusion: encode 3D
+image with autoencoder to, say, half resolution or smaller, then diffusion in latent space. This would
+drastically reduce compute. If time allows, we might implement a small 3D VQ-VAE or autoencoder to
+compress volumes (like compress 0.65mm voxels to 1.3mm or something), do diffusion there, then decode.
+This is quite advanced but might be necessary for speed. For blueprint, we mention the idea as a footnote if
+needed, but not commit unless required. - If diffusion is too unwieldy, we’ll fall back to the advanced GAN
+(Candidate B style). That’s our contingency.
+7.8 Early Failure Detection: We will detect if something is going wrong by: - Monitoring the segmentation
+accuracy on a validation subject’s synthetic output. If after some training it’s not improving or very low,
+then the network might be focusing on wrong thing. - Also monitor image similarity metrics (PSNR/SSIM)
+on validation. We expect them to climb initially. If they saturate at a low value (meaning model not learning
+properly), maybe architecture or training setup needs revision. - Check discriminator loss trend (if used): if
+D loss goes to nearly 0 and G loss stagnates, G is failing (D too strong). If D loss goes high and stays high, D
+might be too weak or not learning (maybe G dominating or LR issues). Ideally, they should reach some
+equilibrium range.
+In summary, our training strategy is  iterative and vigilant. We combine multiple loss functions (pixel,
+perceptual, topology) and possibly multi-task learning to guide the model. We implement a curriculum to
+introduce complexity gradually. And we track various indicators to adjust course early if needed. This
+disciplined approach will maximize our chances of the model converging to a solution that satisfies both
+low-level image fidelity and high-level anatomical correctness.
+8. Evaluation Strategy (Reviewer-Driven)
+Evaluation is where we convince reviewers that our method is effective. We need to compare against
+baselines, report standard metrics, and also demonstrate clinical relevance through novel metrics. We will
+design a comprehensive evaluation scheme as follows:
+8.1  Mandatory  Baselines: To  validate  our  method’s  improvements,  we  will  include  several  baseline
+comparisons: - Input 3T vs. Real 7T: First, as a reference, we’ll measure how far a raw 3T image is from the
+7T (in terms of metrics like SSIM, etc.). This establishes the “gap” that our model is trying to bridge. It also
+serves as a naive baseline: using the 3T itself as the output (i.e., do nothing). If our method is any good, it
+should significantly outperform this identity baseline. -  Linear Interpolation + Intensity Matching: A
+simple baseline is to upsample the 3T image to 7T resolution and maybe adjust intensities to match 7T’s
+histogram. Essentially, this is like a classical approach: do high-resolution interpolation and perhaps a bias
+25
+correction. We can implement: upsample 3T from 0.8mm to 0.65mm using spline interpolation, then
+perform histogram matching of 3T to 7T (or scale to have same mean/variance as 7T). This will produce a
+pseudo-7T. We expect this to improve resolution slightly but it won't introduce new details or contrast, so it
+will likely have lower contrast and missed fine structures compared to real 7T. But this baseline is important
+to show the advantage of learning-based enhancement. - Prior Deep Learning Methods: - GAN baseline:
+We  will  implement  or  use  a  standard  conditional  GAN  (Pix2Pix-style)  with  a  3D  UNet  generator  and
+PatchGAN discriminator, trained on our data with just L1 + GAN loss (no topology loss). This represents the
+type of approach many earlier works used
+. We expect our method to outperform it, especially on
+anatomical metrics, but we need to show that. If one of the earlier published methods has code (e.g., Qu et
+al. 2020 wavelet WATNet), we could attempt to run it on our data. But replicating their custom wavelet
+network might be heavy. Instead, using a general Pix2Pix3D or even a 3D U-Net with only L1 loss could be
+two baselines: - U-Net + L1 (no GAN): to show what a pure CNN regression gives (likely smooth result). - U-
+Net + L1 + adversarial (Vanilla GAN): to show what adding GAN does beyond the above. - Diffusion baseline: If
+our method uses diffusion + special constraints, a baseline would be diffusion without those constraints.
+For example, conditional diffusion trained purely to minimize pixel loss (no segmentation loss). This would
+measure the effect of our topology guidance. If diffusion baseline is not easily trainable, at least we have
+the GAN baseline. But since diffusion is our chosen main, it's valuable to show how adding segmentation
+loss improves metrics vs plain diffusion. We can do an experiment: train a diffusion model with just
+conditioning and compare. - From literature: If any known method has reported results on this same dataset
+(given the dataset is new 2023, possibly not many have published on it yet, except maybe that PLOS 2025
+which did 7T synthesis on a different dataset). We could consider comparing with results from Qu et al.
+(2020) if they reported numbers like PSNR/SSIM on their data. Or the MICCAI 2021 (Do et al. 2021) if
+available. However, lacking direct access or code, we will rely on implementing basic versions ourselves as
+above. -  Ablation (counts as baseline): We will treat our own model with certain components ablated as
+baselines too. For example: - Ours minus topology loss (i.e., remove segmentation loss). - Ours minus
+diffusion (if we ended up with diffusion, compare to if we did a similar architecture with standard training). -
+Ours minus T2 input (if we included T2, show result with and without it). These are not external baselines
+but internal comparisons to justify each component. Reviewers expect ablations to prove that each novelty
+(topology constraint, etc.) has a measurable effect.
+Human Expert Baseline: If possible, we might do a qualitative comparison: e.g., have an
+neuroradiologist or experienced viewer compare images or do a Turing test – can they distinguish
+real 7T from synthetic? If we can claim that synthetic images are almost indistinguishable in blind
+tests, that’s powerful (the SWI diffusion paper did statistical tests showing no significant difference in
+quality scores
+). If we have access to an expert or can do a small user study (maybe with 2-3
+imaging scientists rating image pairs), we will include those results. This is optional but would
+strengthen the evaluation of perceptual realism.
+8.2 Quantitative Image Quality Metrics (Technical Metrics): We will compute standard metrics on the
+test set comparing synthetic 7T to real 7T: - PSNR (Peak Signal-to-Noise Ratio): in dB. This is common,
+though it correlates poorly with perceptual quality sometimes. Still, a necessary metric to report because
+many prior studies do
+. Higher PSNR means closer to ground truth. We expect our method to have
+higher PSNR than baselines (especially input or naive). - SSIM (Structural Similarity Index): This measures
+perceived image similarity accounting for luminance, contrast, structure. It’s more informative than PSNR
+for structure preservation. We’ll report average SSIM over the brain region. -  NMSE (Normalized Mean
+Squared Error): Some papers report NMSE or MSE. It’s basically 1 - (PSNR in a way). We might include NMSE
+since  PLOS  did
+,  to  compare  with  possibly  their  numbers  or  just  as  another  view.  -  FID  (Fréchet
+Inception Distance): Possibly we could compute FID between synthetic and real 7T distributions. However,
+10
+• 
+25
+50
+28
+26
+FID requires an “Inception” network trained on similar images. We might try using a 3D CNN classifier’s
+features (or 2D slices and use a 2D Inception). FID can capture if synthetic images as a set differ in
+distribution from real. If we have enough samples (we have small number though). With 10 images, FID
+may be unstable. But if we consider many patches, maybe. We might skip FID due to small N. Another
+distribution metric could be kernel MMD between synthetic and real image patches, which TopoGAN used
+for topology but could also be used for intensity distribution. - Perceptual Score: We could use learned
+perceptual image patch similarity (LPIPS) metric (there’s a standard implementation using VGG features).
+This would quantify similarity in feature space. If our method yields lower LPIPS (closer to 0 means very
+similar), that’s good. We might include it to emphasize perceptual closeness beyond pixel similarity.
+We will likely tabulate these metrics for: - Each method (ours and baselines) on the test set. - Possibly
+broken down by region or something? Usually, one reports global brain metrics. But we might also compute
+error metrics regionally: e.g., PSNR specifically in gray matter vs white matter (because maybe model does
+better in one than other). We can do this by masking the images with tissue segmentations and computing
+MSE in those areas. This could be an interesting analysis: perhaps our model significantly improves gray-
+white contrast (so better SSIM in gray matter areas). - We’ll apply statistical tests on these metrics if
+appropriate (with 10 subjects, a paired t-test or Wilcoxon between ours and baseline metrics can show
+significance). For example, compare SSIM of our method vs SSIM of baseline, get p-value. That is commonly
+expected in journals: to say improvement was statistically significant (p < 0.05).
+8.3 Metrics that Matter Clinically: Here we go beyond pixel similarity to show that our synthetic images
+preserve or enhance clinically relevant information: - Segmentation Accuracy: Using the provided ground
+truth segmentations (from FreeSurfer on real 7T) as reference, we will run the same segmentation tool (or
+our own segmentation head) on the synthetic 7T and measure accuracy. For example, compute  Dice
+coefficients for major brain structures (white matter, cortex, ventricles, hippocampus, amygdala, etc.)
+between  segmentation  of  synthetic  and  segmentation  of  real  7T
+.  If  our  synthetic  image  is  truly
+anatomically faithful, these Dice scores should be very high (close to 1). Baselines likely yield lower Dice
+(especially in tricky structures). The PLOS paper did something similar by evaluating differences in volumes
+from  VolBrain  segmentation
+.  We  will  essentially  replicate  that  approach:  treat  the  real  7T
+segmentation as ground truth, and assess how well one would segment the synthetic vs how well one
+segments the real 3T (as a baseline). - E.g., measure hippocampal volume error: |Vol_syn - Vol_real| relative
+to |Vol_3T - Vol_real|. If our method is good, the synthetic’s hippocampal volume should match the real 7T’s
+within a small margin, significantly better than just using 3T (which might systematically underestimate CA1
+region as per Kerchner’s note
+). - We’ll do this for multiple structures. Key ones for AD: hippocampus,
+entorhinal  cortex,  ventricles  (since  enlargement  indicates  atrophy),  possibly  whole  brain  volume.  -
+Topology-specific Metrics: We can adopt metrics inspired by the topology-preserving literature: -  Euler
+Characteristic or Betti numbers: For example, compute the Euler characteristic of the binarized white
+matter mask in real vs synthetic. If synthetic wrongly breaks white matter into two pieces, Euler char will
+differ. We expect identical Euler char for brain compartments. We could do this for multiple threshold levels
+to mimic persistent homology but simpler. - Connected Component Similarity: For instance, ensure that
+the number of connected components in the segmentation of synthetic matches that in real for key
+structures (cortex should be one connected sheet per hemisphere, etc.). We could say we checked and
+found no extra components. -  Boundary Distance: Compute the Hausdorff distance or average surface
+distance  between  boundaries  of  structures  in  synthetic  vs  real.  For  example,  take  the  hippocampus
+segmentation from real vs synthetic, compute distance between surfaces; a small mean distance indicates
+shape  is  well  preserved.  This  quantifies  topology/shape  fidelity.  -  Persistent  Homology  Metric
+(Topological Similarity, TS): The vascular paper defined a TS using persistent homology overlap
+. We
+28
+28
+32
+14
+29
+27
+could attempt a simpler analog: compute persistence diagrams for segmentation volumes and measure
+their similarity. This may be overkill given segmentation differences/dice cover most needs, but we can
+mention if any topological invariant deviance was found (likely not, if dice is high). - Contrast-to-Noise and
+SNR: MRIQC metrics used in the Sci Data (CNR, SNR)
+ could be computed on synthetic images to see if
+they approach real 7T values. For example, total SNR synthetic vs real vs 3T. Or GM–WM contrast ratio. This
+indicates whether our images truly mimic the improved contrast of 7T. If synthetic has higher CNR between
+GM and WM than 3T, that’s a win (closer to 7T’s known high contrast
+). We can measure CNR by taking
+mean intensity in GM vs WM segment and dividing by noise std (estimated from air background). We could
+present that in a small table or text: "Synthetic 7T achieved GM/WM contrast of X, compared to real 7T's Y
+and input 3T's Z
+." - Alzheimer’s-related evaluation: This is critical for our claim about early AD analysis,
+but since our data are all healthy, we need to be creative: - We can simulate an AD scenario by using known
+biomarkers. For instance, one hallmark is hippocampal atrophy. On 7T, one might delineate hippocampal
+subfields better
+. We can do a test:  Add artificial atrophy to the 3T images and see if our model still
+preserves/detects  it.  For  example,  take  one  subject’s  3T,  intentionally  shrink  the  hippocampus  region
+slightly (by masking and reducing intensity or something), feed through model, see if output shows a
+volume  reduction  in  hippocampus  compared  to  normal  synthetic.  This  is  artificial,  but  demonstrates
+sensitivity. It might be too contrived though. - Alternatively, leverage a separate dataset: if we have any 3T
+scans from AD patients and maybe those same patients had 7T (rare) or at least 7T from other AD vs
+control? Possibly unrealistic. We could however use our model on actual AD 3T scans (from ADNI, etc) and
+feed synthetic images into an AD classifier. If we had a pre-trained classifier on MRI (like one from literature
+that takes MRI and outputs probability of AD), we could compare classification on original 3T vs synthetic-7T
+(which presumably has higher contrast). The hypothesis: the classifier might perform better or give higher
+confidence for AD on the synthetic because subtle features stand out more. This is a bit speculative and
+requires careful setup (domain shift might confuse classifier). If we have time, we might do a small
+experiment: train a simple CNN to classify AD vs control on some dataset of 3T MRIs (like ADNI 3T), then test
+it on ADNI 3T images processed with our model (synthetic “7T”) and see if any difference in prediction or
+feature activation. This is a heavy evaluation so maybe just a discussion point if not fully done. - More
+directly, we can measure effect size of group differences: e.g., known that hippocampal volume difference
+between AD patients and controls is X% at 3T. If we had any AD vs control images to run through (maybe
+from ADNI, albeit no ground-truth 7T for them), we could see if synthetic images yield a larger separation in
+volumes, suggesting earlier detection. Without AD data, we cannot do this with our 10 subjects (all healthy).
+We might skip actual AD testing due to lack of data, but stress that we preserve the metrics that matter (like
+hippocampal volume) which correlate with AD.
+Given  limitations,  our  main  “clinical”  demonstration  will  likely  revolve  around  showing  structural
+measurements (volumes, thickness) from synthetic images are nearly identical to those from real 7T. Real
+7T presumably is a gold standard for measuring those. If synthetic replicates them, it implies one could get
+7T-level measurement accuracy from 3T images. For early AD, volume of CA1 region as measured on 7T was
+found to correlate with mild AD
+. If our synthetic can yield a similar measurement, that’s a success. We
+will  highlight  that  qualitatively:  maybe  show  a  plot  of  hippocampal  volumes:  3T  segmentation
+underestimates volume, 7T truth is higher, synthetic matches the 7T (assuming 3T had partial volume
+effects, etc.). If we can generate such evidence, it directly addresses AD angle.
+8.4 Statistical Testing: We will apply statistical analysis to our results to establish significance: - For each
+metric (PSNR, SSIM, dice, volume error, etc.), we will do paired tests comparing our method vs baseline on
+each test subject. For example, for each subject, compute SSIM(ours) - SSIM(baseline), then do a paired t-
+test across subjects to see if mean difference > 0 significantly. Given N=10, if differences are large, it might
+40
+15
+40
+14
+14
+28
+reach significance (p<0.05). If not, we’ll report “no significant difference” honestly for that metric. - For
+segmentation volumes, we might do a similar test on absolute errors or dice scores. - If distributions are
+not normal (with 10, hard to tell), we could use non-parametric Wilcoxon signed-rank test. But t-test is
+probably fine and expected. - If we do cross-validation and get multiple values, we might average them for
+final, but significance can still be assessed by pooling or by an appropriate test.
+We should also test if certain aspects are significantly improved: - For instance, is the improvement in
+hippocampal volume error statistically significant, etc. - In PLOS, they highlighted hippocampal asymmetry
+as a failure. If our method reduces that error, we’ll mention it.
+8.5  Ablation  Studies  (minimum  required): We  plan  to  perform  ablations  to  isolate  contributions:  -
+Without Topology Loss: Train the same model but without the segmentation/topology loss. Compare
+metrics, especially segmentation accuracy and connectivity. We expect: without topology loss, the model
+might have slightly higher PSNR (since it can freely adjust intensities) but likely worse segmentation fidelity.
+For  example,  maybe  hippocampus  dice  drops  or  a  subtle  structure  is  missed.  We  will  report  those
+differences. If results show negligible difference, reviewers might question our complexity; but we suspect
+differences will be there (prior work indicates these constraints matter for fine details
+). - Without Multi-
+Modal (T2): If we included T2 in main model, we should ablate it: train the same model using only T1 input.
+Then see if adding T2 gave improvement. If yes, we quantify that (say SSIM improved by X, or better detail
+in some region). - Without Diffusion / Using GAN: This one is trickier since it’s a wholly different approach.
+But we can ablate the generative method: e.g., “If we remove the diffusion probabilistic aspect and train the
+network deterministically with the same losses, results are Y.” Or vice versa: “If we remove adversarial loss
+and only use diffusion, results are Z.” Essentially, we want to justify using diffusion (if we did). If our final
+method is diffusion, we can compare to a GAN baseline which is a form of ablation at method-level. Or if
+our final ended up being a hybrid, we can try turning off adversarial part, etc. -  Different architecture
+choices: Possibly not needed to show to reviewers unless it's a major question like “why transformer?”. If
+we did use a transformer and it helped, we could ablate it by replacing with a plain UNet to show maybe a
+small drop in performance. If our results are clearly strong, this might not be necessary to explicitly show,
+but we can mention it in discussion.
+We’ll include at least the first two ablative comparisons in the results section, likely as part of a table or
+separate  sub-table,  showing  the  effect  on  metrics.  Additionally,  we  might  include  qualitative  figure
+comparisons for ablations: e.g., show a zoom on a hippocampal region for: - ground truth 7T, - our full
+method, - our method without topology loss. Perhaps the one without topology might have a slightly
+blurred  hippocampal  outline  or  different  shape,  whereas  ours  preserves  it.  Visual  proof  plus  metric
+differences would be convincing.
+8.6 Publishable Novelty vs Incremental: We explicitly frame what in our results constitutes novelty: - If our
+method shows significantly better preservation of fine anatomical detail (like we can show synthetic 7T
+allows  segmentation  of  a  structure  that  was  impossible  with  3T),  that’s  a  publishable  outcome.  For
+example, perhaps 7T can reveal the hippocampal subfield CA1 vs CA2 boundary. If our synthetic images
+allow a subfield segmentation algorithm to segment CA1 vs CA2 similarly to real 7T, that is novel and
+clinically significant (since 3T could not do that). - We will emphasize any result that shows improved clinical
+metric. E.g., “Using synthetic 7T, the error in hippocampal volume measurement was reduced from 8% (with
+3T) to 2%, approaching the 7T reference.” This indicates a practical improvement for researchers measuring
+atrophy – exactly what we claim for AD. - Also, if we demonstrate improved detection of subtle lesions (maybe
+one of the references was that 7T reveals microbleeds and microinfarcts
+, which 3T might miss. If our
+31
+51
+29
+synthetic can simulate those? Hard because our healthy data probably has none. But if a microbleed was in
+7T, can model put it in synthetic? If not explicit, we might discuss potential). - We'll highlight the topological
+consistency: e.g., "Unlike baseline GAN which occasionally produced disconnected cortical fragments or
+artifactual  holes,  our  method  maintained  identical  topological  structure,  verified  by  identical  Euler
+characteristics and high Dice scores across all structures." This directly addresses the novelty of topology
+preservation.
+What would be considered incremental by reviewers? If our results only showed marginal improvement in
+PSNR or a small visual improvement with no clear impact on segmentation or analysis, they might say it's
+incremental. We guard against that by focusing on the big differences: - For instance, if baseline U-Net had
+SSIM  0.90  and  our  method  0.92,  that’s  nice  but  not  groundbreaking.  But  if  we  show  baseline  had
+hippocampal Dice of 0.80 and ours 0.90, that’s more meaningful because it ties to structural fidelity. - So we
+expect our novelty to be “the first method to explicitly enforce and demonstrate preserved anatomical
+fidelity in 3T→7T synthesis, leading to significantly improved downstream measures (like segmentation
+accuracy approaching real 7T, and better preservation of disease-relevant structures)”. That is our key
+selling point to make sure it doesn’t read incremental.
+8.7 Downstream AD Evaluation Plan: We should articulate how we evaluate the images for AD-related
+tasks: - If possible, do at least a case study: take one of the references that 7T visualized something in an AD
+patient that 3T didn’t
+. Perhaps we can simulate that scenario with our synthetic image. For example,
+reference Kerchner 2010: they saw specific atrophy in CA1 region on 7T in mild AD. We could take a mild AD
+3T scan (from ADNI) that presumably has subtle atrophy, run our model to get synthetic 7T, and then see if
+a neuroradiologist can more easily identify the CA1 thinning on the synthetic vs on original 3T. This is
+anecdotal but could be included as a figure if possible. - If not, at least measure if synthetic images show
+increased contrast in the hippocampal layer that could correspond to that finding. For example, measure
+the difference in intensity between hippocampal subfield vs surrounding on synthetic vs 3T. - We might also
+incorporate a neurodegeneration score: maybe compute whole brain vs ventricle volume ratio (an atrophy
+metric) on synthetic vs 3T. If a patient had slight brain atrophy, 7T’s clearer CSF boundary might measure it
+more accurately. If synthetic replicates that, it shows better detection of atrophy.
+Given the constraints, we’ll probably not have actual AD ground truth to quantitatively show improvement.
+Instead, we show that if one used our synthetic images for the same analyses one would do on 7T for AD, you get
+virtually the same results as real 7T. This implies one can achieve the benefits of 7T in AD research without
+actual 7T. That itself is a strong statement if evidenced by segmentation and morphometry results.
+We will clearly state what qualifies as success: e.g., “We consider our approach successful if it significantly
+outperforms baseline image translation methods on standard image quality metrics  and if it yields no
+significant differences in key anatomical measurements compared to real 7T images. A publishable novelty
+is demonstrated by bridging the gap between 3T and 7T in terms of these measurements – for instance,
+achieving segmentation accuracy on synthetic images that is on par with using real 7T (with any differences
+statistically  insignificant
+).  Simply  showing  a  slight  bump  in  PSNR,  on  the  other  hand,  would  be
+considered incremental.”
+Finally, we’ll prepare visual results: - Figures: likely an array of slices for qualitative comparison (3T vs our
+synthetic vs real 7T vs maybe baseline’s synthetic). Reviewers always want to see actual images to judge if
+improvements are noticeable. We’ll ensure to include zoom-ins of critical regions (cortex or hippocampus) to
+highlight  differences  (maybe  mark  where  baseline  fails  e.g.  baseline  blurred  a  small  gyrus  that  ours
+14
+25
+30
+preserves). - Possibly a figure showing segmentations overlay: e.g., outline of hippocampus from real 7T
+segmentation overlaid on synthetic image to show it aligns well, whereas on baseline’s output it might not
+align due to shape distortion.
+All these evaluation components together will make a strong case that our method not only produces pretty
+images, but images that are quantitatively as useful as real 7T for neuroanatomical and potentially diagnostic
+purposes. That’s key for Q1-level impact.
+9. Reproducibility & Research Hygiene
+Top-tier  journals  and  conferences  increasingly  emphasize  reproducibility  and  rigorous  experimental
+practices.  We  will  adhere  to  these  expectations  by  enforcing  discipline  in  experiment  tracking,  data
+management, and reporting:
+9.1 Experiment Tracking and Version Control: - We will use a tool like MLflow or Weights & Biases to log
+every experiment’s parameters, code version, and results. This ensures that for each run (with specific
+hyperparameters or architecture changes), we have a record of what produced the results. It will help us
+later when writing the paper to cite exact numbers and to retrieve models for qualitative results. - Each
+model configuration (e.g., “Baseline U-Net L1” vs “Our method full”) will be assigned a clear name and
+possibly saved as a trained model checkpoint with a version tag. We’ll use Git for code management,
+committing changes with descriptive messages (especially for changes affecting results). - We will fix
+random seeds for all critical processes (data shuffling, network initialization) whenever we report final
+results, to ensure replicability. For instance, when computing metrics for paper, we might run with 5
+different seeds and average, but we’ll always note the seed or range so results can be reproduced. - The
+dataset being BIDS, we will specify exactly which files were used (like “aligned NIfTI images from Figshare,
+version DOI:...”). This ensures someone else can download the dataset and follow our steps.
+9.2 Data Splits and Cross-Validation: - We’ll clearly define how data is split. For example: “We performed
+10-fold leave-one-subject-out cross-validation. In each fold, 8 subjects were for training, 1 for validation (to
+monitor training), 1 for testing. This way, every subject appears in test exactly once.” We’ll provide a table or
+list of which subjects were in test in each fold (maybe in supplement if needed). This transparency lets
+others know we didn’t cherry-pick a favorable split. - We will maintain the same splits for comparing all
+methods. That is, baselines and our method will be evaluated on the identical test sets for fairness. We
+won’t, say, show our method on easy cases and baseline on hard. - If we decide not to cross-val and instead
+hold out e.g. 2 subjects as final test, we’ll identify them (like sub-09 and sub-10 were test) and make sure
+validation was only used for hyperparam tuning, not for model training. But likely cross-val given small N.
+9.3 Parameter and Implementation Details: - We will list key hyperparameters in the paper (and definitely
+in any supplemental material). E.g., patch size, batch size, learning rates, number of training iterations,
+diffusion timesteps, loss weights, etc. We’ll also mention the hardware used (like “Trained on an NVIDIA
+A100 GPU for 3 days” etc.) so others have an idea of computational requirements. - If we use any external
+software (FSL, FreeSurfer, etc.), we’ll specify versions and settings (like “FreeSurfer v7.1.0 with default recon-
+all used to obtain surfaces
+”). - All random aspects (like data augmentation) will be described sufficiently
+(range of rotation, etc.) so someone could replicate that environment.
+9.4 Source Code Release: - We plan to release our code (likely via GitHub) upon publication (or even
+submission if allowed). This includes training code, inference code, and perhaps our pre-trained model
+34
+31
+weights. Releasing code is increasingly expected for deep learning studies, especially if we claim state-of-art
+performance. It allows reviewers and readers to verify claims. We’ll ensure the code is cleaned up and well-
+documented by the end. - If any part of code is tricky (like computing a topological loss), we might provide a
+snippet or clear explanation in the appendix as well.
+9.5 Reproducible Training: - We will fix random seeds for final model training runs so that results can be
+exactly reproduced. For diffusion, there’s some inherent randomness in sampling; we’ll mention that but
+also how to fix it (seed the sampler). - We will ensure that our training pipeline yields the same result if run
+twice  (within  minor  randomness  differences)  by  controlling  nondeterministic  operations  as  much  as
+possible (PyTorch can be set to deterministic convolution, etc., albeit with performance cost). - We might
+also use docker or an environment YAML to specify all package versions. Perhaps provide a Dockerfile or
+Singularity container for others to easily run.
+9.6 Reporting Standards: - In results, we will not cherry-pick the best output examples only; we’ll show
+average performance across subjects and include variability (std or error bars). For qualitative, we might
+choose representative slices but will state that they are representative. - We will follow guidelines like the
+ISMRM  Reproducible  Research  Checklist or  MICCAI’s  checklist:  e.g.,  mention  how  many  times
+experiments were repeated (if relevant) to ensure stability, whether results are median or mean of multiple
+runs, etc. - For deep learning,  we will provide confidence intervals for key metrics. With only 10 test
+samples, a non-parametric CI (like bootstrapping across subjects) can be given. That signals statistical rigor.
+9.7 Handling Negative or Mixed Results: - If an aspect of our method didn’t help (say we tried a
+transformer and it gave no improvement), we won’t hide that – we can mention it either in ablation or
+discussion. Honesty about what did not work as expected actually improves trust in the research. We can
+explain perhaps why it didn’t help (maybe due to small data, etc.). This helps others not go down the same
+wrong path or understand limitations. - Also if our method has failure cases (maybe one subject had
+unusual artifact where our method failed), we will mention that and perhaps show it in supplement, to be
+transparent.
+9.8 Data and Model Availability: - The dataset is public (Figshare), and we’ll cite its DOI
+. We’ll clarify any
+pre-processing we did and possibly share derived data (like the exact aligned & normalized volumes we
+used) if license allows. Since it’s open data, sharing processed versions should be fine as long as we cite
+original. - We intend to share the trained model weights for our final model. This would allow others to
+apply our model on their 3T MRI directly, which is valuable for adoption. We’ll host it on a repository or in
+the paper’s supplementary. - We’ll also provide instructions to run inference (like a script where you give a
+3T  NIfTI  and  it  outputs  synthetic  7T  NIfTI).  -  If  space  permits,  we  might  include  a  small  table  of
+hyperparameters used in an appendix, to avoid any ambiguity.
+9.9 Top Reviewers’ Reproducibility Expectations: Reviewers in 2025 often look for: - Open source code
+(preferably with a permissive license). - Clear description of train/val/test splits (which we will provide). -
+Possibly registration of the study (less common in imaging, more in clinical trials; not needed here). -
+Evidence that results are not due to one lucky run (some require multiple random seeds; given small data,
+we might at least mention if similar performance was observed across different initializations or if we
+ensemble  models).  -  They  may  check  if  any  learning-based  method  could  be  heavily  dependent  on
+initialization. We can show low std across seeds, or mention we trained multiple times and got similar
+metrics (if true).
+34
+32
+We will include statements like: “We ran each model training 3 times with different random initializations;
+the variation in SSIM was <0.005, indicating stable training.” This assures them reproducibility in the sense
+of not being a fluke result.
+9.10  Ethical  and  Bias  Considerations: Even  though  not  explicitly  asked,  reproducibility  includes
+acknowledging limitations. For instance, our data is 10 healthy young adults (3 female, 7 male)
+. We
+should note this demographic and caution that results might differ on older or diseased populations (if, say,
+AD  brains  have  different  characteristics,  the  model  might  need  fine-tuning).  We’ll  stress  that  further
+validation is needed on larger, varied cohorts (if we had access to any AD scans with 7T, that would be ideal,
+but if not, we say as future work). We’ll also mention that our method is not intended for direct clinical
+diagnostic use yet, but as a research tool to enhance images for analysis, requiring further validation in
+clinical settings.
+9.11 Organized Results and Code: We plan to accompany the paper with a results repository: including the
+output images for test cases (so others can visually check them), and maybe the metrics per case in a CSV.
+This level of detail helps if someone wants to do a meta-analysis or compare their method to ours later.
+In summary, we will make it as easy as possible for someone else to reproduce our entire pipeline: from
+downloading the same data, running our preprocessing (we’ll share scripts), loading our model, and getting
+the same outputs. By doing so, we also insulate ourselves from reviewer skepticism – any claim we make
+can be verified with the provided materials. This level of transparency and rigor is increasingly demanded
+by Q1 journals and will strengthen our paper significantly.
+10. Paper Strategy (Q1-Focused)
+To target a high-impact journal or top conference, we need not only strong content but also a clear and
+compelling presentation. Below is our strategy for the paper’s structure, emphasis, target venues, and
+addressing potential reviewer objections:
+10.1 Target Venues: - Journals: Given the data-driven, neuroimaging focus, NeuroImage is a prime target
+(it’s Q1, widely read in neuroimaging, and has published image enhancement and synthesis works
+).
+Also, Medical Image Analysis (MedIA) or IEEE Transactions on Medical Imaging (TMI) are suitable for
+methodological rigor combined with medical relevance. MedIA might appreciate the topology-preserving
+angle and thorough evaluations. If focusing more on the Alzheimer’s angle,  NeuroImage: Clinical or
+Alzheimer’s & Dementia (the journal) could be options, but they typically prefer more direct clinical
+results.  Our  work  is  methodological,  so  NeuroImage  or  MedIA  are  top  choices.  Another  is  IEEE
+Transactions on Biomedical Engineering (TBME) if we emphasize the technical innovation (they published
+earlier GAN works
+). - Conferences: As interim or alternative, MICCAI (Medical Image Computing and
+Computer-Assisted Intervention) is top-tier for such work, especially if we highlight the technical novelty.
+MICCAI reviewers would like the topology-preserving contribution and multi-task learning aspect (provided
+we show strong results).  IPMI 2025 (Information Processing in Medical Imaging) is another specialized
+high-quality venue that values rigorous methodology – it’s smaller but prestigious. Given we want a Q1
+journal paper, we might first submit to a journal directly. If time aligns, maybe a MICCAI submission as well
+and then expand to journal.
+10.2 Paper Structure: We’ll follow the IMRaD structure with enhancements: - Introduction: 1) Introduce
+the problem: 7T vs 3T gap, importance for AD (cite those studies showing 7T benefits
+). 2) State the
+52
+53
+10
+1
+33
+unmet need: not everyone has 7T, hence the desire for 3T-to-7T synthesis. 3) Summarize limitations of
+existing approaches (GANs can improve visuals but may not guarantee anatomical fidelity
+; mention no
+one has addressed topology explicitly and the risk of hallucination). 4) Summarize our solution approach
+(diffusion + topology constraints, multi-modal, etc.) and why it addresses those limitations. 5) Contributions
+bullet list: e.g., “(i) We introduce a topology-preserving loss for MRI synthesis that maintains anatomical
+correctness; (ii) We demonstrate on a public paired dataset that our method achieves significantly better
+structural fidelity than prior methods; (iii) We evaluate the impact on downstream measures (segmentation
+accuracy, etc.), bridging the gap to real 7T’s clinical utility.” This sets the stage and claims novelty clearly. -
+Related Work: We’ll have a section to discuss previous 3T->7T methods (Zhang 2019, Qu 2020, Do 2021,
+Park 2024 (GAN-MAT) for cross-modality, etc.)
+. Also mention works on topology in medical
+images (TopoGAN
+, segmentation topological losses
+). Also diffusion in medical imaging (point to SWI
+paper as evidence of diffusion rising
+). We will position that none addressed our exact combination of
+problems  (no  one  targeted  early  AD  specifically  or  guaranteed  segmentation  fidelity  in  the  synthetic
+images). - We also ensure to cite the dataset paper
+ to show we used it appropriately. - If transformer
+used, mention emerging use of ViTs in med imaging. - Methods: We will likely break it into subsections: 1.
+Problem  Formulation –  define  input/output  formally  (maybe  not  needed  if  straightforward).  2.
+Preprocessing – briefly describe alignment, etc., possibly in an appendix if space is limited. But in a journal,
+we can detail it (this covers our Section 5 in condensed form). 3.  Model Architecture – describe the
+generator (diffusion or GAN) and any special blocks (transformer). Possibly include a diagram (the one
+described in Section 4) as a figure. Label the important parts like multi-task outputs. 4. Loss Functions –
+equations for our composite loss (e.g., L_total = λ1 L1 + λ2 L_percep + λ3 L_topo + ...). If diffusion, describe
+how we incorporate conditioning and segmentation loss. 5. Training Procedure – describe patch sampling,
+augmentation, curriculum (these details show we did it carefully). Might be a separate subsubsection. 6.
+Baselines – describe any implemented baselines for fair comparison (so in Experiments section, readers
+know what “U-Net GAN” refers to). All method descriptions will be precise enough that a knowledgeable
+reader could implement them (with code release making it easier). -  Experiments/Results: -  Dataset:
+describe the paired dataset (10 subjects, what sequences, etc.)
+. Possibly provide a small table of
+subject info (age range, etc.). -  Experimental Setup: explain cross-val, augmentation details, hardware
+used, training time, hyperparams chosen. This part ensures reproducibility. - Evaluation Metrics: explicitly
+define PSNR, SSIM, etc., and also define our segmentation metrics, etc. We’ll mention we use FreeSurfer
+segmentation as ground truth and measure dice, etc. - Results – Image Quality: Present quantitative table
+comparing  methods  on  PSNR/SSIM/NMSE/LPIPS.  Use  bold  to  highlight  best  scores.  Do  statistical
+significance markings if applicable. -  Results – Anatomical Fidelity: Present another table or figure for
+segmentation-based metrics. E.g., a table of dice for key structures (maybe a row for whole brain, GM, WM,
+hippocampus). Or a bar chart showing volume errors for baseline vs our method. - Qualitative Results:
+Provide one or two figures. One could be multi-slice view of an entire brain (to show general appearance is
+good); another figure zooming into a detailed region to highlight differences (like we might show: 3T vs
+synthetic vs real, plus an error map perhaps). Could also overlay edges or segmentation boundaries for
+visual compare. - Ablation Results: Possibly a small subsection “Ablation Study” where we say “Removing
+the  topology  loss  resulted  in  X  drop  in  hippocampal  Dice  (Table  Y)  and  qualitatively  led  to  slight
+discontinuities (Fig Y)”. We might compress ablation numbers in text or a small table. - Downstream Task
+Evaluation: If we did any classifier or group difference test, present that. Possibly: "We fed the images to an
+AD classifier: classifier accuracy on synthetic vs real vs original compared." Or "For each subject, we
+measured  GM  volume;  the  correlation  between  synthetic  and  real  7T  volumes  was  R=0.99,  whereas
+between 3T and 7T was R=0.95, indicating improved measurement accuracy." - We'll make sure each claim
+in introduction is backed by a result here. For instance, if intro claims "we preserve topology", the results
+section must explicitly show evidence (like "no topological errors observed, segmentation dice ~0.99 for all
+structures", etc.). -  Discussion: - Start by reiterating key findings: e.g., "We achieved near-real-7T image
+31
+9
+54
+26
+27
+55
+13
+56
+5
+39
+34
+quality and demonstrated for the first time that a synthetic image can be used interchangeably with a real
+7T for segmentation tasks." - Compare with other works: perhaps "Qu et al. reported a SSIM of X in their
+2020 paper on a similar task; our SSIM is higher by Y% while also preserving segmentation accuracy" – if
+applicable. Or "Unlike prior GAN approaches
+ which reported issues like hippocampal asymmetry, our
+method  maintained  symmetry  as  evidenced  by  ...".  -  Highlight  the  benefit  for  AD  research:  "This  is
+important because early AD changes in hippocampal subfields can now be studied using widely available 3T
+scans  enhanced  by  our  method,  potentially  unlocking  new  analyses  without  needing  ultra-high-field
+scanners." We could even hypothesize that our approach could be extended to other field differences (like
+1.5T to 3T) to democratize image quality improvements. - Acknowledge limitations: "We only evaluated on
+healthy subjects due to data availability. While we expect the model to generalize to pathological brains
+(since topology loss anchors it to anatomy, and intensities could be adjusted via fine-tuning), future work
+should validate on patients (e.g., ADNI data) and possibly incorporate pathological data during training to
+avoid any bias." Also mention small sample is a limitation but cross-val and augmentation mitigated it. - If
+diffusion: mention that sampling is slower than a GAN, but since it's offline enhancement (not real-time), it's
+acceptable; however, one might explore faster samplers or combining with GAN for speed. - If any failure
+cases, discuss: maybe our method might have trouble if input quality is very low (motion-blurred 3T) – then
+synthetic might amplify artifacts. We should caution about garbage-in garbage-out. - Also discuss the
+concept of hallucination: though we preserve topology, the fine details added by the model are not actual
+measured data, so any analysis on them should be mindful that those details are model-based. However,
+since we guided by known structures, we hope it's reliable. But still, it’s good to clarify that clinicians
+shouldn’t blindly trust a synthetic image to diagnose a new subtle pathology the model wasn't trained for
+(e.g., a small tumor might not appear if not in training data). - Suggest future improvements: maybe
+integrating quantitative MRI constraints, or training on larger multi-center data, or extending to other
+contrasts (like FLAIR). - Possibly mention that the method could be applied to other enhancements (like 7T
+ex vivo or 7T to even higher? Or 3T to higher resolution at same field). - Conclusion: Summarize in a few
+sentences: "We presented a novel topology-preserving 3T-to-7T MRI enhancement model that produces
+anatomically faithful synthetic 7T images. It outperforms conventional GAN-based synthesis in both image
+quality and retention of clinically relevant features. This approach can expand access to ultra-high-field-like
+neuroimaging and potentially improve early detection of neurodegenerative changes on standard MRI. We
+will release our code and model to facilitate further research in this direction." Short and impactful.
+Throughout each section, we will emphasize novelty: - In Intro and Discussion, explicitly say how we are first
+or better in certain aspects. - The writing tone: as a research director, it should sound confident, factual, and
+not overly conjectural. But also objective in acknowledging limitations, which reviewers appreciate.
+10.3 Typical Reviewer Objections and Our Preemptive Measures: - "This is just an incremental combination
+of known methods." – We will counter this by clearly delineating that while we build on diffusion/GAN/etc.,
+the specific integration of a topology loss in MRI synthesis is new. We provide evidence that this integration
+solves a problem others had (like preserving hippocampal integrity that prior art didn’t address). Also,
+diffusion in this exact context is brand-new (the SWI was recent and different contrast
+). - "Small sample
+size, results not generalizable." – We preempt by cross-validating, augmenting, and showing the model’s
+robust performance on each fold. We also might argue that even with 10 subjects, the consistency of results
+and the strong guidance (segmentation) help prevent overfitting. We’ll mention that adding more data
+would  likely  further  improve  it,  and  we  plan  to  incorporate  more  in  future,  but  this  dataset  was  a
+demonstration. We might suggest that our method could be retrained on larger datasets when available
+(making it a methodology paper that can scale). -  "Why not evaluate on AD patients to support the early
+detection claim?" – We anticipate this. Our defense: obtaining 7T scans of AD patients is extremely difficult
+31
+8
+35
+(only a few studies have such data). We focused on method development and validated that we preserve
+the features known to be relevant for AD (like hippocampal volume, microstructural contrast). We could
+mention that as future work we will test the model’s effect on clinical classification tasks once such data can
+be obtained. Perhaps we can soften any strong claim in the paper about AD: we will say "downstream
+analysis, e.g., for AD, could benefit, as we illustrated by surrogate metrics" rather than outright "we
+detected AD better." Keep it realistic. - "The improvements in metrics X and Y are modest." – If that happens, we
+will emphasize the qualitative and structural findings more. However, if improvements are modest but
+consistent and we have the novelty of topology, we should stress that it’s not just about improving PSNR by
+big margin, but about guaranteeing no errors. For example, "Our method yields slightly higher SSIM than
+baseline, but crucially, it eliminates the structural errors that baseline had (which SSIM might not fully
+capture). This is evidenced by perfect segmentation fidelity etc. In critical applications, avoiding any false
+anatomical changes is more important than a small boost in SSIM." Essentially shifting focus to quality vs
+quantity of improvement. - "Could this cause hallucination of pathology that isn't there or hide pathology that
+is?" – We will address that in Discussion: our topology loss is supposed to prevent creation of structures that
+don’t exist in 3T. However, subtle pathologies that are below 3T resolution might not appear in synthetic
+because the model hasn't seen them (if none in training). Conversely, it shouldn't hallucinate a lesion if
+there's no hint of it in 3T. We’ll note that caution is needed if using synthetic images for diagnosis – ideally it
+should complement, not replace raw data in uncertain cases. This candor shows we are aware of limitations.
+10.4 Emphasis in Each Section: - Intro: emphasize big picture and novelty strongly, hook with the idea of
+bridging 20,000 vs 100 scanners gap
+ (some numbers from Sci Data to catch attention). - Methods: be
+detailed enough for reproducibility (especially since this is a journal likely). - Results: emphasize not just
+numbers, but what they mean (e.g., "this Dice score means synthetic vs real segmentations differ by only
+2%, which is within inter-rater variability, indicating essentially no information loss in segmentation"). -
+Discussion: emphasize how this method could be applied or extended, showing it's a line of research that
+can grow (journals like when authors show how it contributes to field direction).
+10.5 Pre-empt Rejection: We will ensure to: - Include a strong motivation and novelty statement early (so
+reviewers don’t think “so what”). - Provide evidence for all main claims (if we claim topology preserving, have
+a figure or metric showing it). - Be very honest about limitations to gain trust, but also argue that limitations
+do not invalidate the main claims but rather provide opportunities for future work. - Provide access to code/
+data to appease any reproducibility sticklers.
+Given our thorough plan, we should be able to handle most critiques. If a reviewer is skeptical about clinical
+significance, we will have enough analysis (like segmentation fidelity etc.) to demonstrate potential. If
+skeptical about novelty, we lean on the unique combination and what it achieves that others didn't.
+By carefully constructing the paper as above, focusing on a clear story (3T->7T possible with no loss of
+anatomical info, enabling new research) and backing everything with data, we set ourselves up for a
+positive reception in a Q1 venue.
+11. Timeline & Execution Plan
+To execute this project efficiently and thoroughly, we will break it into phases with clear goals and decision
+points. Below is a phased timeline, with approximate durations and criteria for moving forward at each
+phase. We assume we have no hard deadline, but we aim for a high-quality outcome (which might be
+roughly a 12-month project given research cycles).
+4
+36
+Phase  0:  Literature  Deep  Dive  &  Preliminary  Validation  (Month  1) -  Deliverables: Comprehensive
+literature review (2021-2025) confirming the novelty of our approach; a list of potential methods and
+evaluation criteria. Also, a re-analysis of the dataset paper and maybe contacting authors if needed for
+clarifications. - Tasks: Read key papers (the ones we cited and beyond) to ensure we understand pitfalls.
+Possibly reproduce one simple baseline from literature (e.g., train a basic GAN on our data) as a sanity check
+that we can get similar results to reported (though with 10 subjects maybe their results not directly
+comparable). -  Go/No-Go Criteria: If we find that someone  already did topology-preserving 3T->7T and
+solved it (unlikely, but if a 2024 paper popped up with identical approach), then we’d need to pivot (No-Go
+on original plan). Or if initial experiments show the dataset is too limited (e.g., we try a quick U-Net and it
+cannot learn anything, meaning 10 subjects maybe too few even with augmentation), then we reconsider
+approach (maybe need semi-supervised or synthetic data to augment training). -  Common Mistakes to
+Avoid: Jumping into coding the complex model without verifying basics. We should avoid spending time on
+fancy stuff if maybe a simpler approach fails due to data. So in this phase, ensure that at least a baseline
+can produce something (even if poor) – that means the data is usable and the task is learnable.
+Phase 1: Preprocessing Pipeline Lock-Down (Month 2) -  Deliverables: A working preprocessing script
+that takes raw data to final paired inputs (aligned, normalized patches), plus QA/QC report on all subjects.
+We'll have visualizations of alignment for each subject, and metrics like MRIQC to ensure all images are
+acceptable. - Tasks: Implement all steps from Section 5: BIDS parsing, applying FLIRT (if needed; but we
+likely just use aligned images as given), skull stripping (test a couple of methods and choose best by visual
+inspection), bias correction, intensity normalization. Generate patches and confirm target alignment. - Also
+set aside test subjects if doing a fixed split, or plan cross-val folds here. - Go/No-Go Criteria: If we cannot
+get well-aligned brain images (say FLIRT fails badly on one subject), we decide how to handle (maybe drop
+that subject or apply manual intervention). If skull stripping is problematic, try alternatives until resolved.
+We only proceed when we are confident the preprocessed data is high quality; otherwise, any model results
+will be garbage. If issues persist (like alignment too off), consider doing our own registration or contacting
+data authors for advice (though likely fine). -  Common Mistakes: Overlooking small misalignments that
+could hamper training. Also, we must ensure that we don’t inadvertently use 7T info in preprocessing
+beyond alignment (alignment uses 7T as reference which is fine). We should double-check that the “aligned”
+images provided indeed use only rigid transforms (which they said yes
+). Mistake to avoid: forgetting to
+apply the same transforms to T2 or not using correct interpolation (leading to slight mismatches). - We'll
+run a quick check: take a patch from 3T and 7T and see if the structures line up. This phase ends when any
+random  patch  visually  shows  matching  anatomy  in  input  vs  target  (apart  from  resolution/contrast
+differences).
+Phase 2: Baseline Model Implementation & Evaluation (Month 3-4) - Deliverables: One or two baseline
+models fully trained and evaluated. For instance, a 3D U-Net with L1 loss (and maybe a Pix2Pix GAN variant)
+with results on cross-validation. This includes saved model weights and quantitative metrics recorded. -
+Tasks: Write training code for a basic supervised model. Probably start with the simplest: 3D U-Net, L1+L2
+loss, no fancy stuff. Train it on patches from 8 subjects, validate on 1, etc. See if it can learn (we expect yes, it
+will at least learn to copy the image because 3T and 7T are similar). - Evaluate baseline on test fold(s):
+compute PSNR, etc., and also see what it does wrong (maybe it's blurry or misses fine edges). - Possibly
+implement a PatchGAN baseline too (if time permits) or note to do it later if needed. - Go/No-Go Criteria: If
+the baseline completely fails (like output is identical to input, meaning network learned identity because
+mapping is too hard or data too little), that’s a red flag. However, I'd expect some improvement in contrast
+at least. If baseline fails, maybe we’ll need to incorporate adversarial or something even for base. But given
+literature, a CNN should do something. - If baseline is okay, we analyze its shortcomings to justify our next
+38
+37
+steps. E.g., we notice “hippocampal detail still not there” or “image is smooth.” That analysis will directly
+feed into demonstrating why our advanced method is needed. - If baseline already miraculously produces
+perfect images (very unlikely), then our job is harder to find novelty. But with 10 subjects, baseline won't be
+perfect – likely blurred or losing fine texture. - Common Mistakes: Not tuning the baseline at all. Even for
+baseline, do a bit of hyperparam tuning (like choose a learning rate that converges, etc.). Otherwise we
+might misjudge the difficulty. Also, ensure baseline is trained long enough, because with so few subjects it
+might overfit extremely – we need to monitor if it just memorized training (see if test PSNR is much lower
+than train). - At this stage, we also double-check augmentation approach with baseline: maybe try training
+baseline with and without augmentation to see if augmentation actually helps generalization. This also
+informs how we approach main model. - We'll freeze the baseline once it's performing decently (not
+necessarily optimum, but representative of prior methods). - We should also finalize what baseline we
+present (maybe just one main baseline or two) for the paper, but we can do that later.
+Phase 3: Novel Model Development (Month 5-8) - Deliverables: The full proposed model implemented,
+trained, and tuned. At least initial version by month 6 for testing, refined by month 8. This includes code for
+diffusion or transformer, multi-task outputs, etc. Also intermediate outputs (for example, segmentation
+head outputs to verify training). -  Tasks: This is the core model building: - Implement the conditional
+diffusion model (or the GAN if we pivot). If diffusion: define network architecture (likely reuse parts of
+baseline U-Net code but add conditioning, maybe incorporate attention layers). - Implement the multi-task
+segmentation branch. That means adding an output head and computing segmentation loss. This requires
+preparing ground truth segmentation labels for training (we have them from FS). - Integrate the loss
+functions: combine L1, perceptual, segmentation. Set up training loop with the possibility of staged training
+(so perhaps code should allow turning on/off certain loss terms over epochs). - If using diffusion: implement
+noise schedule, training sampler. Possibly start with an existing diffusion repo and adapt it to conditional
+mode. - If using GAN: implement discriminator and training alternating updates. -  Debugging training:
+likely needed. We might first try training without segmentation loss to get baseline diffusion working, then
+add  segmentation.  Monitor  if  segmentation  loss  actually  decreases,  etc.  -  Gradually  incorporate  all
+components. - Tune hyperparameters: loss weights (maybe try a couple values on a small validation set to
+see which yields best compromise of image vs seg accuracy), learning rate (monitor if training stable). - We
+should also tune patch size or batch size if needed for performance vs memory. - Possibly by mid-phase, we
+have initial results that we can compare to baseline to see improvement. If something’s not working (e.g.,
+segmentation loss causes weird artifacts), adjust accordingly (maybe segmentation branch needs more
+capacity or weight adjusting). - Go/No-Go Criteria: If by end of Month 6 we cannot get the advanced model
+to train stably (say diffusion is too slow or unstable on so few data), we need to consider Plan B, perhaps a
+simpler model with GAN + segmentation loss which might be easier to train. We should allocate time to try
+an alternative if diffusion model underperforms baseline (that would be surprising but possible if data too
+small for diffusion). - A decision point: if diffusion is training but images are too noisy or not clearly better
+than baseline by a certain number of epochs, we could try increasing training time or adjusting. If still not
+better, consider switching to a GAN approach or a two-stage approach (like train deterministic then refine
+with diffusion). - We must decide by ~Month 7 if we stick with diffusion or pivot, so we have time to finalize
+results by Month 8. - Common Mistakes: Over-complicating without testing incrementally. It's important to
+validate each piece: first, does adding segmentation loss actually improve segmentation on val? Does
+adding perceptual loss actually sharpen images or just add noise? We'll use ablation mindset during
+training to get each piece right. - Another risk is spending too long chasing minimal improvements in
+hyperparameters. We should set a reasonable metric goal (like "achieve segmentation Dice > 0.95 for key
+structures and SSIM improvement over baseline by >0.02") and not over-tune beyond that for submission. -
+Also ensure we don't introduce a bug that uses test info or misaligns data, which can artificially inflate
+38
+metrics. For example, if by mistake a segmentation label from test got into training, that’s leakage. We will
+strictly separate data in code (and maybe assert that no test subject index is in training loader). - By end of
+Phase 3, we aim to have a model that clearly outperforms baseline in the ways we care about (especially
+anatomy preservation). We should have preliminary tables and images by this point, to confirm we have
+something publishable.
+Phase 4: Comprehensive Evaluation & Ablation (Month 9) -  Deliverables: Final evaluation results: all
+metrics computed, tables drafted, figures generated. Also ablation study results. Essentially all numbers
+and plots that will go into the paper. -  Tasks: - Run the final model on cross-validation or test set and
+compute metrics as described in Section 8. - Compute baseline metrics for comparison if not done already. -
+Compute segmentation-based metrics: we might need to run FreeSurfer on synthetic images to get an
+“automatic” segmentation for evaluation (though we have GT from real 7T, one approach is to measure
+differences between FS on synthetic vs FS on real, which requires running FS on synthetic images). This can
+be time-consuming (FreeSurfer hours per subject). If too slow, perhaps use our segmentation head’s output
+as segmentation for synthetic and compare to FS on real which we have as label. But using FS on synthetic
+might be a nice sanity check to mimic actual usage. If time, we do it for final results. - Collate those results
+(maybe make nice plots). - Perform statistical tests (use Python or R to do t-tests or wilcoxon, get p-values). -
+Create visual comparisons: pick a representative subject and make figure. Or possibly for multiple subjects,
+but likely one or two figures suffice. - Conduct ablation experiments: e.g., train model with λ_seg=0 (no topo
+loss) and evaluate the same metrics. That likely requires another training run or using an earlier checkpoint.
+We should allocate maybe a week or so to do these ablations (they might train faster if parts disabled). - If
+multi-modal input is an ablation, we run model with just T1 to see difference. - Possibly test model on a
+slightly out-of-distribution sample (maybe a 3T from another dataset if available) to see how it generalizes;
+not required but if we have ADNI 3T, run our model on it to show a qualitative result (could add in
+discussion). - Ensure all evaluation code is correct (no train data in test metrics etc.). - Go/No-Go Criteria: At
+this stage, it’s more about completeness. If evaluation reveals a serious flaw (like our method improved
+some metrics but maybe made some others worse, e.g., if our method slightly blurs images relative to a
+GAN baseline which had sharper edges – could be a concern), we need to decide how to present it or if an
+adjustment needed. For instance, if we found that adding segmentation loss slightly reduced SSIM because
+it prioritized structure over texture, we might be okay with that and explain it. But if a baseline is better in
+an important metric (say baseline GAN had higher SSIM but we have better dice), we must be ready to
+justify focusing on our strengths. That’s not a no-go, but something to handle in discussion. - Ideally, by
+now, we have all positives or at least a clear trade-off story. -  Common Mistakes: Rushing through
+evaluation and making an error. E.g., using a non-brain region in metric calculations (like background can
+skew MSE – better to evaluate within brain mask). Or calculating metrics at different resolution incorrectly
+(but our images are same resolution so fine). - We must double-check each result’s consistency. For
+instance, does the reported PSNR match what one would expect from visual difference? If something is off,
+find out why. - Also, not forgetting to evaluate on the actual independent test set if we kept one. If cross-val,
+we present average but perhaps also mention range or worst-case to be honest. - Another potential
+oversight: not evaluating inference speed or mentioning it. Reviewers might ask if method is practical. We
+should at least note how long it takes per volume (e.g., "synthesis of one volume takes 2 minutes on GPU").
+We can get that from our code and include it (maybe in discussion, not main results). - By end of Phase 4,
+we have all the raw material (numbers, images) needed for writing the paper draft.
+Phase 5: Writing, Feedback, and Submission (Month 10-12) - Deliverables: Complete manuscript ready
+for submission to chosen venue; possibly a preprint on arXiv for visibility. All accompanying files (code,
+supplemental documents, etc.). - Tasks: - Write the paper sections, as detailed in section 10. We'll allocate
+39
+time to writing and figures. Possibly produce initial draft by mid-month 10. - Internally review the draft, have
+colleagues or mentors read it if possible to get feedback (especially checking if claims are clear and
+supported). - Revise accordingly. Pay attention to clarity, conciseness (NeuroImage allows decent length,
+but still be organized). - Prepare figures carefully: high resolution, properly labeled. E.g., a figure showing
+image comparisons should have arrows or circles highlighting important differences so reviewers don't
+miss them. - Prepare supplementary materials: e.g., more example images, more detailed tables, code
+snippet, anything that didn't fit in main text. - Write a cover letter to editors emphasizing why this work is
+important and suitable for the journal (mention how it leverages a new open dataset, solves a known
+limitation, etc.). - Ensure all references are in order (we have many from our search). - Go/No-Go Criteria:
+By now we definitely go to submission unless something disastrous was found (like a mistake in evaluation
+that undermines results – then fix it and possibly retrain if necessary). - Choose journal and format
+accordingly (NeuroImage has specific sections and a word count ~7000 typically; MedIA might be similar). -
+Possibly consider a fallback if journal rejects: plan to submit to another (like if NeuroImage rejects after
+review, go to TMI or MedIA, etc. But hopefully not needed). -  Common Mistakes: - Not addressing all
+reviewer types in writing. We should ensure the paper has something for both technical and clinical readers
+(NeuroImage has both). We include technical details for method folks and also clear explanation of what it
+means for neuroscience/AD for clinician readers. - Avoid making unsubstantiated claims (like "This will
+revolutionize AD diagnosis" is too strong – better to say "This approach may assist in earlier detection..."). -
+Overloading the paper with too many experiments: we should keep focus on main message; extra tests can
+go to supplement. - Typos or grammar – need thorough proofread to appear professional. - In references,
+ensure to cite all relevant recent work including those by likely reviewers if applicable (just to show we know
+the field). For instance, if someone on MICCAI 2022 did something related, cite them to avoid them feeling
+ignored. - Code release: prepare repository and perhaps include link in the paper (some journals allow
+referencing code, or we say "will be released upon acceptance" if not comfortable releasing earlier). - We
+should  also  practice  explaining  the  work  verbally,  anticipating  questions  (like  a  defense)  –  useful  if
+presenting at a conference or if reviewers ask for clarifications.
+Timeline Summary: - Months 1-2: Problem refinement and preprocessing – foundation is set. - Month 3-4:
+Baseline experiments – feasibility check and performance gap identified. - Month 5-8: Core model dev –
+innovation implemented and optimized. - Month 9: Evaluation –  evidence gathered. - Month 10-12:
+Writing and polishing – story finalized and communicated.
+We’ll maintain a Gantt chart or task list to ensure we don’t slip on any part. Although we have "no strict
+deadline", we impose one to keep momentum – say aim to submit to NeuroImage’s special issue or
+something by end of year.
+At  each  phase’s  end,  we’ll  have  a  review  meeting:  -  Phase  1  review:  data  quality  and  any  necessary
+adjustments. - Phase 2 review: baseline performance and confirm need for next steps (if baseline already
+did extremely well, we reconsider how to differentiate). - Phase 3 review (mid): check if new model is
+trending better than baseline. If not, adjust approach quickly. - Phase 4 review: do results support our
+claims? If not, either adjust claims or run additional experiments to support. - Phase 5: maybe get an
+external reviewer (friendly colleague) to critique the draft before submission to catch any oversight.
+Common execution pitfalls: - Delays in training (diffusion could take long). We should use a good GPU and
+optimize code (maybe use mixed precision to speed up). - Possibly find we need more data earlier than
+expected; if so, consider data augmentation by generating synthetic paired data: e.g. down-sample 7T to
+simulate 3T, then try to recover (could artificially enlarge dataset). Actually, that is an idea: we can augment
+40
+training by taking each 7T image, degrade it (downsample + add noise) to create additional pseudo-3T, then
+train model to recover original 7T. That uses unpaired 7T data as well. If needed, that could be done to
+strengthen training. This is not exactly 3T->7T (since 7T->7T identity basically, but with degrade; still, it might
+teach network some high-frequency patterns). We'll keep it as a trick if model underfits (with 10, might
+underfit or actually more likely overfit).
+Given all steps, we are quite comprehensive in planning. Now, we have to maintain discipline in following
+these steps and not skipping validation at each go/no-go. If something fails, better to catch in earlier phase
+(like data issues in Phase 1) than realize in Phase 4 that outputs are misaligned due to a data bug.
+By Phase 5, we should have a strong story and evidence to back it, making for a solid Q1 submission.
+12. Brutal Reality Check
+Finally, we need to honestly assess: is this research idea worth pursuing now, and what is the most
+defensible angle?
+Is it worth pursuing now (2025)? -  Yes, conditionally. The idea of 3T-to-7T MRI enhancement remains
+relevant and not fully solved
+. The availability of a new public dataset
+ and the emergence of new
+generative techniques (diffusion) make it timely to tackle it with fresh approaches. There’s also high clinical
+interest in leveraging 7T benefits without 7T scanners, which gives the work significance. Reviewers and
+readers will appreciate methods that push image quality boundaries, especially with a clear application like
+AD research. - However, we must acknowledge risk: the dataset is very small. This inherently limits how far
+we can go in terms of generalizability claims. If we execute perfectly, we get a great proof-of-concept that
+might inspire further study, but some might say it needs more subjects or multi-center data to be truly
+convincing for clinical translation. This could be addressed by focusing our claims carefully (we present it as
+a methodological advance and initial validation, not a deployment-ready solution). - Provided we clearly
+demonstrate improved anatomical fidelity and link to AD markers, the paper should be strong enough for a
+top journal. If we were only showing marginal denoising or resolution improvement, it might not be enough
+novelty. But our emphasis on topology and clinical metrics is the key differentiator that can elevate it from
+incremental to significant.
+Single Most Defensible Angle: If we had to choose one angle to defend under scrutiny, it is: - Anatomical/
+topological  fidelity  in  synthetic  MRI as  evidenced  by  segmentation  and  structural  metrics  being
+essentially identical to real 7T. This is our strongest claim and contribution. We should hammer that: “Unlike
+prior works that focused solely on visual similarity, our approach guarantees that no new anatomically
+incorrect  structures  are  introduced  and  no  real  structures  are  lost  –  a  crucial  requirement  for  using
+synthetic images in clinical analysis
+.” This angle is defensible because we will have quantifiable proof
+(Dice ~0.98 for segmentation, etc.). It’s hard for a reviewer to refute a method that clearly does what it says
+(preserve anatomy) and improves things like measurement accuracy. Even if someone is not excited by
+diffusion or specific method, they cannot deny the value of not hallucinating data in medical imaging. - So, if
+nothing else, we emphasize: our method makes synthetic 7T a reliable proxy for real 7T in terms of anatomical
+detail. That’s a new level of validation that others didn’t provide.
+If the idea was not worth it (hypothetically, or if we discovered issues): We consider alternatives or
+pivots: - Pivot 1: If we decided direct 3T->7T image synthesis is too risky or saturated, we could pivot to a
+slightly reframed problem: e.g., “Harmonization of 3T and 7T data via a generative model”. That is, instead of
+7
+37
+32
+41
+strictly super-res, make a model that can take a 3T and output a 7T or vice versa, focusing on cross-field
+consistency. This could be framed as domain adaptation/harmonization (a hot topic, as multi-site integration
+is important). However, that's quite close to what we do, just different spin. -  Pivot 2: Use 7T images as
+teacher to improve analysis on 3T without actually generating images. For example, train a model to directly
+predict segmentation or AD risk from 3T with help of 7T supervision (like a knowledge distillation: use 7T to
+get better labels or features). This would skip image synthesis and go to the task. It's a different approach:
+rather than making a synthetic 7T, we make a better classifier that implicitly uses 7T information. This could
+be strong if our ultimate goal is AD detection. The advantage: one could avoid potential image artifacts and
+focus on metrics directly. The disadvantage: it’s less visually demonstrative and more narrow (just solving
+classification maybe). - If our project was failing to produce good images, this could salvage it: we could
+show that using 7T supervision (via a teacher network or so) on 3T data improves AD classification by X%.
+That would still be publishable, though a different paper (foundation models and distillation approach). -
+But that pivot loses the "synthetic image" angle which is the original premise. It becomes more of a
+machine learning approach to achieve the same end (better diagnosis). - Pivot 3: If small-N is a killer issue,
+pivot to incorporate more data, e.g., semi-supervised training using unpaired 7T. The PLOS one did that
+.
+We could pull a similar trick: find some unpaired 7T volumes (perhaps the dataset of 20 by Li et al. that PLOS
+used
+), include them with cycle or diffusion unpaired training. That’s not a conceptual pivot, just a
+method extension if needed. It's more work but could strengthen results and show our method can utilize
+extra unpaired data (foundation model style). - Pivot 4 (if completely abandoning 3T->7T): If we found that
+early AD detection is the goal and 3T->7T is too indirect, we might pivot to analyzing 7T images we have for
+subtle markers and then develop a 3T tool to predict those markers. For example, use the 7T to measure
+something (like hippocampal microstructure via T2*), then train a network to predict that measure from 3T.
+That’s somewhat like what GAN-MAT did for microstructure from T1
+. But our unique twist could be
+topology still: ensure the predicted maps are topologically consistent maybe. This is a major pivot away
+from image generation to more of a regression of measurements. It's interesting but not as visually
+appealing as generating whole 7T images.
+Given our current plan, such drastic pivots aren’t needed unless results are very disappointing. But being
+prepared is good.
+Brutal Honesty: - We must accept that with 10 subjects, our results are a proof-of-concept. Reviewers might
+say "Nice, but will this work on population scale?" We will proactively state that further validation on larger
+cohorts  is  needed.  -  There's  also  the  risk  that  some  might  say  "Why  do  we  need  7T-like  images  if
+segmentation  can  be  done  on  3T  reasonably?"  We  will  highlight  specific  advantages  (for  example,
+FreeSurfer sometimes fails in hippocampal subfields on 3T, but on 7T it's better
+; our synthetic could
+reduce such failures). - Another reality: The AD angle in our specific data is not directly proven because no
+AD cases. We need to be careful not to over-promise. The best we can do is show that any metric that
+correlates  with  AD  (like  hippocampal  volume  or  cortical  thickness  in  entorhinal)  is  more  accurately
+measured. That implies potential to detect smaller changes. But to truly test detection, one would need
+mild AD scans. We'll mention that as future work.
+If the idea were not worth it, alternate strong pivots: - Perhaps 7T to 3T image degradation modeling as a
+physics-informed cycle: Could invert problem and say we generate synthetic 3T from 7T (which we can do by
+adding noise/downsampling), then enhance back, ensuring cycle consistency. But that’s just an approach
+for training essentially. - Using 7T for enhanced structural connectivity or other analysis. Not directly relevant.
+45
+44
+26
+57
+42
+Given what we know, the idea is worth pursuing – with caution about not overstating clinical proof. The
+most defensible novelty is that we are ensuring synthetic images are not just pretty but  quantitatively
+trustworthy for anatomical analysis. That will likely be the line that sells the paper to reviewers.
+We will be brutally honest in the paper about limitations so reviewers see we are self-aware: e.g., "Our
+model does not magically create entirely new information; if a pathological feature is totally absent at 3T, it
+won’t appear at synthetic 7T. However, it can enhance subtle signals that were buried in noise at 3T, as long
+as they were present in some form. Thus, it’s an aid to radiological analysis, not a replacement for actual
+high-field imaging when that is available." This kind of honest statement builds credibility.
+In conclusion, we will proceed with the plan, focusing on the anatomical fidelity angle as the selling point.
+If any pivot is needed mid-way, it would likely be to incorporate additional unpaired data to strengthen
+training, rather than change the fundamental goal.
+We will now move forward, fully aware of the challenges but with a solid plan to address them at each
+stage. The outcome, if executed well, will be a  comprehensive research blueprint that stands up to
+rigorous review and advances the field of medical image enhancement.
+Seven Tesla MRI in Alzheimer's disease research: State of the art and future directions: A
+narrative review
+https://www.aimspress.com/article/doi/10.3934/Neuroscience.2023030?viewType=HTML
+A paired dataset of T1- and T2-weighted
+MRI at 3 Tesla and 7 Tesla - PMC 
+https://pmc.ncbi.nlm.nih.gov/articles/PMC10374655/
+Synthetizing SWI from 3T to 7T by generative diffusion network for deep medullary veins
+visualization - ScienceDirect
+https://www.sciencedirect.com/science/article/pii/S1053811925004781
+Synthesized 7T MRI from 3T MRI via Deep Learning in Spatial and Wavelet
+Domains - PMC 
+https://pmc.ncbi.nlm.nih.gov/articles/PMC7237331/
+Semi-supervised synthesis of 7T MRI from 3T using 3D FR-U-Net with
+anatomical segmentation consistency assessment - PMC 
+https://pmc.ncbi.nlm.nih.gov/articles/PMC12591452/
+GAN-MAT: Generative adversarial network-based microstructural profile covariance analysis toolbox -
+ScienceDirect
+https://www.sciencedirect.com/science/article/pii/S1053811924000909
+ecva.net
+https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123480120.pdf
+Vascular-Aware Multimodal MR–PET Reconstruction for Early Stroke Detection: A Physics-
+Informed, Topology-Preserving, Adversarial Super-Resolution Framework | MDPI
+https://www.mdpi.com/2076-3417/15/22/12186
+1
+2
+14
+51
+57
+3
+4
+5
+6
+7
+9
+10
+15
+23
+34
+36
+37
+38
+39
+40
+41
+52
+54
+56
+8
+13
+25
+53
+11
+12
+16
+17
+18
+19
+20
+21
+22
+24
+28
+31
+32
+33
+42
+43
+44
+45
+50
+26
+27
+35
+47
+29
+30
+46
+48
+49
+43
+HuXiaoling/awesome-topology-driven-image-analysis - GitHub
+https://github.com/HuXiaoling/awesome-topology-driven-image-analysis
+55
+44
