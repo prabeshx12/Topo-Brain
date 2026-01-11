@@ -686,6 +686,7 @@ def main():
     parser.add_argument('--device', type=str, default='cuda', help='Device (cuda/cpu)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--save_volumes', action='store_true', help='Save generated volumes')
+    parser.add_argument('--preprocessed-root', type=str, default=None, help='Preprocessed data root')
     
     args = parser.parse_args()
     
@@ -719,7 +720,8 @@ def main():
     # Load data
     config = get_default_config()
     logger.info("Discovering dataset...")
-    data_list = discover_dataset(config.data.preprocessed_root, config.data)
+    preprocessed_root = Path(args.preprocessed_root) if args.preprocessed_root else config.data.output_root
+    data_list = discover_dataset(preprocessed_root, config.data)
     
     if len(data_list) == 0:
         logger.error("No preprocessed data found!")
@@ -745,7 +747,12 @@ def main():
     
     # Create paired data
     from models.paired_dataset import create_paired_data_list
-    paired_data = create_paired_data_list(eval_data, modality=args.modality)
+    paired_data = create_paired_data_list(
+        eval_data,
+        modality=args.modality,
+        session_3t=config.data.session_3t,
+        session_7t=config.data.session_7t,
+    )
     
     if len(paired_data) == 0:
         logger.error(f"No paired {args.split} data found!")

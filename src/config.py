@@ -2,22 +2,26 @@
 Configuration file for MRI preprocessing pipeline.
 Centralizes all paths, hyperparameters, and experiment settings.
 """
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Tuple, Optional, List
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class DataConfig:
     """Data paths and organization."""
     # Root directory containing BIDS-formatted dataset
-    data_root: Path = Path(r"d:\11PrabeshX\Projects\major_\Nifti")
+    data_root: Path = Path("data")
     
     # Output directory for preprocessed data
-    output_root: Path = Path(r"d:\11PrabeshX\Projects\major_\preprocessed")
+    output_root: Path = Path("derivatives/topobrain-preproc")
     
     # Cache directory for intermediate results
-    cache_dir: Path = Path(r"d:\11PrabeshX\Projects\major_\cache")
+    cache_dir: Path = Path("cache")
     
     # Number of subjects in dataset
     num_subjects: int = 10
@@ -25,12 +29,21 @@ class DataConfig:
     # Session identifiers for 3T and 7T
     session_3t: str = "ses-1"
     session_7t: str = "ses-2"
+
+    # Prefer aligned data when duplicates exist
+    prefer_aligned: bool = True
+
+    # Only include aligned data if available
+    require_aligned: bool = False
+
+    # Keywords that indicate aligned data in the path
+    aligned_keywords: List[str] = field(default_factory=lambda: ["aligned"])
     
     # Modalities to process
     modalities: List[str] = field(default_factory=lambda: ["T1w", "T2w"])
     
     # File naming pattern
-    file_pattern: str = "*_defaced.nii.gz"
+    file_pattern: str = "*.nii*"
     
 
 @dataclass
@@ -164,7 +177,7 @@ class AugmentationConfig:
 class LoggingConfig:
     """Logging and monitoring configuration."""
     # Log directory
-    log_dir: Path = Path(r"d:\11PrabeshX\Projects\major_\logs")
+    log_dir: Path = Path("logs")
     
     # Log level
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -197,6 +210,14 @@ class MRIConfig:
     
     def __post_init__(self):
         """Create directories if they don't exist."""
+        self.data.data_root = self.data.data_root.expanduser()
+        if not self.data.output_root.is_absolute():
+            self.data.output_root = self.data.data_root / self.data.output_root
+        if not self.data.cache_dir.is_absolute():
+            self.data.cache_dir = self.data.output_root / self.data.cache_dir
+        if not self.logging.log_dir.is_absolute():
+            self.logging.log_dir = self.data.output_root / self.logging.log_dir
+
         self.data.output_root.mkdir(parents=True, exist_ok=True)
         self.data.cache_dir.mkdir(parents=True, exist_ok=True)
         self.logging.log_dir.mkdir(parents=True, exist_ok=True)
@@ -210,28 +231,31 @@ class MRIConfig:
         self.logging.tensorboard_dir.mkdir(parents=True, exist_ok=True)
         self.logging.qc_dir.mkdir(parents=True, exist_ok=True)
     
-    def validate(self) -> None:
+    def validate(self, check_paths: bool = False) -> None:
         """Validate configuration parameters."""
         # Check split ratios sum to 1.0
         total_ratio = self.split.train_ratio + self.split.val_ratio + self.split.test_ratio
         assert abs(total_ratio - 1.0) < 1e-6, f"Split ratios must sum to 1.0, got {total_ratio}"
         
         # Check data root exists
-        assert self.data.data_root.exists(), f"Data root does not exist: {self.data.data_root}"
+        if check_paths and not self.data.data_root.exists():
+            raise FileNotFoundError(f"Data root does not exist: {self.data.data_root}")
+        if not self.data.data_root.exists():
+            logger.warning("Data root does not exist: %s", self.data.data_root)
         
         # Check normalization method is valid
         valid_norms = ["zscore", "minmax", "percentile"]
         assert self.preprocessing.normalization_method in valid_norms, \
             f"Invalid normalization method: {self.preprocessing.normalization_method}"
         
-        print("✓ Configuration validated successfully")
+        print("Configuration validated successfully")
 
 
 # Default configuration instance
 def get_default_config() -> MRIConfig:
     """Get default configuration with recommended settings."""
     config = MRIConfig()
-    config.validate()
+    config.validate(check_paths=False)
     return config
 
 
@@ -242,7 +266,7 @@ def get_highres_config() -> MRIConfig:
     config.preprocessing.target_spacing = (0.5, 0.5, 0.5)
     config.preprocessing.target_size = (256, 256, 256)
     config.training.batch_size = 1  # Larger volumes require smaller batch
-    config.validate()
+    config.validate(check_paths=False)
     return config
 
 
@@ -254,7 +278,7 @@ def get_fast_config() -> MRIConfig:
     config.preprocessing.target_size = (96, 96, 96)
     config.preprocessing.use_bias_correction = False  # Skip for speed
     config.training.batch_size = 4
-    config.validate()
+    config.validate(check_paths=False)
     return config
 
 

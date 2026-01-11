@@ -63,11 +63,7 @@ class Paired3T7TDataset(Dataset):
         # Total number of patches
         self.total_patches = len(data_pairs) * num_patches_per_volume
         
-        # For deterministic sampling
-        if deterministic:
-            self.rng = np.random.RandomState(random_seed)
-        else:
-            self.rng = np.random
+        self.base_seed = random_seed
         
         logger.info(f"Initialized Paired3T7TDataset:")
         logger.info(f"  Pairs: {len(data_pairs)}")
@@ -93,6 +89,7 @@ class Paired3T7TDataset(Dataset):
         self,
         volume_3t: np.ndarray,
         volume_7t: np.ndarray,
+        rng: np.random.RandomState,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Extract matching random patch from 3T and 7T volumes.
@@ -118,9 +115,9 @@ class Paired3T7TDataset(Dataset):
         max_h = vol_shape[1] - patch_h
         max_w = vol_shape[2] - patch_w
         
-        start_d = self.rng.randint(0, max_d + 1) if max_d > 0 else 0
-        start_h = self.rng.randint(0, max_h + 1) if max_h > 0 else 0
-        start_w = self.rng.randint(0, max_w + 1) if max_w > 0 else 0
+        start_d = rng.randint(0, max_d + 1) if max_d > 0 else 0
+        start_h = rng.randint(0, max_h + 1) if max_h > 0 else 0
+        start_w = rng.randint(0, max_w + 1) if max_w > 0 else 0
         
         # Extract patches
         patch_3t = volume_3t[
@@ -158,8 +155,10 @@ class Paired3T7TDataset(Dataset):
         volume_3t = self._load_volume(pair['input_3t'])
         volume_7t = self._load_volume(pair['target_7t'])
         
+        rng = self._rng_for_idx(idx)
+        
         # Extract random patch
-        patch_3t, patch_7t = self._extract_random_patch(volume_3t, volume_7t)
+        patch_3t, patch_7t = self._extract_random_patch(volume_3t, volume_7t, rng)
         
         # Add channel dimension
         patch_3t = patch_3t[np.newaxis, ...]  # (1, D, H, W)
@@ -179,10 +178,18 @@ class Paired3T7TDataset(Dataset):
         
         return data
 
+    def _rng_for_idx(self, idx: int) -> np.random.RandomState:
+        """Create a deterministic RNG per index to avoid duplicate patches across workers."""
+        if self.deterministic:
+            return np.random.RandomState(self.base_seed + idx)
+        return np.random
+
 
 def create_paired_data_list(
     data_list: List[Dict],
     modality: str = 'T1w',
+    session_3t: str = "ses-1",
+    session_7t: str = "ses-2",
 ) -> List[Dict[str, Path]]:
     """
     Create paired 3T→7T data list from discovered dataset.
@@ -206,16 +213,24 @@ def create_paired_data_list(
         
         if subject not in by_subject:
             by_subject[subject] = {}
-        
-        by_subject[subject][session] = item['image']
+
+        field_strength = item.get("field_strength")
+        if field_strength == "3T" or session == session_3t:
+            session_key = session_3t
+        elif field_strength == "7T" or session == session_7t:
+            session_key = session_7t
+        else:
+            session_key = session
+
+        by_subject[subject][session_key] = item['image']
     
     # Create pairs
     paired_data = []
     for subject, sessions in by_subject.items():
-        if 'ses-1' in sessions and 'ses-2' in sessions:
+        if session_3t in sessions and session_7t in sessions:
             paired_data.append({
-                'input_3t': sessions['ses-1'],  # 3T scan
-                'target_7t': sessions['ses-2'],  # 7T scan
+                'input_3t': sessions[session_3t],  # 3T scan
+                'target_7t': sessions[session_7t],  # 7T scan
                 'subject': subject,
                 'modality': modality,
             })

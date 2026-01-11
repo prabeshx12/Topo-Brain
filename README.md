@@ -100,6 +100,14 @@ pip install HD-BET
 
 ### 2. Preprocessing Pipeline
 
+#### BIDS Preprocessing CLI (recommended)
+```bash
+python -m scripts.preprocess_bids \
+    --config configs/preprocess.yaml \
+    --data-root /path/to/BIDS \
+    --output-root /path/to/BIDS/derivatives/topobrain-preproc
+```
+
 #### Generate Brain Masks
 ```bash
 python scripts/generate_brain_masks.py \
@@ -124,9 +132,9 @@ data_list = discover_dataset(config.data.data_root, config.data)
 # Preprocess
 preprocessor = MRIPreprocessor(config.preprocessing)
 for item in data_list:
-    preprocessor.preprocess_single(
-        item['path'],
-        output_dir=config.data.output_root
+preprocessor.preprocess_single(
+        item['image'],
+        output_path=config.data.output_root / f"{item['subject']}_{item['session']}_{item['modality']}_preprocessed.nii.gz"
     )
 ```
 

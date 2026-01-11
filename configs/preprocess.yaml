@@ -1,0 +1,49 @@
+data_root: data
+output_root: derivatives/topobrain-preproc
+modalities:
+  - T1w
+  - T2w
+session_3t: ses-1
+session_7t: ses-2
+prefer_aligned: true
+require_aligned: false
+aligned_keywords:
+  - aligned
+include_derivatives: false
+output_suffix: desc-preproc
+overwrite: false
+resume: true
+seed: 42
+
+skull_strip:
+  method: hd-bet
+  device: cuda
+  mode: accurate
+  bet_threshold: 0.5
+  use_existing_masks: true
+  mask_globs:
+    - "{image_dir}/*brain_mask.nii.gz"
+    - "{image_dir}/*brainmask.nii.gz"
+    - "{image_dir}/*mask.nii.gz"
+    - "{data_root}/derivatives/**/{subject}/**/brainmask.nii*"
+    - "{data_root}/derivatives/**/{subject}/**/brainmask.mgz"
+
+bias_correction:
+  enabled: true
+  n4_iterations: 50
+  n4_convergence_threshold: 0.001
+
+normalization:
+  method: zscore
+  percentile_lower: 1.0
+  percentile_upper: 99.0
+  clip_lower_percentile: 0.5
+  clip_upper_percentile: 99.5
+
+resample:
+  target_spacing: null
+  interpolation: linear
+
+qc:
+  enabled: true
+  max_samples: 5

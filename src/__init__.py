@@ -4,6 +4,8 @@ Core modules for MRI preprocessing and harmonization pipeline.
 
 from .config import get_default_config, get_highres_config, get_fast_config, MRIConfig
 from .preprocessing import MRIPreprocessor
+from .preprocess_pipeline import BIDSPreprocessingPipeline, PipelineConfig
+from .bids import BIDSFile, discover_bids_files, create_3t_7t_pairs
 from .dataset import (
     BrainMRIDataset,
     create_data_loaders,
@@ -32,6 +34,8 @@ __all__ = [
     'MRIConfig',
     # Preprocessing
     'MRIPreprocessor',
+    'BIDSPreprocessingPipeline',
+    'PipelineConfig',
     # Dataset
     'BrainMRIDataset',
     'create_data_loaders',
@@ -47,6 +51,10 @@ __all__ = [
     'compute_and_save_statistics',
     'verify_preprocessing',
     'set_random_seeds',
+    # BIDS discovery
+    'BIDSFile',
+    'discover_bids_files',
+    'create_3t_7t_pairs',
     # Harmonization
     'HistogramMatcher',
     'IntensityHarmonizer',
