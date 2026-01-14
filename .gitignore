@@ -31,6 +31,7 @@ ENV/
 *.ipynb_checkpoints/
 *.ipynb
 !kaggle_preprocessing_notebook.ipynb
+!docs/*.ipynb
 
 # IDE
 .vscode/
