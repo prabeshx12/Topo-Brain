@@ -199,6 +199,7 @@ class BIDSPreprocessingPipeline:
             mask_output_path = self._build_output_path(entry, "desc-brainmask")
 
             if output_path.exists() and self.config.resume and not self.config.overwrite:
+                logger.info("Skipping %s (already exists)", entry.path.name)
                 manifest.append(self._manifest_entry(entry, output_path, mask_output_path, status="skipped"))
                 continue
 

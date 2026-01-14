@@ -142,8 +142,33 @@ def discover_bids_files(
 
         subject = _find_entity(path.parts, _SUBJECT_RE)
         session = _find_entity(path.parts, _SESSION_RE)
-        if subject is None or session is None:
-            continue
+        # Try to infer session if missing
+        if session is None:
+             # If we can't determine session from path, we need to check metadata or assume based on file structure
+             # For now, let's look at field strength first if possible
+             json_path_temp = _sidecar_json(path)
+             metadata_temp = _read_json_metadata(json_path_temp)
+             field_strength_temp = _infer_field_strength(
+                 session="", # Unknown yet
+                 metadata=metadata_temp,
+                 session_3t=session_3t,
+                 session_7t=session_7t,
+             )
+             
+             if field_strength_temp == "3T":
+                 session = session_3t
+             elif field_strength_temp == "7T":
+                 session = session_7t
+             
+             # If still none, and we are in a non-strict mode, maybe we can assume 3T/ses-1 as default?
+             # Or just skip if we really can't tell.
+             if session is None:
+                 # Last ditch: check if 'ses-' is in any parent folder even if regex missed it (unlikely with regex)
+                 # Or just assign default 3T session if it looks like a subject folder
+                 session = session_3t 
+
+        if subject is None:
+             continue
 
         json_path = _sidecar_json(path)
         metadata = _read_json_metadata(json_path)
