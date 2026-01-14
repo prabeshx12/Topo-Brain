@@ -4,7 +4,7 @@ import logging
 import random
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -109,6 +109,7 @@ def find_corresponding_preproc(raw_entry: BIDSFile, preproc_root: Path, suffix: 
             return cand
     return None
 
+
 def find_corresponding_mask(preproc_path: Path) -> Optional[Path]:
     """Find the brain mask corresponding to a preprocessed file."""
     # Typically _desc-brainmask.nii.gz
@@ -178,13 +179,32 @@ def visualize_subject(
         
         gs_left = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[0], wspace=0.05)
         gs_mid = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[1], wspace=0.05)
-        ax_hist = fig.add_subplot(inner_grid[3])
         
         # Plot Histograms (Split into 2 vertical subplots to handle different scales)
         gs_hist = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=inner_grid[3], hspace=0.4)
         ax_hist_raw = fig.add_subplot(gs_hist[0])
         ax_hist_prep = fig.add_subplot(gs_hist[1])
 
+        # Overlay/Diff
+        gs_diff = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[2], wspace=0.05)
+
+        # Plot Raw
+        ax_raw = [fig.add_subplot(gs_left[j]) for j in range(3)]
+        plot_ortho_slices(ax_raw, raw_disp, title_prefix="Raw", overlay=None) 
+        
+        # Plot Preproc
+        ax_prep = [fig.add_subplot(gs_mid[j]) for j in range(3)]
+        plot_ortho_slices(ax_prep, prep_disp, title_prefix="Prep", overlay=mask_data if show_mask else None)
+
+        # Plot Diff/Mask Check on Raw
+        ax_diff = [fig.add_subplot(gs_diff[j]) for j in range(3)]
+        
+        if raw_data.shape == prep_data.shape:
+             plot_ortho_slices(ax_diff, raw_disp, title_prefix="Mask Check", overlay=mask_data)
+        else:
+             plot_ortho_slices(ax_diff, prep_disp, title_prefix="Clean", cmap="magma")
+
+        # Plot Histograms
         plot_histogram(ax_hist_raw, raw_data, label="Raw", color="gray")
         ax_hist_raw.set_title(f"Raw Intensity", fontsize=10)
         
@@ -196,14 +216,14 @@ def visualize_subject(
     fig.suptitle(f"Preprocessing QC: Subject {subject}", fontsize=16, fontweight='bold', y=0.95)
     
     if output_dir:
-        output_path = output_dir / f"viz_{subject}.png"
+        output_path = Path(output_dir) / f"viz_{subject}.png"
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path, dpi=150, bbox_inches="tight")
         logger.info(f"Saved visualization to {output_path}")
 
     if show_plot:
         plt.show()
     elif output_dir is None:
-        # If no output dir and no show_plot, user probably wants variable
         pass
     else:
         plt.close()
@@ -226,13 +246,9 @@ def visualize_subject_by_id(
     out_path = Path(output_dir) if output_dir else None
     
     # Quick discovery
-    # We only need to discover for THIS subject really, but discover_bids_files scans all.
-    # To be efficient in a large dataset, this might be slow.
-    # But for now reusing discover_bids_files is safest.
     raw_files = discover_bids_files(data_path, modalities=["T1w", "T2w"])
     
     return visualize_subject(subject_id, raw_files, preproc_path, out_path, show_plot=show_plot)
-
 
 
 def main():
