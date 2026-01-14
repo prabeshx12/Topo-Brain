@@ -81,11 +81,15 @@ def plot_ortho_slices(
 
 def plot_histogram(ax: plt.Axes, data: np.ndarray, label: str, color: str):
     """Plot intensity histogram excluding zeros."""
-    values = data[data > 0].flatten()
+    # For normalized data (e.g. z-score), values can be negative.
+    # We only want to exclude the background which is typically exactly 0.
+    values = data[data != 0].flatten()
+    if len(values) == 0:
+        return
     ax.hist(values, bins=100, density=True, alpha=0.6, color=color, label=label)
-    ax.set_xlabel("Intensity")
     ax.set_ylabel("Density")
-    ax.legend()
+    ax.tick_params(axis='x', labelsize=8)
+    ax.tick_params(axis='y', labelsize=8)
 
 
 def find_corresponding_preproc(raw_entry: BIDSFile, preproc_root: Path, suffix: str = "desc-preproc") -> Optional[Path]:
@@ -176,29 +180,16 @@ def visualize_subject(
         gs_mid = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[1], wspace=0.05)
         ax_hist = fig.add_subplot(inner_grid[3])
         
-        # Overlay/Diff
-        gs_diff = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[2], wspace=0.05)
+        # Plot Histograms (Split into 2 vertical subplots to handle different scales)
+        gs_hist = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=inner_grid[3], hspace=0.4)
+        ax_hist_raw = fig.add_subplot(gs_hist[0])
+        ax_hist_prep = fig.add_subplot(gs_hist[1])
 
-        # Plot Raw
-        ax_raw = [fig.add_subplot(gs_left[j]) for j in range(3)]
-        plot_ortho_slices(ax_raw, raw_disp, title_prefix="Raw", overlay=None) 
+        plot_histogram(ax_hist_raw, raw_data, label="Raw", color="gray")
+        ax_hist_raw.set_title(f"Raw Intensity", fontsize=10)
         
-        # Plot Preproc
-        ax_prep = [fig.add_subplot(gs_mid[j]) for j in range(3)]
-        plot_ortho_slices(ax_prep, prep_disp, title_prefix="Prep", overlay=mask_data if show_mask else None)
-
-        # Plot Diff/Mask Check on Raw
-        ax_diff = [fig.add_subplot(gs_diff[j]) for j in range(3)]
-        
-        if raw_data.shape == prep_data.shape:
-             plot_ortho_slices(ax_diff, raw_disp, title_prefix="Mask Check", overlay=mask_data)
-        else:
-             plot_ortho_slices(ax_diff, prep_disp, title_prefix="Clean", cmap="magma")
-
-        # Plot Histograms
-        plot_histogram(ax_hist, raw_data, label="Raw", color="gray")
-        plot_histogram(ax_hist, prep_data, label="Preproc", color="green")
-        ax_hist.set_title(f"Intensity Dist: {raw_entry.session} {raw_entry.modality}")
+        plot_histogram(ax_hist_prep, prep_data, label="Preproc", color="green")
+        ax_hist_prep.set_title(f"Preproc Intensity", fontsize=10)
         
     
     # Title
