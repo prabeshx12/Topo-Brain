@@ -207,11 +207,18 @@ def visualize_subject(
              plot_ortho_slices(ax_diff, prep_disp, title_prefix="Clean", cmap="magma")
 
         # Plot Histograms
+        # Plot Histograms
+        # Use the Histogram area title to label the entire row significantly
+        row_title = f"{raw_entry.session} {raw_entry.modality}"
+        if raw_entry.field_strength:
+            row_title += f" ({raw_entry.field_strength})"
+            
         plot_histogram(ax_hist_raw, raw_data, label="Raw", color="gray")
-        ax_hist_raw.set_title(f"Raw Intensity", fontsize=10)
+        ax_hist_raw.set_title(f"Intensity Dist: {row_title}", fontsize=10)
+        ax_hist_raw.legend(loc="upper right", fontsize=8)
         
         plot_histogram(ax_hist_prep, prep_data, label="Preproc", color="green")
-        ax_hist_prep.set_title(f"Preproc Intensity", fontsize=10)
+        ax_hist_prep.legend(loc="upper right", fontsize=8)
         
     
     # Title
