@@ -30,13 +30,25 @@ def load_nifti(path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
 def normalize_for_display(data: np.ndarray, lower_percentile: float = 1.0, upper_percentile: float = 99.0) -> np.ndarray:
     """Normalize data to [0, 1] based on robust percentiles."""
-    non_zeros = data[data > 0]
+    # Handle signed data (like Z-scores) by only excluding exact zeros (background)
+    non_zeros = data[data != 0]
     if len(non_zeros) == 0:
         return data
     vmin, vmax = np.percentile(non_zeros, [lower_percentile, upper_percentile])
     data_norm = np.clip(data, vmin, vmax)
     data_norm = (data_norm - vmin) / (vmax - vmin)
     return data_norm
+
+# ... (rest of code)
+
+def plot_histogram(ax: plt.Axes, data: np.ndarray, label: str, color: str):
+    """Plot intensity histogram excluding zeros."""
+    values = data[data != 0].flatten()
+    if len(values) == 0:
+        return
+    ax.hist(values, bins=100, density=True, alpha=0.6, color=color, label=label)
+    ax.tick_params(axis='both', which='major', labelsize=7)
+    ax.set_ylabel("Density", fontsize=8)
 
 
 def get_middle_slices(data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
