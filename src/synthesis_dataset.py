@@ -601,9 +601,22 @@ def load_pairs_manifest(manifest_path: Path, data_root: Optional[Path] = None) -
             if not path_str:
                 return path_str
             
+            # Helper to check if a path (or its variant) exists
+            def check_exists(p: Path) -> Optional[str]:
+                # 1. Exact match
+                if p.exists(): return str(p)
+                # 2. Try swapping .nii.gz <-> .nii
+                if p.name.endswith(".nii.gz"):
+                    alt = p.with_name(p.name[:-3]) # remove .gz
+                    if alt.exists(): return str(alt)
+                elif p.name.endswith(".nii"):
+                    alt = p.with_name(p.name + ".gz") # add .gz
+                    if alt.exists(): return str(alt)
+                return None
+
             p = Path(path_str)
-            if p.exists():
-                return str(p)
+            found = check_exists(p)
+            if found: return found
             
             # Try to rebase from 'sub-'
             parts = p.parts
@@ -611,15 +624,15 @@ def load_pairs_manifest(manifest_path: Path, data_root: Optional[Path] = None) -
                 # Find first part starting with 'sub-' and rebase
                 idx = next(i for i, part in enumerate(parts) if part.startswith("sub-"))
                 new_path = data_root / Path(*parts[idx:])
-                if new_path.exists():
-                    return str(new_path)
+                found = check_exists(new_path)
+                if found: return found
             except StopIteration:
                 pass
             
             # Try combining data_root + path (if path is already relative)
             combined = data_root / p
-            if combined.exists():
-                return str(combined)
+            found = check_exists(combined)
+            if found: return found
                 
             return path_str
             
