@@ -4,7 +4,7 @@ import logging
 import random
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -59,7 +59,7 @@ def plot_ortho_slices(
     sag, cor, ax = get_middle_slices(data)
     
     slices = [sag, cor, ax]
-    names = ["Sagittal", "Coronal", "Axial"]
+    names = ["Sag", "Cor", "Ax"]
     
     if overlay is not None:
         ov_sag, ov_cor, ov_ax = get_middle_slices(overlay)
@@ -71,34 +71,26 @@ def plot_ortho_slices(
         
         if overlay is not None:
             # Mask overlay (e.g., brain mask in red)
-            # Create RGBA for overlay
             masked_overlay = np.ma.masked_where(overlays[i] == 0, overlays[i])
             ax_cell.imshow(masked_overlay, cmap="autumn", alpha=0.3, origin="upper", aspect="equal")
             
-        ax_cell.set_title(f"{title_prefix} {name}", fontsize=10)
+        ax_cell.set_title(f"{title_prefix} {name}", fontsize=9)
         ax_cell.axis("off")
 
 
 def plot_histogram(ax: plt.Axes, data: np.ndarray, label: str, color: str):
     """Plot intensity histogram excluding zeros."""
-    # For normalized data (e.g. z-score), values can be negative.
-    # We only want to exclude the background which is typically exactly 0.
     values = data[data != 0].flatten()
     if len(values) == 0:
         return
     ax.hist(values, bins=100, density=True, alpha=0.6, color=color, label=label)
-    ax.set_ylabel("Density")
-    ax.tick_params(axis='x', labelsize=8)
-    ax.tick_params(axis='y', labelsize=8)
+    ax.tick_params(axis='both', which='major', labelsize=7)
+    # Remove dense labels to keep it clean, just show shape
+    ax.set_yticks([])
 
 
 def find_corresponding_preproc(raw_entry: BIDSFile, preproc_root: Path, suffix: str = "desc-preproc") -> Optional[Path]:
     """Attempt to find the preprocessed file corresponding to a raw BIDS entry."""
-    # Expected path: output_root/sub-X/ses-Y/anat/sub-X_ses-Y_..._desc-preproc_T1w.nii.gz
-    # Construct expected filename stem
-    
-    # Logic similar to pipeline but simplified for discovery
-    # We look for files in the expected preproc folder that contain the subject, session, modality
     preproc_dir = preproc_root / raw_entry.subject / raw_entry.session / "anat"
     if not preproc_dir.exists():
         return None
@@ -114,7 +106,6 @@ def find_corresponding_preproc(raw_entry: BIDSFile, preproc_root: Path, suffix: 
 
 def find_corresponding_mask(preproc_path: Path) -> Optional[Path]:
     """Find the brain mask corresponding to a preprocessed file."""
-    # Typically _desc-brainmask.nii.gz
     name = preproc_path.name
     if "desc-preproc" in name:
         mask_name = name.replace("desc-preproc", "desc-brainmask")
@@ -131,11 +122,12 @@ def visualize_subject(
     output_dir: Optional[Path] = None,
     show_mask: bool = True,
     show_plot: bool = False
-) -> Optional[plt.Figure]:
-    """Generate comprehensive visualization for a single subject."""
-    
-    # Group by session/modality
-    # We want to show: Raw 3T vs Preproc 3T, Raw 7T vs Preproc 7T
+) -> List[plt.Figure]:
+    """
+    Generate comprehensive visualization for a single subject.
+    Creates a separate 'QC Card' image for each scan pair.
+    Returns a list of generated figures.
+    """
     
     logger.info(f"Generating visualization for subject: {subject}")
     
@@ -144,32 +136,36 @@ def visualize_subject(
     for entry in raw_files:
         if entry.subject != subject:
             continue
-            
         preproc_path = find_corresponding_preproc(entry, preproc_root)
         if preproc_path:
             pairs.append((entry, preproc_path))
             
     if not pairs:
         logger.warning(f"No preprocessed pairs found for {subject}")
-        return None
+        return []
 
-    # Create figure
-    # Layout: One big row per pair (Raw Slices | Preproc Slices | Histograms)
-    n_pairs = len(pairs)
-    fig = plt.figure(figsize=(20, 6 * n_pairs))
-    
-    outer_grid = gridspec.GridSpec(n_pairs, 1, figure=fig, hspace=0.3)
-    
+    # Prepare output directory
+    subject_out_dir = None
+    if output_dir:
+        subject_out_dir = output_dir / subject
+        subject_out_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_figs = []
+
+    # 2. Generate QC Card for each pair
     for i, (raw_entry, preproc_path) in enumerate(pairs):
-        inner_grid = gridspec.GridSpecFromSubplotSpec(
-            1, 4, subplot_spec=outer_grid[i], width_ratios=[1, 1, 1, 1.2], wspace=0.1
-        )
+        # Create a dedicated figure for this scan
+        # Layout: Wider to accommodate side-by-side
+        fig = plt.figure(figsize=(16, 5))
+        
+        # Grid: [Raw (3)] | [Preproc (3)] | [Hist (1)]
+        # Width ratios: Raw=3, Prep=3, Hist=2
+        gs = gridspec.GridSpec(1, 3, width_ratios=[1, 1, 0.6], wspace=0.1, figure=fig)
         
         # Load Data
         raw_data, _ = load_nifti(raw_entry.path)
         prep_data, _ = load_nifti(preproc_path)
         
-        # Normalize raw for display
         raw_disp = normalize_for_display(raw_data)
         prep_disp = normalize_for_display(prep_data)
         
@@ -179,65 +175,52 @@ def visualize_subject(
             if mask_path:
                 mask_data, _ = load_nifti(mask_path)
         
-        gs_left = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[0], wspace=0.05)
-        gs_mid = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[1], wspace=0.05)
+        # --- Left Panel: Raw ---
+        gs_raw = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[0], wspace=0.05)
+        ax_raw = [fig.add_subplot(gs_raw[j]) for j in range(3)]
+        plot_ortho_slices(ax_raw, raw_disp, title_prefix="Raw")
         
-        # Plot Histograms (Split into 2 vertical subplots to handle different scales)
-        gs_hist = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=inner_grid[3], hspace=0.4)
+        # --- Middle Panel: Preproc ---
+        gs_prep = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[1], wspace=0.05)
+        ax_prep = [fig.add_subplot(gs_prep[j]) for j in range(3)]
+        # For preproc, show mask overlay if available
+        plot_ortho_slices(ax_prep, prep_disp, title_prefix="Prep", overlay=mask_data)
+        
+        # --- Right Panel: Histograms ---
+        gs_hist = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[2], hspace=0.3)
         ax_hist_raw = fig.add_subplot(gs_hist[0])
         ax_hist_prep = fig.add_subplot(gs_hist[1])
-
-        # Overlay/Diff
-        gs_diff = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=inner_grid[2], wspace=0.05)
-
-        # Plot Raw
-        ax_raw = [fig.add_subplot(gs_left[j]) for j in range(3)]
-        plot_ortho_slices(ax_raw, raw_disp, title_prefix="Raw", overlay=None) 
         
-        # Plot Preproc
-        ax_prep = [fig.add_subplot(gs_mid[j]) for j in range(3)]
-        plot_ortho_slices(ax_prep, prep_disp, title_prefix="Prep", overlay=mask_data if show_mask else None)
-
-        # Plot Diff/Mask Check on Raw
-        ax_diff = [fig.add_subplot(gs_diff[j]) for j in range(3)]
+        plot_histogram(ax_hist_raw, raw_data, label="Raw", color="silver")
+        ax_hist_raw.set_title("Raw Intensity", fontsize=9, loc='left')
         
-        if raw_data.shape == prep_data.shape:
-             plot_ortho_slices(ax_diff, raw_disp, title_prefix="Mask Check", overlay=mask_data)
-        else:
-             plot_ortho_slices(ax_diff, prep_disp, title_prefix="Clean", cmap="magma")
-
-        # Plot Histograms
-        # Plot Histograms
-        # Use the Histogram area title to label the entire row significantly
-        row_title = f"{raw_entry.session} {raw_entry.modality}"
+        plot_histogram(ax_hist_prep, prep_data, label="Prep", color="mediumseagreen")
+        ax_hist_prep.set_title("Preproc Intensity (Z-Score)", fontsize=9, loc='left')
+        
+        # Header / Title
+        scan_info = f"{raw_entry.session} | {raw_entry.modality}"
         if raw_entry.field_strength:
-            row_title += f" ({raw_entry.field_strength})"
+            scan_info += f" | {raw_entry.field_strength}"
             
-        plot_histogram(ax_hist_raw, raw_data, label="Raw", color="gray")
-        ax_hist_raw.set_title(f"Intensity Dist: {row_title}", fontsize=10)
-        ax_hist_raw.legend(loc="upper right", fontsize=8)
+        fig.suptitle(f"Subject: {subject}   Scan: {scan_info}", fontsize=14, fontweight='bold', y=0.98)
         
-        plot_histogram(ax_hist_prep, prep_data, label="Preproc", color="green")
-        ax_hist_prep.legend(loc="upper right", fontsize=8)
+        # Save
+        if subject_out_dir:
+            # Filename: sub-XX_ses-YY_modality_QC.png
+            fname = f"{subject}_{raw_entry.session}_{raw_entry.modality}_QC.png"
+            save_path = subject_out_dir / fname
+            plt.savefig(save_path, dpi=150, bbox_inches="tight")
+            logger.info(f"Saved QC card: {save_path}")
+            
+        generated_figs.append(fig)
         
-    
-    # Title
-    fig.suptitle(f"Preprocessing QC: Subject {subject}", fontsize=16, fontweight='bold', y=0.95)
-    
-    if output_dir:
-        output_path = Path(output_dir) / f"viz_{subject}.png"
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_path, dpi=150, bbox_inches="tight")
-        logger.info(f"Saved visualization to {output_path}")
+        if not show_plot and output_dir:
+            plt.close(fig)
 
     if show_plot:
         plt.show()
-    elif output_dir is None:
-        pass
-    else:
-        plt.close()
-    
-    return fig
+        
+    return generated_figs
 
 
 def visualize_subject_by_id(
@@ -246,7 +229,7 @@ def visualize_subject_by_id(
     preproc_root: str = "derivatives/topobrain-preproc",
     output_dir: Optional[str] = None,
     show_plot: bool = True
-) -> Optional[plt.Figure]:
+) -> List[plt.Figure]:
     """
     Convenience wrapper for Notebooks/Kaggle.
     """
@@ -274,7 +257,6 @@ def main():
     
     # 1. Discover Raw Files
     logger.info("Discovering raw BIDS files...")
-    # Basic discovery - assuming standard config or just probing T1w/T2w
     raw_files = discover_bids_files(args.data_root, modalities=["T1w", "T2w"])
     
     if not raw_files:
