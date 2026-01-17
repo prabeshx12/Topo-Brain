@@ -106,12 +106,31 @@ def find_corresponding_preproc(raw_entry: BIDSFile, preproc_root: Path, suffix: 
 
 def find_corresponding_mask(preproc_path: Path) -> Optional[Path]:
     """Find the brain mask corresponding to a preprocessed file."""
+    # Try multiple common patterns
     name = preproc_path.name
+    # 1. Replace desc-preproc with desc-brainmask
     if "desc-preproc" in name:
-        mask_name = name.replace("desc-preproc", "desc-brainmask")
-        mask_path = preproc_path.with_name(mask_name)
-        if mask_path.exists():
-            return mask_path
+        patterns = ["desc-brainmask", "desc-mask", "_mask"]
+        for pat in patterns:
+            mask_name = name.replace("desc-preproc", pat)
+            mask_path = preproc_path.with_name(mask_name)
+            if mask_path.exists():
+                return mask_path
+    
+    # 2. General glob in the same folder if strict replacement failed
+    # Look for same modality + "mask"
+    parent = preproc_path.parent
+    # Identify modality from filename logic or passed args? We don't have args here.
+    # Simple heuristic: split by underscore
+    parts = name.split('_')
+    for part in parts:
+        if part in ["T1w", "T2w"]:
+            # Try to find *T1w*mask*
+            cands = list(parent.glob(f"*{part}*mask*"))
+            # Filter for same siblings (rough check)
+            if cands:
+                return cands[0]
+                
     return None
 
 
@@ -155,12 +174,11 @@ def visualize_subject(
     # 2. Generate QC Card for each pair
     for i, (raw_entry, preproc_path) in enumerate(pairs):
         # Create a dedicated figure for this scan
-        # Layout: Wider to accommodate side-by-side
-        fig = plt.figure(figsize=(16, 5))
+        # Layout: [Raw] | [Preproc] | [Mask] | [Hist]
+        fig = plt.figure(figsize=(20, 5))
         
-        # Grid: [Raw (3)] | [Preproc (3)] | [Hist (1)]
-        # Width ratios: Raw=3, Prep=3, Hist=2
-        gs = gridspec.GridSpec(1, 3, width_ratios=[1, 1, 0.6], wspace=0.1, figure=fig)
+        # Grid: 4 columns
+        gs = gridspec.GridSpec(1, 4, width_ratios=[1, 1, 1, 0.6], wspace=0.1, figure=fig)
         
         # Load Data
         raw_data, _ = load_nifti(raw_entry.path)
@@ -170,24 +188,40 @@ def visualize_subject(
         prep_disp = normalize_for_display(prep_data)
         
         mask_data = None
+        mask_source = "None"
+        
         if show_mask:
             mask_path = find_corresponding_mask(preproc_path)
             if mask_path:
                 mask_data, _ = load_nifti(mask_path)
+                mask_source = "File"
+            else:
+                # Fallback: Infer mask from non-zero preprocessed data
+                # This shows the "Effective Mask"
+                mask_data = (prep_data != 0).astype(np.float32)
+                mask_source = "Inferred (>0)"
         
-        # --- Left Panel: Raw ---
+        # --- Col 1: Raw ---
         gs_raw = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[0], wspace=0.05)
         ax_raw = [fig.add_subplot(gs_raw[j]) for j in range(3)]
         plot_ortho_slices(ax_raw, raw_disp, title_prefix="Raw")
         
-        # --- Middle Panel: Preproc ---
+        # --- Col 2: Preproc ---
         gs_prep = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[1], wspace=0.05)
         ax_prep = [fig.add_subplot(gs_prep[j]) for j in range(3)]
-        # For preproc, show mask overlay if available
-        plot_ortho_slices(ax_prep, prep_disp, title_prefix="Prep", overlay=mask_data)
-        
-        # --- Right Panel: Histograms ---
-        gs_hist = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[2], hspace=0.3)
+        plot_ortho_slices(ax_prep, prep_disp, title_prefix="Prep")
+
+        # --- Col 3: Mask on Raw ---
+        gs_mask = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[2], wspace=0.05)
+        ax_mask = [fig.add_subplot(gs_mask[j]) for j in range(3)]
+        if mask_data is not None:
+             plot_ortho_slices(ax_mask, raw_disp, title_prefix=f"Mask ({mask_source})", overlay=mask_data)
+        else:
+             # Just show blank or text? Should not happen with inference fallback
+             for ax in ax_mask: ax.axis('off')
+
+        # --- Col 4: Histograms ---
+        gs_hist = gridspec.GridSpecFromSubplotSpec(2, 1, subplot_spec=gs[3], hspace=0.3)
         ax_hist_raw = fig.add_subplot(gs_hist[0])
         ax_hist_prep = fig.add_subplot(gs_hist[1])
         
@@ -195,7 +229,7 @@ def visualize_subject(
         ax_hist_raw.set_title("Raw Intensity", fontsize=9, loc='left')
         
         plot_histogram(ax_hist_prep, prep_data, label="Prep", color="mediumseagreen")
-        ax_hist_prep.set_title("Preproc Intensity (Z-Score)", fontsize=9, loc='left')
+        ax_hist_prep.set_title("Preproc Intensity", fontsize=9, loc='left')
         
         # Header / Title
         scan_info = f"{raw_entry.session} | {raw_entry.modality}"
@@ -206,7 +240,6 @@ def visualize_subject(
         
         # Save
         if subject_out_dir:
-            # Filename: sub-XX_ses-YY_modality_QC.png
             fname = f"{subject}_{raw_entry.session}_{raw_entry.modality}_QC.png"
             save_path = subject_out_dir / fname
             plt.savefig(save_path, dpi=150, bbox_inches="tight")
