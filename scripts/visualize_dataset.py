@@ -97,8 +97,8 @@ def plot_histogram(ax: plt.Axes, data: np.ndarray, label: str, color: str):
         return
     ax.hist(values, bins=100, density=True, alpha=0.6, color=color, label=label)
     ax.tick_params(axis='both', which='major', labelsize=7)
-    # Remove dense labels to keep it clean, just show shape
-    ax.set_yticks([])
+    # y-ticks restored
+
 
 
 def find_corresponding_preproc(raw_entry: BIDSFile, preproc_root: Path, suffix: str = "desc-preproc") -> Optional[Path]:
