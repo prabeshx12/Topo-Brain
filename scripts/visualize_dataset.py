@@ -103,10 +103,11 @@ def find_corresponding_preproc(raw_entry: BIDSFile, preproc_root: Path, suffix: 
     if not preproc_dir.exists():
         return None
         
-    candidates = list(preproc_dir.glob(f"*{raw_entry.modality}*desc-preproc*"))
-    for cand in candidates:
-        # Check for matching suffix and valid extension
-        if suffix in cand.name and (cand.name.endswith(".nii.gz") or cand.name.endswith(".nii")):
+    # Robust search: Look for files containing suffix AND modality, regardless of order
+    # Supports both .nii and .nii.gz
+    for cand in preproc_dir.glob("*"):
+        name = cand.name
+        if suffix in name and raw_entry.modality in name and (name.endswith(".nii") or name.endswith(".nii.gz")):
             return cand
     return None
 
