@@ -58,6 +58,7 @@ def save_patch_slices(
 def main():
     parser = argparse.ArgumentParser(description="Visualize synthesis patches")
     parser.add_argument("--pairs-file", type=str, default="derivatives/topobrain-preproc/pairs.csv")
+    parser.add_argument("--data-root", type=str, help="Override root directory for image files (useful if data moved)")
     parser.add_argument("--output-dir", type=str, default="viz_patches")
     parser.add_argument("--num-samples", type=int, default=5)
     args = parser.parse_args()
@@ -66,10 +67,37 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # 1. Load Pairs
-    pairs = load_pairs_manifest(args.pairs_file)
-    if not pairs:
-        print("No pairs found!")
+    pairs_path = Path(args.pairs_file)
+    # 1. Load Pairs
+    pairs_path = Path(args.pairs_file)
+    if not pairs_path.exists():
+        print(f"Error: Pairs manifest not found at: {pairs_path}")
+        print("Please provide the correct path using: --pairs-file /path/to/pairs.csv")
         return
+
+    # Pass data_root to load_pairs_manifest for automatic rebasing
+    data_root = Path(args.data_root) if args.data_root else None
+    pairs = load_pairs_manifest(pairs_path, data_root=data_root)
+    
+    if not pairs:
+        print("Error: Pairs manifest is empty!")
+        return
+
+    # Filter invalid pairs (where files still don't exist)
+    valid_pairs = [
+        p for p in pairs 
+        if Path(p["input_3t"]).exists() and Path(p["target_7t"]).exists()
+    ]
+    
+    if not valid_pairs:
+        print("Error: No valid pairs found!")
+        print(f"Sample path attempted: {pairs[0].get('input_3t')}")
+        if not data_root:
+            print("Try providing --data-root /path/to/preprocessed_data")
+        return
+        
+    print(f"Found {len(valid_pairs)} valid pairs.")
+    pairs = valid_pairs
         
     # 2. Configure Dataset (Non-Augmented for Baseline)
     config = PatchConfig(patch_size=(64, 64, 64), patches_per_volume=4)

@@ -567,8 +567,18 @@ class InferencePatchSampler:
         return output
 
 
-def load_pairs_manifest(manifest_path: Path) -> List[Dict]:
-    """Load pairs manifest from preprocessing output."""
+def load_pairs_manifest(manifest_path: Path, data_root: Optional[Path] = None) -> List[Dict]:
+    """
+    Load pairs manifest, optionally rebasing paths relative to data_root.
+    
+    Args:
+        manifest_path: Path to pairs.csv
+        data_root: Optional root directory to rebase paths. 
+                   Useful if data was moved or if paths are relative.
+                   
+    Returns:
+        List of pair dictionaries with resolved paths.
+    """
     manifest_path = Path(manifest_path)
     
     if manifest_path.suffix == ".csv":
@@ -584,6 +594,42 @@ def load_pairs_manifest(manifest_path: Path) -> List[Dict]:
             for line in f:
                 pairs.append(json.loads(line.strip()))
     
+    if data_root is not None:
+        data_root = Path(data_root)
+        
+        def resolve_path(path_str):
+            if not path_str:
+                return path_str
+            
+            p = Path(path_str)
+            if p.exists():
+                return str(p)
+            
+            # Try to rebase from 'sub-'
+            parts = p.parts
+            try:
+                # Find first part starting with 'sub-' and rebase
+                idx = next(i for i, part in enumerate(parts) if part.startswith("sub-"))
+                new_path = data_root / Path(*parts[idx:])
+                if new_path.exists():
+                    return str(new_path)
+            except StopIteration:
+                pass
+            
+            # Try combining data_root + path (if path is already relative)
+            combined = data_root / p
+            if combined.exists():
+                return str(combined)
+                
+            return path_str
+            
+        # Update pairs
+        for p in pairs:
+            p["input_3t"] = resolve_path(p["input_3t"])
+            p["target_7t"] = resolve_path(p["target_7t"])
+            if "input_3t_t2" in p:
+                p["input_3t_t2"] = resolve_path(p["input_3t_t2"])
+
     logger.info(f"Loaded {len(pairs)} pairs from {manifest_path}")
     return pairs
 

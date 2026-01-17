@@ -12,7 +12,7 @@ import argparse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def regenerate_pairs(manifest_path: Path, output_path: Path):
+def regenerate_pairs(manifest_path: Path, output_path: Path, make_relative: bool = False):
     if not manifest_path.exists():
         logger.error(f"Manifest not found: {manifest_path}")
         return
@@ -46,6 +46,27 @@ def regenerate_pairs(manifest_path: Path, output_path: Path):
 
         if not output_path_str:
             continue
+            
+        # Make relative if requested
+        if make_relative:
+            # Try to find 'sub-XX' and slice from there
+            try:
+                # Normalize slashes
+                p = output_path_str.replace("\\", "/")
+                idx = p.find(f"/{subject}/")
+                if idx != -1:
+                    # Keep everything starting from subject
+                    output_path_str = p[idx+1:]
+                elif p.startswith(subject):
+                     pass
+                else:
+                    # Fallback: try to split by 'preprocessed' or 'derivatives'
+                    parts = p.split("/")
+                    if subject in parts:
+                        si = parts.index(subject)
+                        output_path_str = "/".join(parts[si:])
+            except Exception as e:
+                logger.warning(f"Failed to make relative path for {output_path_str}: {e}")
 
         label = None
         # Determine 3T vs 7T
@@ -106,9 +127,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", required=True, help="Path to manifest.csv")
     parser.add_argument("--output", required=True, help="Path to output pairs.csv")
+    parser.add_argument("--make-relative", action="store_true", help="Strip absolute paths, keeping only from 'sub-XX' onwards")
     args = parser.parse_args()
     
-    regenerate_pairs(Path(args.manifest), Path(args.output))
+    # Custom logic to modify how paths are stored before writing
+    # We essentially intercept the regenerate_pairs function logic by modifying it or handling it here
+    # For simplicity, let's update regenerate_pairs to take this flag
+    regenerate_pairs(Path(args.manifest), Path(args.output), make_relative=args.make_relative)
 
 if __name__ == "__main__":
     main()
