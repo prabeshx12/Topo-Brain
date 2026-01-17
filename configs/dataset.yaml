@@ -14,7 +14,7 @@ patch:
 # Input configuration (Section 6.1, 6.3)
 input:
   modality: T1w  # Primary input modality
-  use_t2: false  # Multi-modal T1+T2 input (future enhancement)
+  use_t2: false  # Set to true to enable Multi-modal T1+T2 input (2-channel)
 
 # Target configuration
 target:

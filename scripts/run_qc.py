@@ -17,6 +17,7 @@ from src.quality_control import (
     MaskQualityValidator,
     MRIQCParser,
     PreprocessingQC,
+    generate_unified_report,
 )
 from src.bids import discover_bids_files, create_3t_7t_pairs
 
@@ -322,13 +323,18 @@ def main():
     
     run_all = not (args.alignment_only or args.mask_only or args.mriqc_only)
     
+    # Initialize results containers
+    alignment_results = []
+    mask_results = []
+    mriqc_results = []
+    
     # Run alignment QC
     if run_all or args.alignment_only:
         if pairs_path.exists():
             logger.info("=" * 50)
             logger.info("Running Alignment QC...")
             logger.info("=" * 50)
-            run_alignment_qc(pairs_path, output_dir / "alignment", args.max_alignment_samples)
+            alignment_results = run_alignment_qc(pairs_path, output_dir / "alignment", args.max_alignment_samples)
         else:
             logger.warning(f"Pairs manifest not found: {pairs_path}")
     
@@ -338,7 +344,7 @@ def main():
             logger.info("=" * 50)
             logger.info("Running Mask Quality Validation...")
             logger.info("=" * 50)
-            run_mask_qc(manifest_path, output_dir / "masks")
+            mask_results = run_mask_qc(manifest_path, output_dir / "masks")
         else:
             logger.warning(f"Manifest not found: {manifest_path}")
     
@@ -348,10 +354,20 @@ def main():
             logger.info("=" * 50)
             logger.info("Running MRIQC Integration...")
             logger.info("=" * 50)
-            run_mriqc_integration(manifest_path, derivatives_root, output_dir / "mriqc")
+            mriqc_results = run_mriqc_integration(manifest_path, derivatives_root, output_dir / "mriqc")
         else:
             logger.warning(f"Manifest not found: {manifest_path}")
-    
+            
+    # Generate unified report
+    logger.info("=" * 50)
+    logger.info("Generating Unified QC Report...")
+    report_path = generate_unified_report(
+        output_dir,
+        alignment_results=alignment_results,
+        mask_results=mask_results,
+        mriqc_results=mriqc_results,
+    )
+    logger.info(f"Unified QC Report saved to: {report_path}")
     logger.info("=" * 50)
     logger.info(f"QC complete. Results saved to {output_dir}")
     logger.info("=" * 50)

@@ -630,6 +630,230 @@ class QCMetrics:
         return float(nonzero_voxels / total_voxels)
 
 
+
+def generate_unified_report(
+    output_dir: Path,
+    alignment_results: List[Dict] = [],
+    mask_results: List[Dict] = [],
+    mriqc_results: List[Dict] = [],
+) -> Path:
+    """
+    Generate a unified HTML report for all QC components.
+    
+    Args:
+        output_dir: Directory to save the report
+        alignment_results: List of alignment QC results
+        mask_results: List of mask QC results
+        mriqc_results: List of MRIQC integration results
+        
+    Returns:
+        Path to the generated HTML report
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / "unified_qc_report.html"
+    
+    # Calculate stats
+    total_subjects = len(set(
+        [r.get("subject") for r in alignment_results] +
+        [r.get("subject") for r in mask_results] +
+        [r.get("subject") for r in mriqc_results]
+    ))
+    
+    # Alignment stats
+    alignment_failures = [r for r in alignment_results if r.get("error")]
+    avg_ncc = np.mean([r["ncc"] for r in alignment_results if "ncc" in r]) if alignment_results else 0.0
+    
+    # Mask stats
+    mask_warnings = [r for r in mask_results if r.get("warnings")]
+    mask_failures = [r for r in mask_results if r.get("error")]
+    
+    # MRIQC stats
+    mriqc_count = len(mriqc_results)
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Topo-Brain Unified QC Report</title>
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; color: #333; }}
+            .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; box-shadow: 0 0 10px rgba(0,0,0,0.1); border-radius: 8px; }}
+            h1 {{ color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }}
+            h2 {{ color: #34495e; margin-top: 30px; border-left: 5px solid #3498db; padding-left: 10px; }}
+            .summary-cards {{ display: flex; gap: 20px; margin-bottom: 30px; }}
+            .card {{ flex: 1; padding: 20px; background-color: #f8f9fa; border-radius: 5px; border-left: 5px solid #2ecc71; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }}
+            .card.warning {{ border-left-color: #f1c40f; }}
+            .card.error {{ border-left-color: #e74c3c; }}
+            .metric {{ font-size: 24px; font-weight: bold; display: block; margin-top: 5px; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 15px; font-size: 14px; }}
+            th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
+            th {{ background-color: #eaeaea; position: sticky; top: 0; }}
+            tr:hover {{ background-color: #f1f1f1; }}
+            .status-ok {{ color: green; font-weight: bold; }}
+            .status-warn {{ color: orange; font-weight: bold; }}
+            .status-fail {{ color: red; font-weight: bold; }}
+            .img-thumbnail {{ max-width: 150px; max-height: 150px; cursor: pointer; transition: transform 0.2s; }}
+            .img-thumbnail:hover {{ transform: scale(3.5); border: 2px solid #3498db; z-index: 100; position: relative; background: white; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Topo-Brain Unified QC Report</h1>
+            <p>Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            
+            <div class="summary-cards">
+                <div class="card">
+                    Total Subjects
+                    <span class="metric">{total_subjects}</span>
+                </div>
+                <div class="card {'warning' if mask_warnings else 'success'}">
+                    Mask Warnings
+                    <span class="metric">{len(mask_warnings)}</span>
+                </div>
+                <div class="card {'error' if alignment_failures or mask_failures else 'success'}">
+                    Failures
+                    <span class="metric">{len(alignment_failures) + len(mask_failures)}</span>
+                </div>
+                <div class="card">
+                    Avg Alignment NCC
+                    <span class="metric">{avg_ncc:.3f}</span>
+                </div>
+            </div>
+
+            <h2>1. Alignment Quality (3T-7T)</h2>
+            <p><strong>Total Checked:</strong> {len(alignment_results)}</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>NCC Score</th>
+                        <th>Edge MSE</th>
+                        <th>Status</th>
+                        <th>Overlay</th>
+                    </tr>
+                </thead>
+                <tbody>
+    """
+    
+    for r in alignment_results:
+        if "error" in r:
+            status_cls = "status-fail"
+            status_text = "ERROR"
+            ncc = "N/A"
+            mse = "N/A"
+            img_html = "No Image"
+        else:
+            ncc_val = r.get("ncc", 0)
+            status_text = "Good" if ncc_val > 0.8 else ("Fair" if ncc_val > 0.5 else "Poor")
+            status_cls = "status-ok" if ncc_val > 0.8 else ("status-warn" if ncc_val > 0.5 else "status-fail")
+            ncc = f"{ncc_val:.3f}"
+            mse = f"{r.get('edge_mse', 0):.4f}"
+            
+            # Relative path for image
+            viz_path = Path(r["visualization"])
+            try:
+                rel_path = viz_path.relative_to(output_dir)
+            except ValueError:
+                rel_path = viz_path.name # Fallback
+            
+            img_html = f'<a href="{rel_path}" target="_blank"><img src="{rel_path}" class="img-thumbnail"></a>'
+            
+        html_content += f"""
+                    <tr>
+                        <td>{r.get("subject")}</td>
+                        <td>{ncc}</td>
+                        <td>{mse}</td>
+                        <td class="{status_cls}">{status_text}</td>
+                        <td>{img_html}</td>
+                    </tr>
+        """
+        
+    html_content += """
+                </tbody>
+            </table>
+
+            <h2>2. Mask Quality Validation</h2>
+            <p><strong>Total Checked:</strong> {len(mask_results)}</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subject/Ses/Mod</th>
+                        <th>Volume (mm³)</th>
+                        <th>Sphericity</th>
+                        <th>Warnings</th>
+                    </tr>
+                </thead>
+                <tbody>
+    """
+        
+    for r in mask_results:
+        subject_id = f"{r.get('subject')}/{r.get('session')}/{r.get('modality')}"
+        if "error" in r:
+            html_content += f"""
+                <tr>
+                    <td>{subject_id}</td>
+                    <td colspan="3" class="status-fail">ERROR: {r.get('error')}</td>
+                </tr>
+            """
+        else:
+            warnings = r.get("warnings", [])
+            warn_html = "<br>".join([f"⚠️ {w}" for w in warnings]) if warnings else '<span class="status-ok">OK</span>'
+            
+            html_content += f"""
+                <tr>
+                    <td>{subject_id}</td>
+                    <td>{r.get('volume_mm3', 0):.0f}</td>
+                    <td>{r.get('sphericity', 0):.2f}</td>
+                    <td>{warn_html}</td>
+                </tr>
+            """
+            
+    html_content += """
+                </tbody>
+            </table>
+
+            <h2>3. MRIQC Integration</h2>
+            <p><strong>Found Metrics For:</strong> {len(mriqc_results)} volumes</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>SNR</th>
+                        <th>CNR</th>
+                        <th>Quality Flags</th>
+                    </tr>
+                </thead>
+                <tbody>
+    """
+    
+    for r in mriqc_results:
+        flags = r.get("mriqc_quality_flags", [])
+        flag_html = "<br>".join(flags) if flags else '<span class="status-ok">None</span>'
+        
+        html_content += f"""
+                <tr>
+                    <td>{r.get('subject')}</td>
+                    <td>{r.get('mriqc_snr_total', 'N/A')}</td>
+                    <td>{r.get('mriqc_cnr', 'N/A')}</td>
+                    <td>{flag_html}</td>
+                </tr>
+        """
+        
+    html_content += """
+                </tbody>
+            </table>
+        </div>
+    </body>
+    </html>
+    """
+    
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+        
+    return report_path
+
+
 class PreprocessingQC:
     """
     Quality control for preprocessing pipeline.

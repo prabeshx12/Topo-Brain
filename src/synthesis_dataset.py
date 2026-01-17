@@ -16,7 +16,17 @@ from typing import Dict, Iterator, List, Optional, Tuple, Union
 import numpy as np
 import nibabel as nib
 import torch
+import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
+
+from monai.transforms import (
+    Compose,
+    RandAffined,
+    Rand3DElasticd,
+    RandFlipd,
+    RandRotate90d,
+    EnsureTyped,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +39,7 @@ class PatchConfig:
     patches_per_volume: int = 32  # Number of patches to sample per volume per epoch
     overlap_ratio: float = 0.5  # For inference tiling
     min_brain_fraction: float = 0.1  # Minimum fraction of patch that must be brain
+    use_t2: bool = False  # Enable multi-contrast input (T1+T2)
     seed: int = 42
 
 
@@ -197,6 +208,36 @@ class PairedPatchDataset(Dataset):
         # Total samples = pairs * patches_per_volume
         self._length = len(pairs) * self.config.patches_per_volume
         
+        # Setup Monai transforms for valid 3D augmentation
+        if self.augment:
+            self.transform = Compose([
+                EnsureTyped(keys=["input", "target"]),
+                # Random flip along axes
+                RandFlipd(keys=["input", "target"], prob=0.5, spatial_axis=0),
+                RandFlipd(keys=["input", "target"], prob=0.5, spatial_axis=1),
+                RandFlipd(keys=["input", "target"], prob=0.5, spatial_axis=2),
+                # Random 90-degree rotations
+                RandRotate90d(keys=["input", "target"], prob=0.5, max_k=3),
+                # Elastic deformation (crucial for anatomy)
+                Rand3DElasticd(
+                    keys=["input", "target"],
+                    sigma_range=(5, 7),
+                    magnitude_range=(50, 150),
+                    prob=0.3,
+                    padding_mode="zeros",
+                ),
+                # Affine (scaling/rotation/shift)
+                RandAffined(
+                    keys=["input", "target"],
+                    prob=0.3,
+                    rotate_range=(0.1, 0.1, 0.1),
+                    scale_range=(0.1, 0.1, 0.1),
+                    padding_mode="zeros",
+                ),
+            ])
+        else:
+            self.transform = None
+
         logger.info(
             f"Initialized PairedPatchDataset: {len(pairs)} pairs, "
             f"{self.config.patches_per_volume} patches/volume, "
@@ -212,14 +253,14 @@ class PairedPatchDataset(Dataset):
         nib_img = nib.load(str(path))
         return nib_img.get_fdata().astype(np.float32)
     
-    def _get_cached_pair(self, pair_idx: int) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
+    def _get_cached_pair(self, pair_idx: int) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
         """Get or load a cached volume pair."""
         pair = self.pairs[pair_idx]
         cache_key = pair.get("subject", str(pair_idx))
         
         if cache_key in self._cache:
             cached = self._cache[cache_key]
-            return cached["input_3t"], cached["target_7t"], cached.get("mask")
+            return cached["input_3t"], cached["target_7t"], cached.get("mask"), cached.get("input_3t_t2")
         
         # Load volumes
         input_3t = self._load_volume(Path(pair["input_3t"]))
@@ -230,13 +271,30 @@ class PairedPatchDataset(Dataset):
         
         # Cache if enabled
         if self.cache_volumes:
-            self._cache[cache_key] = {
+            cache_entry = {
                 "input_3t": input_3t,
                 "target_7t": target_7t,
                 "mask": mask,
             }
+            if "input_3t_t2" in pair and self.config.use_t2:
+                # Load T2 if configured and available
+                t2_path = pair["input_3t_t2"]
+                if t2_path and Path(t2_path).exists():
+                    cache_entry["input_3t_t2"] = self._load_volume(Path(t2_path))
+                else:
+                    logger.warning(f"T2 specified but not found for {cache_key}: {t2_path}")
+            
+            self._cache[cache_key] = cache_entry
         
-        return input_3t, target_7t, mask
+        # Return tuple, including T2 if needed
+        t2_vol = None
+        if self.config.use_t2:
+            if cache_key in self._cache and "input_3t_t2" in self._cache[cache_key]:
+                t2_vol = self._cache[cache_key]["input_3t_t2"]
+            elif "input_3t_t2" in pair and Path(pair["input_3t_t2"]).exists():
+                t2_vol = self._load_volume(Path(pair["input_3t_t2"]))
+                
+        return input_3t, target_7t, mask, t2_vol
     
     def _get_valid_centers(
         self,
@@ -320,32 +378,7 @@ class PairedPatchDataset(Dataset):
         
         return patch
     
-    def _apply_augmentation(
-        self,
-        input_patch: np.ndarray,
-        target_patch: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Apply paired data augmentation.
-        Same transform applied to both input and target.
-        """
-        if not self.augment:
-            return input_patch, target_patch
-        
-        # Random flip (same for both)
-        for axis in range(3):
-            if self._rng.random() < 0.5:
-                input_patch = np.flip(input_patch, axis=axis).copy()
-                target_patch = np.flip(target_patch, axis=axis).copy()
-        
-        # Random 90-degree rotations (same for both)
-        k = self._rng.integers(0, 4)
-        if k > 0:
-            axes = self._rng.choice([0, 1, 2], size=2, replace=False)
-            input_patch = np.rot90(input_patch, k=k, axes=tuple(axes)).copy()
-            target_patch = np.rot90(target_patch, k=k, axes=tuple(axes)).copy()
-        
-        return input_patch, target_patch
+    # _apply_augmentation removed in favor of Monai transforms
     
     def __getitem__(self, idx: int) -> Dict[str, Union[torch.Tensor, str, Tuple]]:
         """
@@ -363,7 +396,7 @@ class PairedPatchDataset(Dataset):
         patch_idx = idx % self.config.patches_per_volume
         
         # Load volumes
-        input_vol, target_vol, mask = self._get_cached_pair(pair_idx)
+        input_vol, target_vol, mask, t2_vol = self._get_cached_pair(pair_idx)
         
         # Get valid patch centers
         valid_centers = self._get_valid_centers(mask, pair_idx)
@@ -385,12 +418,33 @@ class PairedPatchDataset(Dataset):
         input_patch = self._extract_patch(input_vol, center)
         target_patch = self._extract_patch(target_vol, center)
         
-        # Apply augmentation (same transform to both)
-        input_patch, target_patch = self._apply_augmentation(input_patch, target_patch)
-        
-        # Convert to tensors with channel dimension
-        input_tensor = torch.from_numpy(input_patch[np.newaxis, ...]).float()
+        # Handle T2 if enabled
+        if self.config.use_t2:
+            if t2_vol is not None:
+                t2_patch = self._extract_patch(t2_vol, center)
+            else:
+                # Fallback: zero-filled T2 channel if missing
+                t2_patch = np.zeros_like(input_patch)
+            
+            # Stack channels: (C, D, H, W) -> C=2
+            # input_patch becomes (2, D, H, W)
+            input_tensor = torch.from_numpy(np.stack([input_patch, t2_patch], axis=0)).float()
+        else:
+            # Single channel: (1, D, H, W)
+            input_tensor = torch.from_numpy(input_patch[np.newaxis, ...]).float()
+            
         target_tensor = torch.from_numpy(target_patch[np.newaxis, ...]).float()
+        
+        # Apply augmentation using Monai transforms
+        if self.augment and self.transform:
+            # Prepare dictionary for Monai
+            data = {"input": input_tensor, "target": target_tensor}
+            try:
+                data = self.transform(data)
+                input_tensor = data["input"]
+                target_tensor = data["target"]
+            except Exception as e:
+                logger.warning(f"Augmentation failed, skipping: {e}")
         
         return {
             "input": input_tensor,
@@ -407,9 +461,15 @@ class PairedPatchDataset(Dataset):
         Returns:
             Tuple of (input_volume, target_volume, metadata)
         """
-        input_vol, target_vol, _ = self._get_cached_pair(pair_idx)
+        input_vol, target_vol, _, t2_vol = self._get_cached_pair(pair_idx)
         
-        input_tensor = torch.from_numpy(input_vol[np.newaxis, ...]).float()
+        if self.config.use_t2:
+            if t2_vol is None:
+                t2_vol = np.zeros_like(input_vol)
+            input_tensor = torch.from_numpy(np.stack([input_vol, t2_vol], axis=0)).float()
+        else:
+            input_tensor = torch.from_numpy(input_vol[np.newaxis, ...]).float()
+            
         target_tensor = torch.from_numpy(target_vol[np.newaxis, ...]).float()
         
         return input_tensor, target_tensor, self.pairs[pair_idx]
