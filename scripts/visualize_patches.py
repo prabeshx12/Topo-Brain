@@ -14,6 +14,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm import tqdm
+import sys
+
+# Add project root to path
+sys.path.append(str(Path(__file__).parent.parent))
 
 from src.synthesis_dataset import load_pairs_manifest, PairedPatchDataset, PatchConfig
 
@@ -91,8 +95,24 @@ def main():
     
     if not valid_pairs:
         print("Error: No valid pairs found!")
-        print(f"Sample path attempted: {pairs[0].get('input_3t')}")
-        if not data_root:
+        first_pair = pairs[0] if pairs else {}
+        sample_rel = first_pair.get('input_3t', 'unknown')
+        print(f"Sample path from CSV: {sample_rel}")
+        
+        if data_root:
+            print(f"Data Root Provided: {data_root.resolve()}")
+            expected_full = data_root / sample_rel
+            print(f"Expected Full Path: {expected_full}")
+            print(f"Details: exists={expected_full.exists()}")
+            
+            # List root contents to help user
+            if data_root.exists():
+                print(f"Contents of {data_root}:")
+                for x in list(data_root.iterdir())[:5]:
+                    print(f" - {x.name}")
+            else:
+                print(f"Warning: Data root {data_root} does not exist!")
+        else:
             print("Try providing --data-root /path/to/preprocessed_data")
         return
         
