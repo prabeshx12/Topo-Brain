@@ -17,8 +17,9 @@ except ImportError:
 # Helper to extract values at specific timesteps
 def extract(a, t, x_shape):
     batch_size = t.shape[0]
-    out = a.gather(-1, t.cpu())
-    return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
+    t = t.to(a.device)
+    out = a.gather(-1, t)
+    return out.reshape(batch_size, *((1,) * (len(x_shape) - 1)))
 
 def linear_beta_schedule(timesteps):
     scale = 1000 / timesteps
