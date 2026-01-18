@@ -440,8 +440,8 @@ class PairedPatchDataset(Dataset):
             if t2_vol is not None:
                 t2_patch = self._extract_patch(t2_vol, center)
             else:
-                # Fallback: zero-filled T2 channel if missing
-                t2_patch = np.zeros_like(input_patch)
+                # Strict Mode: Crash if T2 is missing but requested
+                raise ValueError("Config.use_t2 is True, but T2 volume was not found/loaded for this subject.")
             
             # Stack channels: (C, D, H, W) -> C=2
             # input_patch becomes (2, D, H, W)

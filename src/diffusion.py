@@ -46,8 +46,7 @@ class PerceptualLoss(nn.Module):
     def __init__(self):
         super().__init__()
         if not HAS_TORCHVISION:
-            self.feature_extractor = None
-            return
+            raise RuntimeError("PerceptualLoss requires 'torchvision' library. Please install it or set lambda_percep=0.")
             
         vgg = models.vgg16(pretrained=True)
         # Use first few layers for texture/structure
@@ -56,8 +55,6 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
             
     def forward(self, x, y):
-        if self.feature_extractor is None:
-            return torch.tensor(0.0, device=x.device)
             
         # Input x, y are [B, 1, D, H, W] (3D)
         # VGG expects [B, 3, H, W] (2D RGB)
