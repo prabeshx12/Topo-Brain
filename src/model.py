@@ -125,6 +125,8 @@ class AnatomyGuidedUNet(nn.Module):
         x_in = torch.cat([x, conditioning], dim=1)
         
         # 2. Time Embedding
+        # Ensure t is float and [B, 1]
+        t = t.float().view(-1, 1)
         t_emb = self.time_embed(t).view(-1, self.inc.out_channels, 1, 1, 1)
         
         # 3. Encoder
