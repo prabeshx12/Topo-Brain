@@ -89,8 +89,17 @@ def run_inference(args):
         # Assuming training used standard score (z-score).
         # We will apply simple z-score here for input.
         if "input" in str(path).lower():
-            if data.std() > 0:
-                data = (data - data.mean()) / data.std()
+            # Robust Z-score (Ignore background zeros, match training preprocessing)
+            mask = data > 0
+            if mask.sum() > 0:
+                mean = data[mask].mean()
+                std = data[mask].std()
+                if std > 0:
+                    data = (data - mean) / std
+            else:
+                 # Fallback if empty
+                 if data.std() > 0:
+                     data = (data - data.mean()) / data.std()
         
         tensor = torch.from_numpy(data).float()
         if len(tensor.shape) == 3:

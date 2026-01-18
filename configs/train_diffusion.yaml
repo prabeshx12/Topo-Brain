@@ -21,8 +21,8 @@ diffusion:
 training:
   lr: 1e-4
   n_iters: 200000
-  save_freq: 5000
-  val_freq: 5000
+  save_freq: 2500
+  val_freq: 2500
   log_freq: 100
   
 stages:
