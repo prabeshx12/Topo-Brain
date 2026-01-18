@@ -249,7 +249,24 @@ class PairedPatchDataset(Dataset):
         return self._length
     
     def _load_volume(self, path: Path) -> np.ndarray:
-        """Load a NIfTI volume."""
+        """Load a NIfTI volume with extension fallback."""
+        if not path.exists():
+            # Try alternate extension
+            if path.suffix == '.gz':
+                alt_path = path.with_suffix('').with_suffix('.nii') # .nii.gz -> .nii
+            elif path.suffix == '.nii':
+                alt_path = path.with_suffix('.nii.gz') # .nii -> .nii.gz
+            else:
+                alt_path = None
+                
+            if alt_path and alt_path.exists():
+                logger.info(f"File {path} not found, using {alt_path} instead.")
+                path = alt_path
+            else:
+                 # Raise original error if fallback fails
+                 if not path.exists():
+                     raise FileNotFoundError(f"File not found: {path} (checked alternates)")
+
         nib_img = nib.load(str(path))
         return nib_img.get_fdata().astype(np.float32)
     
