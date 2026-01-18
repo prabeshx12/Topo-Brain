@@ -3,7 +3,7 @@ dataset:
   pairs_csv: "pairs.csv"
   batch_size: 4
   patch_size: [64, 64, 64]
-  num_workers: 4
+  num_workers: 8
 
 model:
   in_channels: 1

@@ -182,6 +182,17 @@ def main():
             # Concise log
             tqdm.write(f"Step {step}: L={loss_dict['loss'].item():.4f} D={loss_dict['loss_diff'].item():.4f} S={loss_dict['loss_topo'].item():.4f}")
 
+        # Saving
+        if step > 0 and step % config["training"]["save_freq"] == 0:
+            save_path = log_dir / f"checkpoint_{step}.pt"
+            torch.save({
+                'step': step,
+                'model': model.state_dict(),
+                'ema': ema_model.state_dict(),
+                'optimizer': optimizer.state_dict()
+            }, save_path)
+            logger.info(f"Saved checkpoint to {save_path}")
+
     logger.info("Training Complete.")
 
 if __name__ == "__main__":
