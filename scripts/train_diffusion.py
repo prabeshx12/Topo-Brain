@@ -59,6 +59,7 @@ def main():
     parser.add_argument("--config", type=str, default="configs/train_diffusion.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Run a single batch for verification")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint")
+    parser.add_argument("--data-root", type=str, default=None, help="Root directory for data (prepended to CSV paths)")
     args = parser.parse_args()
 
     # Load Config
@@ -93,6 +94,17 @@ def main():
         try:
             if pairs_path.exists():
                 pairs = load_pairs_manifest(pairs_path)
+                
+                # Prepend data root if provided
+                if args.data_root:
+                    root = Path(args.data_root)
+                    logger.info(f"Prepending data root: {root}")
+                    for p in pairs:
+                        # Assuming keys like 'input_3t', 'target_7t', 'mask'
+                        if 'input_3t' in p: p['input_3t'] = str(root / p['input_3t'])
+                        if 'target_7t' in p: p['target_7t'] = str(root / p['target_7t'])
+                        if 'mask' in p and p['mask']: p['mask'] = str(root / p['mask']) # Mask might be None
+                
                 train_loader, _, _ = create_synthesis_dataloaders(pairs, batch_size=config["dataset"].get("batch_size", 4))
                 train_iter = cycle(train_loader)
                 has_data = True
@@ -100,6 +112,8 @@ def main():
                  logger.warning(f"Pairs file {pairs_path} missing.")
         except Exception as e:
             logger.warning(f"Failed to load dataset: {e}")
+            if not args.dry_run:
+                raise e
 
     # Model Setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
