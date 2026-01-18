@@ -74,8 +74,13 @@ def main():
 
     # Setup Logging
     log_dir = Path("logs") / time.strftime("%Y%m%d-%H%M%S")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    setup_logging(log_dir / "train.log")
+    
+    class LoggingConfig:
+        def __init__(self, log_dir):
+            self.log_dir = log_dir
+            self.log_level = "INFO"
+            
+    setup_logging(LoggingConfig(log_dir))
     logger = logging.getLogger(__name__)
 
     # Data Loading
