@@ -136,14 +136,14 @@ def run_inference(args):
     # Save NIfTI
     out_nii = nib.Nifti1Image(generated.cpu().numpy().squeeze(), affine)
     nib.save(out_nii, out_path)
-    print(f"Saved Volume: {out_path}")
+    print(f"Saved Volume: {out_path.resolve()}")
     
     # Save Visualization
     vis_path = out_path.with_suffix("").with_suffix(".png") # output.nii.gz -> output.png
     save_comparison_plot(crop_in.cpu().numpy(), generated.cpu().numpy(), 
                          crop_gt.cpu().numpy() if crop_gt is not None else None, 
                          vis_path)
-    print(f"Saved Visualization: {vis_path}")
+    print(f"Saved Visualization: {vis_path.resolve()}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
