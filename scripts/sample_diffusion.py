@@ -52,10 +52,19 @@ def run_inference(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 1. Load Config
-    config = load_config(args.config)
+    # 1. Load Checkpoint First (to check for config)
+    print(f"Loading checkpoint: {args.checkpoint}")
+    checkpoint = torch.load(args.checkpoint, map_location=device)
     
-    # 2. Model Setup
+    # 2. Determine Config
+    if 'config' in checkpoint:
+        print("Loaded config from checkpoint.")
+        config = checkpoint['config']
+    else:
+        print(f"Config not found in checkpoint. Loading from: {args.config}")
+        config = load_config(args.config)
+    
+    # 3. Model Setup
     model = AnatomyGuidedUNet(
         in_channels=1, cond_channels=1, out_channels=1,
         num_classes=config["model"].get("num_classes", 3),
@@ -63,10 +72,6 @@ def run_inference(args):
     ).to(device)
 
     diffusion = GaussianDiffusion(model, timesteps=config["diffusion"].get("timesteps", 1000)).to(device)
-
-    # 3. Load Checkpoint
-    print(f"Loading checkpoint: {args.checkpoint}")
-    checkpoint = torch.load(args.checkpoint, map_location=device)
     
     if 'ema' in checkpoint:
         print("Using EMA weights.")

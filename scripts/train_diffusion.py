@@ -162,10 +162,29 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=float(config["training"]["lr"]))
     start_step = 0
 
+    # Resume from checkpoint
+    if args.resume:
+        if os.path.exists(args.resume):
+            logger.info(f"Resuming from checkpoint: {args.resume}")
+            checkpoint = torch.load(args.resume, map_location=device)
+            
+            model.load_state_dict(checkpoint['model'])
+            if 'ema' in checkpoint:
+                ema_model.load_state_dict(checkpoint['ema'])
+            if 'optimizer' in checkpoint:
+                optimizer.load_state_dict(checkpoint['optimizer'])
+            if 'step' in checkpoint:
+                start_step = checkpoint['step'] + 1
+                
+            logger.info(f"Resumed at step {start_step}")
+        else:
+            logger.error(f"Checkpoint not found at {args.resume}")
+            raise FileNotFoundError(f"Checkpoint not found at {args.resume}")
+
     # Training Loop
     n_iters = 10 if args.dry_run else config["training"]["n_iters"]
     
-    for step in tqdm(range(start_step, n_iters)):
+    for step in tqdm(range(start_step, n_iters), initial=start_step, total=n_iters):
         optimizer.zero_grad()
         
         # Batch Data
@@ -225,7 +244,8 @@ def main():
                 'step': step,
                 'model': model.state_dict(),
                 'ema': ema_model.state_dict(),
-                'optimizer': optimizer.state_dict()
+                'optimizer': optimizer.state_dict(),
+                'config': config, # Save config for self-contained inference
             }, save_path)
             logger.info(f"Saved checkpoint to {save_path}")
 
