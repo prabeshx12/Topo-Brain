@@ -62,6 +62,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Run a single batch for verification")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint")
     parser.add_argument("--data-root", type=str, default=None, help="Root directory for data (prepended to CSV paths)")
+    parser.add_argument("--output", type=str, default=None, help="Output directory for checkpoints and logs")
     parser.add_argument("--use-wandb", action="store_true", help="Enable Weights & Biases logging")
     parser.add_argument("--wandb-project", type=str, default="topobrain", help="W&B Project Name")
     parser.add_argument("--wandb-entity", type=str, default=None, help="W&B Entity (Team/User)")
@@ -79,7 +80,14 @@ def main():
         config = load_config(args.config)
 
     # Setup Logging
-    log_dir = Path("logs") / time.strftime("%Y%m%d-%H%M%S")
+    if args.output:
+        output_dir = Path(args.output)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        log_dir = output_dir / "logs" / time.strftime("%Y%m%d-%H%M%S")
+    else:
+        log_dir = Path("logs") / time.strftime("%Y%m%d-%H%M%S")
+    
+    log_dir.mkdir(parents=True, exist_ok=True)
     
     class LoggingConfig:
         def __init__(self, log_dir):
@@ -88,6 +96,7 @@ def main():
             
     setup_logging(LoggingConfig(log_dir))
     logger = logging.getLogger(__name__)
+    logger.info(f"Output directory: {log_dir.parent.parent if args.output else log_dir.parent}")
 
     # W&B Setup
     if args.use_wandb:
@@ -239,7 +248,13 @@ def main():
 
         # Saving
         if step > 0 and step % config["training"]["save_freq"] == 0:
-            save_path = log_dir / f"checkpoint_{step}.pt"
+            if args.output:
+                checkpoint_dir = Path(args.output) / "checkpoints"
+            else:
+                checkpoint_dir = Path("models")
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            
+            save_path = checkpoint_dir / f"checkpoint_{step}.pt"
             torch.save({
                 'step': step,
                 'model': model.state_dict(),
@@ -248,6 +263,17 @@ def main():
                 'config': config, # Save config for self-contained inference
             }, save_path)
             logger.info(f"Saved checkpoint to {save_path}")
+            
+            # Also save as latest
+            latest_path = checkpoint_dir / "checkpoint_latest.pt"
+            torch.save({
+                'step': step,
+                'model': model.state_dict(),
+                'ema': ema_model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'config': config,
+            }, latest_path)
+            logger.info(f"Saved latest checkpoint to {latest_path}")
 
     logger.info("Training Complete.")
 
