@@ -251,7 +251,8 @@ def main():
             if args.output:
                 checkpoint_dir = Path(args.output) / "checkpoints"
             else:
-                checkpoint_dir = Path("models")
+                # Default: save to checkpoints/ in current working directory
+                checkpoint_dir = Path("checkpoints")
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
             
             save_path = checkpoint_dir / f"checkpoint_{step}.pt"
