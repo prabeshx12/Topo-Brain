@@ -14,7 +14,6 @@ sys.path.append(os.getcwd())
 
 from src.model import AnatomyGuidedUNet
 from src.diffusion import GaussianDiffusion
-from src.synthesis_dataset import normalize_intensity
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -84,28 +83,24 @@ def run_inference(args):
 
     # 4. Input & Target Loading
     # Ensure 5D: [B, C, D, H, W]
-    def load_nii(path, is_input=False):
+    # Note: Data should be pre-normalized to [-1, 1] during preprocessing
+    def load_nii(path):
         if not path: return None, None
         img = nib.load(path)
         data = img.get_fdata().astype(np.float32)
-        
-        # Use same normalization as training (minmax to [-1, 1])
-        if is_input:
-            mask = data > 0
-            data = normalize_intensity(data, mask, method="minmax")
-        
+        # Data is already normalized to [-1, 1] from preprocessing
         tensor = torch.from_numpy(data).float()
         if len(tensor.shape) == 3:
             tensor = tensor.unsqueeze(0).unsqueeze(0)
         return tensor, img.affine
 
     print(f"Loading Input: {args.input}")
-    input_tensor, affine = load_nii(args.input, is_input=True)
+    input_tensor, affine = load_nii(args.input)
     
     target_tensor = None
     if args.target:
         print(f"Loading Target: {args.target}")
-        target_tensor, _ = load_nii(args.target, is_input=False)  # Keep raw for comparison
+        target_tensor, _ = load_nii(args.target)
 
     # 5. Crop Center (64^3)
     # We do this to ensure it matches training distribution and memory constraints

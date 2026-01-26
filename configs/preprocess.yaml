@@ -34,7 +34,7 @@ bias_correction:
   n4_convergence_threshold: 0.001
 
 normalization:
-  method: zscore
+  method: diffusion  # Outputs [-1, 1] range for diffusion model training
   percentile_lower: 1.0
   percentile_upper: 99.0
   clip_lower_percentile: 0.5

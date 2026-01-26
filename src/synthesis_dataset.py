@@ -30,44 +30,6 @@ from monai.transforms import (
 logger = logging.getLogger(__name__)
 
 
-def normalize_intensity(volume: np.ndarray, mask: np.ndarray = None, method: str = "minmax") -> np.ndarray:
-    """
-    Normalize MRI intensity values to [-1, 1] range for diffusion model.
-    
-    Args:
-        volume: Input volume array
-        mask: Optional brain mask (if None, uses non-zero voxels)
-        method: 'zscore' for z-score normalization, 'minmax' for percentile-based [-1,1] range
-        
-    Returns:
-        Normalized volume in [-1, 1] range
-    """
-    if mask is None:
-        mask = volume > 0
-    
-    brain_voxels = volume[mask]
-    
-    if len(brain_voxels) == 0:
-        return volume
-    
-    if method == "zscore":
-        # Z-score normalization within brain mask
-        mean_val = np.mean(brain_voxels)
-        std_val = np.std(brain_voxels) + 1e-8
-        normalized = (volume - mean_val) / std_val
-        # Clip to reasonable range and scale to [-1, 1]
-        normalized = np.clip(normalized, -3, 3) / 3.0
-    else:  # minmax with percentiles for robustness
-        p1, p99 = np.percentile(brain_voxels, [1, 99])
-        normalized = (volume - p1) / (p99 - p1 + 1e-8)
-        normalized = np.clip(normalized, 0, 1) * 2 - 1  # Scale to [-1, 1]
-    
-    # Zero out background
-    normalized = normalized * mask
-    
-    return normalized.astype(np.float32)
-
-
 @dataclass
 class PatchConfig:
     """Configuration for patch-based training."""
@@ -316,16 +278,13 @@ class PairedPatchDataset(Dataset):
             cached = self._cache[cache_key]
             return cached["input_3t"], cached["target_7t"], cached.get("mask"), cached.get("input_3t_t2")
         
-        # Load volumes
-        input_3t_raw = self._load_volume(Path(pair["input_3t"]))
-        target_7t_raw = self._load_volume(Path(pair["target_7t"]))
+        # Load volumes (already normalized to [-1, 1] during preprocessing)
+        input_3t = self._load_volume(Path(pair["input_3t"]))
+        target_7t = self._load_volume(Path(pair["target_7t"]))
         
         # Create brain mask from input (non-zero regions)
-        mask = (input_3t_raw > 0).astype(np.uint8)
-        
-        # CRITICAL: Normalize to [-1, 1] for diffusion model
-        input_3t = normalize_intensity(input_3t_raw, mask, method="minmax")
-        target_7t = normalize_intensity(target_7t_raw, mask, method="minmax")
+        # Note: background is 0, brain is in [-1, 1] range
+        mask = (np.abs(input_3t) > 0.01).astype(np.uint8)
         
         # Cache if enabled
         if self.cache_volumes:
