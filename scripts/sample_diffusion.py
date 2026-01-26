@@ -71,7 +71,14 @@ def run_inference(args):
         features=tuple(config["model"].get("features", (32, 64, 128, 256)))
     ).to(device)
 
-    diffusion = GaussianDiffusion(model, timesteps=config["diffusion"].get("timesteps", 1000)).to(device)
+    # IMPORTANT: Use same beta_schedule as training!
+    beta_schedule = config["diffusion"].get("beta_schedule", "cosine")
+    print(f"Using beta_schedule: {beta_schedule}")
+    diffusion = GaussianDiffusion(
+        model, 
+        timesteps=config["diffusion"].get("timesteps", 1000),
+        beta_schedule=beta_schedule
+    ).to(device)
     
     if 'ema' in checkpoint:
         print("Using EMA weights.")
