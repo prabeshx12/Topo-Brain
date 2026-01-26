@@ -14,6 +14,7 @@ sys.path.append(os.getcwd())
 
 from src.model import AnatomyGuidedUNet
 from src.diffusion import GaussianDiffusion
+from src.synthesis_dataset import normalize_intensity
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -83,28 +84,15 @@ def run_inference(args):
 
     # 4. Input & Target Loading
     # Ensure 5D: [B, C, D, H, W]
-    def load_nii(path):
+    def load_nii(path, is_input=False):
         if not path: return None, None
         img = nib.load(path)
         data = img.get_fdata().astype(np.float32)
-        # Normalize roughly to [-1, 1] if data is raw MRI (often 0-3000+)
-        # This is a naive approx; ideally use same stats as training
-        # For visualization, simple max norm is fine.
-        # But for INFERENCE, input scale matters!
-        # Assuming training used standard score (z-score).
-        # We will apply simple z-score here for input.
-        if "input" in str(path).lower():
-            # Robust Z-score (Ignore background zeros, match training preprocessing)
+        
+        # Use same normalization as training (minmax to [-1, 1])
+        if is_input:
             mask = data > 0
-            if mask.sum() > 0:
-                mean = data[mask].mean()
-                std = data[mask].std()
-                if std > 0:
-                    data = (data - mean) / std
-            else:
-                 # Fallback if empty
-                 if data.std() > 0:
-                     data = (data - data.mean()) / data.std()
+            data = normalize_intensity(data, mask, method="minmax")
         
         tensor = torch.from_numpy(data).float()
         if len(tensor.shape) == 3:
@@ -112,12 +100,12 @@ def run_inference(args):
         return tensor, img.affine
 
     print(f"Loading Input: {args.input}")
-    input_tensor, affine = load_nii(args.input)
+    input_tensor, affine = load_nii(args.input, is_input=True)
     
     target_tensor = None
     if args.target:
         print(f"Loading Target: {args.target}")
-        target_tensor, _ = load_nii(args.target)
+        target_tensor, _ = load_nii(args.target, is_input=False)  # Keep raw for comparison
 
     # 5. Crop Center (64^3)
     # We do this to ensure it matches training distribution and memory constraints

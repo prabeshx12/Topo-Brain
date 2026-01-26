@@ -157,9 +157,18 @@ def main():
         features=tuple(config["model"].get("features", (32, 64, 128, 256)))
     ).to(device)
 
-    diffusion = GaussianDiffusion(model, timesteps=config["diffusion"].get("timesteps", 1000)).to(device)
+    # Use beta_schedule from config (cosine recommended)
+    beta_schedule = config["diffusion"].get("beta_schedule", "cosine")
+    diffusion = GaussianDiffusion(
+        model, 
+        timesteps=config["diffusion"].get("timesteps", 1000),
+        beta_schedule=beta_schedule
+    ).to(device)
+    logger.info(f"Using {beta_schedule} beta schedule")
 
-    ema = EMA(0.995)
+    # EMA with configurable decay
+    ema_decay = config["training"].get("ema_decay", 0.9999)
+    ema = EMA(ema_decay)
     ema_model = AnatomyGuidedUNet(
         in_channels=1, cond_channels=1, out_channels=1,
         num_classes=config["model"].get("num_classes", 3),
@@ -168,8 +177,15 @@ def main():
     ema_model.load_state_dict(model.state_dict())
     ema_model.requires_grad_(False)
 
-    optimizer = optim.Adam(model.parameters(), lr=float(config["training"]["lr"]))
+    # AdamW optimizer with weight decay
+    lr = float(config["training"]["lr"])
+    weight_decay = float(config["training"].get("weight_decay", 1e-4))
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    logger.info(f"Optimizer: AdamW, lr={lr}, weight_decay={weight_decay}")
     start_step = 0
+
+    # Gradient clipping value
+    grad_clip = config["training"].get("grad_clip", 1.0)
 
     # Resume from checkpoint
     if args.resume:
@@ -209,22 +225,33 @@ def main():
             cond = torch.randn(2, 1, 64, 64, 64).to(device)
             seg_target = torch.randint(0, 3, (2, 64, 64, 64)).to(device)
 
-        # Curriculum Stages
-        epoch_approx = step // 1000 
-        lambda_pixel = 1.0 
+        # Curriculum Stages based on config
+        stages = config.get("stages", {})
+        stage1_end = stages.get("stage1_end", 10000)
+        stage2_end = stages.get("stage2_end", 50000)
+        stage3_end = stages.get("stage3_end", 100000)
         
-        if epoch_approx < 50:
-            lambda_topo, lambda_percep = 0.0, 0.0
-        elif epoch_approx < 150:
-            lambda_topo, lambda_percep = 0.1, 0.1
+        # Progressive loss weighting
+        if step < stage1_end:
+            # Stage 1: Pure diffusion loss
+            lambda_pixel, lambda_percep, lambda_topo = 0.0, 0.0, 0.0
+        elif step < stage2_end:
+            # Stage 2: Add pixel loss
+            lambda_pixel, lambda_percep, lambda_topo = 1.0, 0.0, 0.0
+        elif step < stage3_end:
+            # Stage 3: Add perceptual loss
+            lambda_pixel, lambda_percep, lambda_topo = 1.0, 0.1, 0.0
         else:
-            lambda_topo, lambda_percep = 0.1, 0.1
-            if epoch_approx == 150 and step % 1000 == 0:
-                for pg in optimizer.param_groups: pg['lr'] *= 0.1
+            # Stage 4: Full curriculum (add topology if available)
+            lambda_pixel, lambda_percep, lambda_topo = 1.0, 0.1, 0.1
 
         loss_dict = diffusion(x_start, cond, seg_target, lambda_pixel=lambda_pixel, lambda_percep=lambda_percep, lambda_topo=lambda_topo)
         
         loss_dict["loss"].backward()
+        
+        # Gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        
         optimizer.step()
         ema.step_ema(ema_model, model)
         
