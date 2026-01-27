@@ -35,10 +35,10 @@ bias_correction:
 
 normalization:
   method: diffusion  # Outputs [-1, 1] range for diffusion model training
-  percentile_lower: 1.0
-  percentile_upper: 99.0
-  clip_lower_percentile: 0.5
-  clip_upper_percentile: 99.5
+  percentile_lower: 0.5  # Use wider percentiles to preserve contrast
+  percentile_upper: 99.5
+  clip_lower_percentile: null  # Disable redundant pre-clipping
+  clip_upper_percentile: null
 
 resample:
   target_spacing: null

@@ -293,9 +293,9 @@ class IntensityNormalization:
                 normalized = normalized * 2.0 - 1.0
             else:
                 logger.warning("Zero percentile range, skipping normalization")
-            # Zero out background (keep at -1 or set to 0)
+            # Set background to -1 (minimum of diffusion range)
             if mask is not None:
-                normalized[mask == 0] = 0.0
+                normalized[mask == 0] = -1.0
         
         else:
             raise ValueError(f"Unknown normalization method: {self.method}")
