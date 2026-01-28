@@ -4,10 +4,8 @@ import numpy as np
 from pathlib import Path
 import sys
 
-# Update this to your actual data root path on CERNBox/EOS
-data_root = input("Enter your data root path (e.g., /eos/home-i04/p/ppokhrel/Untitled Folder 1/Topo-brain/derivatives/topobrain-preproc): ").strip()
-
-data_root = Path(data_root)
+# User's actual data root path on CERNBox/EOS
+data_root = Path("/eos/home-i04/p/ppokhrel/Untitled Folder 1/preprocessed")
 
 if not data_root.exists():
     print(f"ERROR: Path does not exist: {data_root}")
