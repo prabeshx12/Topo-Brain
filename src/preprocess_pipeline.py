@@ -224,7 +224,8 @@ class BIDSPreprocessingPipeline:
                 if self.bias_corrector is not None:
                     image_array = self.bias_corrector(entry.path, mask_for_n4)
 
-                image_array = self._apply_mask(image_array, mask_array)
+                # NOTE: Do NOT apply mask before normalization - normalization handles background
+                # image_array = self._apply_mask(image_array, mask_array)
 
                 if self.config.resample.target_spacing is not None:
                     image_array, affine, mask_array = self._resample_image_and_mask(
@@ -235,6 +236,7 @@ class BIDSPreprocessingPipeline:
                         self.config.resample.interpolation,
                     )
 
+                # Normalization now handles setting background to -1.0
                 image_array = self.normalizer(image_array, mask_array)
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)

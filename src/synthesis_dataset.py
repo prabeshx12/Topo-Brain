@@ -282,9 +282,10 @@ class PairedPatchDataset(Dataset):
         input_3t = self._load_volume(Path(pair["input_3t"]))
         target_7t = self._load_volume(Path(pair["target_7t"]))
         
-        # Create brain mask from input (non-zero regions)
-        # Note: background is 0, brain is in [-1, 1] range
-        mask = (np.abs(input_3t) > 0.01).astype(np.uint8)
+        # Create brain mask from input
+        # With diffusion normalization: background = -1.0, brain = [-1, 1] but mostly > -0.9
+        # We detect brain as regions significantly above the background value of -1.0
+        mask = (input_3t > -0.95).astype(np.uint8)
         
         # Cache if enabled
         if self.cache_volumes:

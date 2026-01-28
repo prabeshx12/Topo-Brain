@@ -29,7 +29,8 @@ img = nib.load(str(test_file))
 data = img.get_fdata()
 
 # Calculate statistics
-brain_mask = np.abs(data) > 0.01
+# With diffusion normalization: background = -1.0, brain > -0.95
+brain_mask = data > -0.95
 brain_data = data[brain_mask]
 background_data = data[~brain_mask]
 
