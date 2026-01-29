@@ -65,6 +65,7 @@ def main():
     parser.add_argument("--use-wandb", action="store_true", help="Enable Weights & Biases logging")
     parser.add_argument("--wandb-project", type=str, default="topobrain", help="W&B Project Name")
     parser.add_argument("--wandb-entity", type=str, default=None, help="W&B Entity (Team/User)")
+    parser.add_argument("--output", type=str, default=None, help="Output directory for logs and checkpoints")
     args = parser.parse_args()
 
     # Load Config
@@ -79,7 +80,12 @@ def main():
         config = load_config(args.config)
 
     # Setup Logging
-    log_dir = Path("logs") / time.strftime("%Y%m%d-%H%M%S")
+    if args.output:
+        log_dir = Path(args.output)
+    else:
+        log_dir = Path("logs") / time.strftime("%Y%m%d-%H%M%S")
+    
+    log_dir.mkdir(parents=True, exist_ok=True) # Ensure it exists
     
     class LoggingConfig:
         def __init__(self, log_dir):
