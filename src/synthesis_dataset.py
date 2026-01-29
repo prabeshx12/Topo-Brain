@@ -41,6 +41,7 @@ class PatchConfig:
     min_brain_fraction: float = 0.1  # Minimum fraction of patch that must be brain
     use_t2: bool = False  # Enable multi-contrast input (T1+T2)
     seed: int = 42
+    normalize_to_minus_one_one: bool = True # NEW: Force [-1, 1] range for diffusion
 
 
 @dataclass  
@@ -445,12 +446,22 @@ class PairedPatchDataset(Dataset):
             
             # Stack channels: (C, D, H, W) -> C=2
             # input_patch becomes (2, D, H, W)
-            input_tensor = torch.from_numpy(np.stack([input_patch, t2_patch], axis=0)).float()
+            input_numpy = np.stack([input_patch, t2_patch], axis=0)
         else:
             # Single channel: (1, D, H, W)
-            input_tensor = torch.from_numpy(input_patch[np.newaxis, ...]).float()
+            input_numpy = input_patch[np.newaxis, ...]
             
-        target_tensor = torch.from_numpy(target_patch[np.newaxis, ...]).float()
+        target_numpy = target_patch[np.newaxis, ...]
+        
+        # NEW: Robust Rescaling to [-1, 1]
+        if self.config.normalize_to_minus_one_one:
+            # Assuming input is Z-score ~ [-3, 3]
+            # Clip to [-3, 3] then divide by 3
+            input_numpy = np.clip(input_numpy, -3.0, 3.0) / 3.0
+            target_numpy = np.clip(target_numpy, -3.0, 3.0) / 3.0
+            
+        input_tensor = torch.from_numpy(input_numpy).float()
+        target_tensor = torch.from_numpy(target_numpy).float()
         
         # Apply augmentation using Monai transforms
         if self.augment and self.transform:
@@ -483,11 +494,19 @@ class PairedPatchDataset(Dataset):
         if self.config.use_t2:
             if t2_vol is None:
                 t2_vol = np.zeros_like(input_vol)
-            input_tensor = torch.from_numpy(np.stack([input_vol, t2_vol], axis=0)).float()
+            input_numpy = np.stack([input_vol, t2_vol], axis=0)
         else:
-            input_tensor = torch.from_numpy(input_vol[np.newaxis, ...]).float()
+            input_numpy = input_vol[np.newaxis, ...]
             
-        target_tensor = torch.from_numpy(target_vol[np.newaxis, ...]).float()
+        target_numpy = target_vol[np.newaxis, ...]
+        
+        # NEW: Robust Rescaling for Inference consistency
+        if self.config.normalize_to_minus_one_one:
+            input_numpy = np.clip(input_numpy, -3.0, 3.0) / 3.0
+            target_numpy = np.clip(target_numpy, -3.0, 3.0) / 3.0
+            
+        input_tensor = torch.from_numpy(input_numpy).float()
+        target_tensor = torch.from_numpy(target_numpy).float()
         
         return input_tensor, target_tensor, self.pairs[pair_idx]
 
