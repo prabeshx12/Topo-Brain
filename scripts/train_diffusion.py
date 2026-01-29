@@ -233,17 +233,17 @@ def main():
         
         # Progressive loss weighting
         if step < stage1_end:
-            # Stage 1: Pure diffusion loss
+            # Stage 1: Pure diffusion loss (Noise matching)
             lambda_pixel, lambda_percep, lambda_topo = 0.0, 0.0, 0.0
         elif step < stage2_end:
-            # Stage 2: Add pixel loss
-            lambda_pixel, lambda_percep, lambda_topo = 1.0, 0.0, 0.0
+            # Stage 2: Add light pixel guidance
+            lambda_pixel, lambda_percep, lambda_topo = 0.1, 0.0, 0.0
         elif step < stage3_end:
-            # Stage 3: Add perceptual loss
-            lambda_pixel, lambda_percep, lambda_topo = 1.0, 0.1, 0.0
+            # Stage 3: Add perceptual detail loss (More important for sharpness)
+            lambda_pixel, lambda_percep, lambda_topo = 0.1, 0.5, 0.0
         else:
-            # Stage 4: Full curriculum (add topology if available)
-            lambda_pixel, lambda_percep, lambda_topo = 1.0, 0.1, 0.1
+            # Stage 4: Full curriculum
+            lambda_pixel, lambda_percep, lambda_topo = 0.1, 0.5, 0.1
 
         loss_dict = diffusion(x_start, cond, seg_target, lambda_pixel=lambda_pixel, lambda_percep=lambda_percep, lambda_topo=lambda_topo)
         
