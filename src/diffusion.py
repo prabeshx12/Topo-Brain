@@ -43,8 +43,9 @@ class PerceptualLoss(nn.Module):
     Simple VGG-based Perceptual Loss (Feature Matching).
     Extracts features from VGG16 (frozen) and computes MSE.
     """
-    def __init__(self):
+    def __init__(self, max_loss=10.0):
         super().__init__()
+        self.max_loss = max_loss  # Clamp to prevent explosion
         if not HAS_TORCHVISION:
             raise RuntimeError("PerceptualLoss requires 'torchvision' library. Please install it or set lambda_percep=0.")
             
@@ -86,7 +87,10 @@ class PerceptualLoss(nn.Module):
         x_feat = self.feature_extractor(x_2d)
         y_feat = self.feature_extractor(y_2d)
         
-        return F.mse_loss(x_feat, y_feat)
+        loss = F.mse_loss(x_feat, y_feat)
+        
+        # Clamp to prevent explosion on outlier patches
+        return torch.clamp(loss, max=self.max_loss)
 
 class GaussianDiffusion(nn.Module):
     """
