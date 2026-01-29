@@ -24,10 +24,39 @@ class ResidualBlock(nn.Module):
         x = self.bn2(self.conv2(x))
         return self.act(x + residual)
 
+class SelfAttentionBlock(nn.Module):
+    """
+    Simple 3D Self-Attention Block.
+    """
+    def __init__(self, channels):
+        super().__init__()
+        self.channels = channels
+        self.mha = nn.MultiheadAttention(embed_dim=channels, num_heads=4, batch_first=True)
+        self.ln = nn.LayerNorm(channels)
+        self.ff = nn.Sequential(
+            nn.LayerNorm(channels),
+            nn.Linear(channels, channels),
+            nn.GELU(),
+            nn.Linear(channels, channels),
+        )
+
+    def forward(self, x):
+        B, C, D, H, W = x.shape
+        x_flat = x.view(B, C, -1).permute(0, 2, 1) # [B, N, C]
+        
+        x_ln = self.ln(x_flat)
+        attn_out, _ = self.mha(x_ln, x_ln, x_ln)
+        x_flat = x_flat + attn_out
+        
+        x_flat = x_flat + self.ff(x_flat)
+        
+        return x_flat.permute(0, 2, 1).view(B, C, D, H, W)
+
 class AnatomyGuidedUNet(nn.Module):
     """
     3D U-Net backbone for Diffusion Model.
     Conditioned on 3T input via concatenation.
+    Includes Attention at Bottleneck (Transformer-hybrid).
     """
     def __init__(
         self,
@@ -69,8 +98,12 @@ class AnatomyGuidedUNet(nn.Module):
             )
             in_ch = feat
             
-        # Bottleneck
-        self.bottleneck = ResidualBlock(features[-1])
+        # Bottleneck with Attention
+        self.bottleneck = nn.Sequential(
+            ResidualBlock(features[-1]),
+            SelfAttentionBlock(features[-1]), # Added Attention
+            ResidualBlock(features[-1])
+        )
         
         # Upsample (Denoising)
         for feat in reversed(features[:-1]):

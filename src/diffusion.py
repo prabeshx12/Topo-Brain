@@ -6,13 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
-try:
-    import torchvision.models as models
-    HAS_TORCHVISION = True
-except ImportError:
-    HAS_TORCHVISION = False
-    print("Warning: torchvision not found. Perceptual loss will be disabled/dummy.")
+from src.losses import PerceptualLoss, TopologyLoss
 
 # Helper to extract values at specific timesteps
 def extract(a, t, x_shape):
@@ -37,56 +31,6 @@ def cosine_beta_schedule(timesteps, s=0.008):
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
     betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
     return torch.clamp(betas, 0, 0.999)
-
-class PerceptualLoss(nn.Module):
-    """
-    Simple VGG-based Perceptual Loss (Feature Matching).
-    Extracts features from VGG16 (frozen) and computes MSE.
-    """
-    def __init__(self):
-        super().__init__()
-        if not HAS_TORCHVISION:
-            raise RuntimeError("PerceptualLoss requires 'torchvision' library. Please install it or set lambda_percep=0.")
-            
-        vgg = models.vgg16(pretrained=True)
-        # Use first few layers for texture/structure
-        self.feature_extractor = nn.Sequential(*list(vgg.features)[:16]).eval()
-        for param in self.feature_extractor.parameters():
-            param.requires_grad = False
-            
-    def forward(self, x, y):
-            
-        # Input x, y are [B, 1, D, H, W] (3D)
-        # VGG expects [B, 3, H, W] (2D RGB)
-        # We process slice-by-slice or average over depth to save memory/compute
-        # Or simple reshaping: treat Depth as Batch dimension for 2D VGG
-        
-        b, c, d, h, w = x.shape
-        
-        # Reshape to [B*D, C, H, W]
-        x_2d = x.permute(0, 2, 1, 3, 4).reshape(-1, c, h, w)
-        y_2d = y.permute(0, 2, 1, 3, 4).reshape(-1, c, h, w)
-        
-        # Convert 1 channel to 3 channels (repeat)
-        x_2d = x_2d.repeat(1, 3, 1, 1)
-        y_2d = y_2d.repeat(1, 3, 1, 1)
-        
-        # Normalize to ImageNet mean/std (approx)
-        # Assuming input is [-1, 1], map to [0, 1] then normalize
-        mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1, 3, 1, 1)
-        
-        x_2d = (x_2d + 1) * 0.5
-        y_2d = (y_2d + 1) * 0.5
-        
-        x_2d = (x_2d - mean) / std
-        y_2d = (y_2d - mean) / std
-        
-        # Extract features
-        x_feat = self.feature_extractor(x_2d)
-        y_feat = self.feature_extractor(y_2d)
-        
-        return F.mse_loss(x_feat, y_feat)
 
 class GaussianDiffusion(nn.Module):
     """
@@ -135,10 +79,9 @@ class GaussianDiffusion(nn.Module):
         register_buffer('posterior_mean_coef1', betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod))
         register_buffer('posterior_mean_coef2', (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
 
-        # Perceptual Loss
-        # We instantiate lazily or here? Need to handle device placement.
-        # Ideally, passed in or handled in training loop, but class encapsulation is nice.
-        self.perceptual_loss = None # Initialize in training or verify device later
+        # Losses (Lazy Init or Explicit)
+        self.perceptual_loss = None 
+        self.topology_loss = TopologyLoss() # Logic is stateless/simple instance
 
     def get_perceptual_loss(self):
         if self.perceptual_loss is None:
@@ -236,9 +179,7 @@ class GaussianDiffusion(nn.Module):
             
         # 4. Topology Loss (Segmentation)
         if seg_target is not None and lambda_topo > 0:
-            # seg_target: [B, D, H, W] (long) or [B, K, D, H, W] (one-hot)
-            # Assuming seg_target is long class indices [B, D, H, W]
-            loss_topo = F.cross_entropy(seg_pred, seg_target)
+            loss_topo = self.topology_loss(seg_pred, seg_target)
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
             
