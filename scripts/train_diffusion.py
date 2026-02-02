@@ -193,11 +193,32 @@ def main():
             logger.info(f"Resuming from checkpoint: {args.resume}")
             checkpoint = torch.load(args.resume, map_location=device)
             
-            model.load_state_dict(checkpoint['model'])
+            # Robust state dict loading for multi-task heads
+            model_dict = model.state_dict()
+            pretrained_dict = checkpoint['model']
+            
+            # Filter out the segmentation head if classes changed
+            for k in ['seg_outc.weight', 'seg_outc.bias']:
+                if k in pretrained_dict and pretrained_dict[k].shape != model_dict[k].shape:
+                    logger.warning(f"Shape mismatch in {k}, re-initializing segmentation head.")
+                    pretrained_dict.pop(k)
+            
+            model.load_state_dict(pretrained_dict, strict=False)
+            
             if 'ema' in checkpoint:
-                ema_model.load_state_dict(checkpoint['ema'])
-            if 'optimizer' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer'])
+                ema_pretrained_dict = checkpoint['ema']
+                for k in ['seg_outc.weight', 'seg_outc.bias']:
+                    if k in ema_pretrained_dict and ema_pretrained_dict[k].shape != ema_model.state_dict()[k].shape:
+                        ema_pretrained_dict.pop(k)
+                ema_model.load_state_dict(ema_pretrained_dict, strict=False)
+                
+            if 'optimizer' in checkpoint and not any(k in pretrained_dict for k in ['seg_outc.weight']):
+                # Only load optimizer if head hasn't changed, otherwise gradients will mismatch
+                try:
+                    optimizer.load_state_dict(checkpoint['optimizer'])
+                except:
+                    logger.warning("Optimizer state could not be loaded due to head changes. Starting with fresh optimizer state.")
+            
             if 'step' in checkpoint:
                 start_step = checkpoint['step'] + 1
                 

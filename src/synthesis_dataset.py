@@ -207,6 +207,13 @@ class PairedPatchDataset(Dataset):
         # Total samples = pairs * patches_per_volume
         self._length = len(pairs) * self.config.patches_per_volume
         
+        # Determine if we have mask paths in pairs
+        self.has_masks = any(p.get("mask") for p in pairs)
+        if self.has_masks:
+            logger.info("Found mask paths in pairs manifest. Real masks will be used for Topology Loss.")
+        else:
+            logger.warning("No mask paths found in pairs. Falling back to threshold-based brain mask.")
+        
         # Setup Monai transforms for valid 3D augmentation
         if self.augment:
             self.transform = Compose([
@@ -282,10 +289,16 @@ class PairedPatchDataset(Dataset):
         input_3t = self._load_volume(Path(pair["input_3t"]))
         target_7t = self._load_volume(Path(pair["target_7t"]))
         
-        # Create brain mask from input
-        # With diffusion normalization: background = -1.0, brain = [-1, 1] but mostly > -0.9
-        # We detect brain as regions significantly above the background value of -1.0
-        mask = (input_3t > -0.95).astype(np.uint8)
+        # Load mask: use provided path or fallback to thresholding
+        mask_path = pair.get("mask")
+        if mask_path and Path(mask_path).exists():
+            mask = self._load_volume(Path(mask_path))
+            # Ensure it is uint8 and handle alignment/squeezing
+            mask = (mask > 0.5).astype(np.uint8)
+        else:
+            # Create brain mask from input as fallback
+            # With diffusion normalization: background = -1.0, brain = [-1, 1] but mostly > -0.9
+            mask = (input_3t > -0.95).astype(np.uint8)
         
         # Cache if enabled
         if self.cache_volumes:
@@ -435,6 +448,7 @@ class PairedPatchDataset(Dataset):
         # Extract patches
         input_patch = self._extract_patch(input_vol, center)
         target_patch = self._extract_patch(target_vol, center)
+        mask_patch = self._extract_patch(mask, center) if mask is not None else None
         
         # Handle T2 if enabled
         if self.config.use_t2:
@@ -467,6 +481,7 @@ class PairedPatchDataset(Dataset):
         return {
             "input": input_tensor,
             "target": target_tensor,
+            "seg": torch.from_numpy(mask_patch).long() if mask_patch is not None else torch.zeros(target_tensor.shape[1:], dtype=torch.long),
             "subject": self.pairs[pair_idx].get("subject", "unknown"),
             "center": tuple(center.tolist()),
             "pair_idx": pair_idx,
