@@ -259,19 +259,35 @@ def main():
         stage2_end = stages.get("stage2_end", 50000)
         stage3_end = stages.get("stage3_end", 100000)
         
-        # Progressive loss weighting
+        # Get loss weights from config (with fallback defaults)
+        loss_config = config.get("loss_weights", {})
+        final_lambda_pixel = loss_config.get("lambda_pixel", 0.05)
+        final_lambda_percep = loss_config.get("lambda_percep", 0.3)
+        final_lambda_topo = loss_config.get("lambda_topo", 0.3)
+        topo_warmup_steps = loss_config.get("topo_warmup_steps", 25000)
+        
+        # Progressive loss weighting (Rebalanced curriculum)
         if step < stage1_end:
             # Stage 1: Pure diffusion loss (Noise matching)
             lambda_pixel, lambda_percep, lambda_topo = 0.0, 0.0, 0.0
         elif step < stage2_end:
-            # Stage 2: Add light pixel guidance
-            lambda_pixel, lambda_percep, lambda_topo = 0.1, 0.0, 0.0
+            # Stage 2: Add light pixel guidance (reduced to prevent over-smoothing)
+            lambda_pixel, lambda_percep, lambda_topo = final_lambda_pixel, 0.0, 0.0
         elif step < stage3_end:
-            # Stage 3: Add perceptual detail loss (More important for sharpness)
-            lambda_pixel, lambda_percep, lambda_topo = 0.1, 0.5, 0.0
+            # Stage 3: Add perceptual detail loss (controlled to manage grain)
+            lambda_pixel, lambda_percep, lambda_topo = final_lambda_pixel, final_lambda_percep, 0.0
         else:
-            # Stage 4: Full curriculum
-            lambda_pixel, lambda_percep, lambda_topo = 0.1, 0.5, 0.1
+            # Stage 4: Full curriculum with gradual topology warm-up
+            # Since seg head was re-initialized at 100k, we need to warm it up slowly
+            steps_into_stage4 = step - stage3_end
+            
+            if steps_into_stage4 < topo_warmup_steps:
+                # Gradual ramp from 0.0 to final_lambda_topo
+                lambda_topo = final_lambda_topo * (steps_into_stage4 / topo_warmup_steps)
+            else:
+                lambda_topo = final_lambda_topo
+                
+            lambda_pixel, lambda_percep = final_lambda_pixel, final_lambda_percep
 
         loss_dict = diffusion(x_start, cond, seg_target, lambda_pixel=lambda_pixel, lambda_percep=lambda_percep, lambda_topo=lambda_topo)
         

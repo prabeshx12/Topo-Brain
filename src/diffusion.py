@@ -14,6 +14,14 @@ except ImportError:
     HAS_TORCHVISION = False
     print("Warning: torchvision not found. Perceptual loss will be disabled/dummy.")
 
+# Import advanced topology loss
+try:
+    from .topology_loss import create_topology_loss
+    HAS_TOPOLOGY_LOSS = True
+except ImportError:
+    HAS_TOPOLOGY_LOSS = False
+    print("Warning: Advanced topology loss not available. Using standard cross-entropy.")
+
 # Helper to extract values at specific timesteps
 def extract(a, t, x_shape):
     batch_size = t.shape[0]
