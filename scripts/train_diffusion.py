@@ -238,8 +238,8 @@ def main():
             batch = next(train_iter)
             x_start = batch['target'].to(device)
             cond = batch['input'].to(device)
-            # Fallback for segmentation target
-            seg_target = batch.get('seg', torch.zeros_like(x_start, dtype=torch.long)) 
+            # Ensure segmentation target is on the correct device
+            seg_target = batch.get('seg', torch.zeros_like(x_start, dtype=torch.long)).to(device)
             if len(seg_target.shape) == 5: seg_target = seg_target.squeeze(1)
         else:
             x_start = torch.randn(2, 1, 64, 64, 64).to(device)
