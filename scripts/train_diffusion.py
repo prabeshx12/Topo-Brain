@@ -197,11 +197,15 @@ def main():
             model_dict = model.state_dict()
             pretrained_dict = checkpoint['model']
             
+            # Track if we need to skip optimizer due to head changes
+            head_changed = False
+            
             # Filter out the segmentation head if classes changed
             for k in ['seg_outc.weight', 'seg_outc.bias']:
                 if k in pretrained_dict and pretrained_dict[k].shape != model_dict[k].shape:
                     logger.warning(f"Shape mismatch in {k}, re-initializing segmentation head.")
                     pretrained_dict.pop(k)
+                    head_changed = True
             
             model.load_state_dict(pretrained_dict, strict=False)
             
@@ -212,13 +216,10 @@ def main():
                         ema_pretrained_dict.pop(k)
                 ema_model.load_state_dict(ema_pretrained_dict, strict=False)
                 
-            # Logic: If we had to pop keys from model (head_changed), do NOT load optimizer state.
-            # Optimizer state is tied to specific layer shapes and will crash on mismatch.
-            head_changed = any(k in checkpoint['model'] and k not in pretrained_dict for k in ['seg_outc.weight', 'seg_outc.bias'])
-            
+            # Only load optimizer if head hasn't changed
             if 'optimizer' in checkpoint:
                 if head_changed:
-                    logger.warning("Segmentation head changed (num_classes). Skipping optimizer state to avoid moment shape mismatch. UNet weights are preserved, moments will re-initialize.")
+                    logger.warning("Segmentation head changed (num_classes). Skipping optimizer state to avoid momentum shape mismatch. UNet weights are preserved, optimizer will re-initialize.")
                 else:
                     try:
                         optimizer.load_state_dict(checkpoint['optimizer'])
