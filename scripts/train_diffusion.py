@@ -212,12 +212,18 @@ def main():
                         ema_pretrained_dict.pop(k)
                 ema_model.load_state_dict(ema_pretrained_dict, strict=False)
                 
-            if 'optimizer' in checkpoint and not any(k in pretrained_dict for k in ['seg_outc.weight']):
-                # Only load optimizer if head hasn't changed, otherwise gradients will mismatch
-                try:
-                    optimizer.load_state_dict(checkpoint['optimizer'])
-                except:
-                    logger.warning("Optimizer state could not be loaded due to head changes. Starting with fresh optimizer state.")
+            # Logic: If we had to pop keys from model (head_changed), do NOT load optimizer state.
+            # Optimizer state is tied to specific layer shapes and will crash on mismatch.
+            head_changed = any(k in checkpoint['model'] and k not in pretrained_dict for k in ['seg_outc.weight', 'seg_outc.bias'])
+            
+            if 'optimizer' in checkpoint:
+                if head_changed:
+                    logger.warning("Segmentation head changed (num_classes). Skipping optimizer state to avoid moment shape mismatch. UNet weights are preserved, moments will re-initialize.")
+                else:
+                    try:
+                        optimizer.load_state_dict(checkpoint['optimizer'])
+                    except Exception as e:
+                        logger.warning(f"Optimizer state could not be loaded: {e}. Starting with fresh optimizer state.")
             
             if 'step' in checkpoint:
                 start_step = checkpoint['step'] + 1
