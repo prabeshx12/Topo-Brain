@@ -149,12 +149,18 @@ def main():
     # Model Setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    # Dynamically set channels based on multi-modal config (Section 6.3)
+    use_t2 = config["dataset"].get("use_t2", False)
+    in_channels = 2 if use_t2 else 1
+    logger.info(f"Input channels: {in_channels} (use_t2={use_t2})")
+
     model = AnatomyGuidedUNet(
-        in_channels=1,
+        in_channels=in_channels,
         cond_channels=1,
         out_channels=1,
         num_classes=config["model"].get("num_classes", 3),
-        features=tuple(config["model"].get("features", (32, 64, 128, 256)))
+        features=tuple(config["model"].get("features", (32, 64, 128, 256))),
+        use_attention=config["model"].get("use_attention", False)
     ).to(device)
 
     # Use beta_schedule from config (cosine recommended)
@@ -170,9 +176,10 @@ def main():
     ema_decay = config["training"].get("ema_decay", 0.9999)
     ema = EMA(ema_decay)
     ema_model = AnatomyGuidedUNet(
-        in_channels=1, cond_channels=1, out_channels=1,
+        in_channels=in_channels, cond_channels=1, out_channels=1,
         num_classes=config["model"].get("num_classes", 3),
-        features=tuple(config["model"].get("features", (32, 64, 128, 256)))
+        features=tuple(config["model"].get("features", (32, 64, 128, 256))),
+        use_attention=config["model"].get("use_attention", False)
     ).to(device)
     ema_model.load_state_dict(model.state_dict())
     ema_model.requires_grad_(False)

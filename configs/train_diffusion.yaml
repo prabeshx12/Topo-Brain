@@ -6,6 +6,7 @@ dataset:
   batch_size: 2  # Reduced for stability
   patch_size: [64, 64, 64]
   num_workers: 4
+  use_t2: false # Multi-modal input support (Section 6.3)
 
 model:
   in_channels: 1
@@ -14,6 +15,7 @@ model:
   num_classes: 4
   features: [32, 64, 128, 256]
   dropout: 0.0  # Disable dropout for initial training
+  use_attention: false  # Toggles the 3D-Transformer/Global-Context modules
 
 diffusion:
   timesteps: 1000
@@ -21,7 +23,7 @@ diffusion:
   loss_type: "l1"
 
 training:
-  lr: 2e-5  # Lower LR for stable diffusion training
+  lr: 1e-5  # Level 4.6: Low LR for final fine-tuning
   weight_decay: 1e-4
   grad_clip: 1.0  # Gradient clipping for stability
   n_iters: 200000
@@ -40,12 +42,12 @@ stages:
   stage3_end: 100000  # Add perceptual loss
   # Stage 4 (100k+): Full multi-task with gradual topology warm-up
 
-# Loss weights (Optimized for Stage 4.5 Sharpening)
-# These values are tuned to turn the current anatomical grain into sharp tissue boundaries
+# Stage 4.6: Final Stabilization & Denoising
+# Optimized to remove salt-and-pepper noise and reach research-grade sharpness
 loss_weights:
-  lambda_pixel: 0.12    # Increased from 0.05 to act as a stronger denoiser
-  lambda_percep: 0.25   # Slightly reduced to prevent excess hallucinated grain
-  lambda_topo: 0.8      # Significantly increased from 0.3 for maximum anatomical guidance
+  lambda_pixel: 0.25    # Strong denoiser to eliminate grain
+  lambda_percep: 0.25   # Texture realism
+  lambda_topo: 0.4      # Moderate anatomical guidance (prevents gradient noise)
   
-  # Topology warm-up configuration (already largely completed)
+  # Topology warm-up configuration (Completed)
   topo_warmup_steps: 25000

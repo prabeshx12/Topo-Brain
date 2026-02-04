@@ -61,6 +61,32 @@ class ResnetBlock(nn.Module):
         h = self.block2(h)
         return h + self.res_conv(x)
 
+class SelfAttention3D(nn.Module):
+    """
+    3D Self-Attention module for global context.
+    As specified in Blueprint Section 4: 'Global Context Module'.
+    """
+    def __init__(self, channels, num_heads=4):
+        super().__init__()
+        self.channels = channels
+        self.num_heads = num_heads
+        self.scale = (channels // num_heads) ** -0.5
+        
+        self.qkv = nn.Conv3d(channels, channels * 3, 1, bias=False)
+        self.proj = nn.Conv3d(channels, channels, 1)
+        self.norm = nn.GroupNorm(1, channels)
+
+    def forward(self, x):
+        b, c, d, h, w = x.shape
+        qkv = self.qkv(self.norm(x)).view(b, 3, self.num_heads, c // self.num_heads, -1)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        
+        attn = (q.transpose(-2, -1) @ k) * self.scale
+        attn = attn.softmax(dim=-1)
+        
+        out = (v @ attn.transpose(-2, -1)).view(b, c, d, h, w)
+        return x + self.proj(out)
+
 class AnatomyGuidedUNet(nn.Module):
     """
     3D U-Net backbone for Diffusion Model.
@@ -75,8 +101,10 @@ class AnatomyGuidedUNet(nn.Module):
         out_channels: int = 1,
         num_classes: int = 3,
         features: tuple = (32, 64, 128, 256),
+        use_attention: bool = False, # Safe default to avoid breaking old checkpoints
     ):
         super().__init__()
+        self.use_attention = use_attention
         
         # Time embedding
         dim = features[0]
@@ -105,6 +133,7 @@ class AnatomyGuidedUNet(nn.Module):
         # Bottleneck
         mid_dim = features[-1]
         self.mid_block1 = ResnetBlock(mid_dim, mid_dim, time_emb_dim=dim)
+        self.mid_attn = SelfAttention3D(mid_dim) if use_attention else nn.Identity()
         self.mid_block2 = ResnetBlock(mid_dim, mid_dim, time_emb_dim=dim)
         
         # Decoder (Upsampling)
@@ -151,6 +180,8 @@ class AnatomyGuidedUNet(nn.Module):
             
         # 4. Bottleneck
         x = self.mid_block1(x, t)
+        if self.use_attention:
+            x = self.mid_attn(x)
         x = self.mid_block2(x, t)
         
         # 5a. Denoising Decoder
@@ -192,6 +223,8 @@ class AnatomyGuidedUNet(nn.Module):
             skips.append(feat)
             
         feat = self.mid_block1(feat, t_emb)
+        if self.use_attention:
+            feat = self.mid_attn(feat)
         feat = self.mid_block2(feat, t_emb)
         
         # Denoising path

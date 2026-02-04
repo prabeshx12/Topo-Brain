@@ -219,14 +219,14 @@ class PairedPatchDataset(Dataset):
             self.transform = Compose([
                 EnsureTyped(keys=["input", "target"]),
                 # Random flip along axes
-                RandFlipd(keys=["input", "target"], prob=0.5, spatial_axis=0),
-                RandFlipd(keys=["input", "target"], prob=0.5, spatial_axis=1),
-                RandFlipd(keys=["input", "target"], prob=0.5, spatial_axis=2),
+                RandFlipd(keys=["input", "target", "seg"], prob=0.5, spatial_axis=0),
+                RandFlipd(keys=["input", "target", "seg"], prob=0.5, spatial_axis=1),
+                RandFlipd(keys=["input", "target", "seg"], prob=0.5, spatial_axis=2),
                 # Random 90-degree rotations
-                RandRotate90d(keys=["input", "target"], prob=0.5, max_k=3),
+                RandRotate90d(keys=["input", "target", "seg"], prob=0.5, max_k=3),
                 # Elastic deformation (crucial for anatomy)
                 Rand3DElasticd(
-                    keys=["input", "target"],
+                    keys=["input", "target", "seg"],
                     sigma_range=(5, 7),
                     magnitude_range=(50, 150),
                     prob=0.3,
@@ -234,7 +234,7 @@ class PairedPatchDataset(Dataset):
                 ),
                 # Affine (scaling/rotation/shift)
                 RandAffined(
-                    keys=["input", "target"],
+                    keys=["input", "target", "seg"], # Add seg for multi-task consistency
                     prob=0.3,
                     rotate_range=(0.1, 0.1, 0.1),
                     scale_range=(0.1, 0.1, 0.1),
@@ -467,23 +467,31 @@ class PairedPatchDataset(Dataset):
             
         target_tensor = torch.from_numpy(target_patch[np.newaxis, ...]).float()
         
+        # Ensure mask is returned as 'seg' for multi-task
+        seg_tensor = torch.from_numpy(mask_patch[np.newaxis, ...]).long() if mask_patch is not None else None
+        
         # Apply augmentation using Monai transforms
         if self.augment and self.transform:
             # Prepare dictionary for Monai
             data = {"input": input_tensor, "target": target_tensor}
+            if seg_tensor is not None:
+                data["seg"] = seg_tensor
+                
             try:
                 data = self.transform(data)
                 input_tensor = data["input"]
                 target_tensor = data["target"]
+                if seg_tensor is not None:
+                    seg_tensor = data["seg"]
             except Exception as e:
                 logger.warning(f"Augmentation failed, skipping: {e}")
         
         return {
             "input": input_tensor,
             "target": target_tensor,
-            "seg": torch.from_numpy(mask_patch).long() if mask_patch is not None else torch.zeros(target_tensor.shape[1:], dtype=torch.long),
+            "seg": seg_tensor if seg_tensor is not None else torch.zeros_like(target_tensor, dtype=torch.long).squeeze(0),
             "subject": self.pairs[pair_idx].get("subject", "unknown"),
-            "center": tuple(center.tolist()),
+            "center": tuple(center.tolist()) if hasattr(center, 'tolist') else center,
             "pair_idx": pair_idx,
         }
     

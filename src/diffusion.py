@@ -209,7 +209,9 @@ class GaussianDiffusion(nn.Module):
     @torch.no_grad()
     def p_sample(self, x, t, conditioning, t_index):
         # conditioning: 3T input
-        model_output = self.model(x, t, conditioning)['prediction']
+        out = self.model(x, t, conditioning)
+        model_output = out['prediction']
+        seg_output = out.get('segmentation')
         
         if self.objective == 'pred_noise':
             x_start = self.predict_start_from_noise(x, t, model_output)
@@ -219,24 +221,25 @@ class GaussianDiffusion(nn.Module):
         model_mean, model_variance = self.q_posterior(x_start, x, t)
         
         if t_index == 0:
-            return model_mean
+            return model_mean, seg_output
         else:
             noise = torch.randn_like(x)
-            return model_mean + torch.sqrt(extract(self.posterior_variance, t, x.shape)) * noise
+            return model_mean + torch.sqrt(extract(self.posterior_variance, t, x.shape)) * noise, seg_output
 
     @torch.no_grad()
-    def p_sample_loop(self, conditioning, shape):
+    def p_sample_loop(self, conditioning, shape, return_all=False):
         device = self.betas.device
         b = shape[0]
         # Start from pure noise
         img = torch.randn(shape, device=device)
         
-        imgs = []
+        final_seg = None
         for i in reversed(range(0, len(self.betas))):
             t = torch.full((b,), i, device=device, dtype=torch.long)
-            img = self.p_sample(img, t, conditioning, i)
-            # imgs.append(img.cpu()) # Optional: save intermediates
+            img, final_seg = self.p_sample(img, t, conditioning, i)
             
+        if return_all:
+            return img, final_seg
         return img
         
     def forward(self, x_start, conditioning, seg_target=None, 
