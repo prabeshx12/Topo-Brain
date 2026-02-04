@@ -100,8 +100,9 @@ def main():
     for idx, row in manifest.iterrows():
         print(f"[{idx+1}/{len(manifest)}]")
         
-        t1w_path = row['target_7t_path']
-        mask_path = row['mask_output_path']
+        # Fixed column names to match pairs.csv
+        t1w_path = row['target_7t']
+        mask_path = row['mask']
         
         # Generate output path
         t1w_name = Path(t1w_path).stem.replace('_preprocessed', '')
