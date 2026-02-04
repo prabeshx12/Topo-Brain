@@ -289,12 +289,12 @@ class PairedPatchDataset(Dataset):
         input_3t = self._load_volume(Path(pair["input_3t"]))
         target_7t = self._load_volume(Path(pair["target_7t"]))
         
-        # Load mask: use provided path or fallback to thresholding
-        mask_path = pair.get("mask")
+        # Load mask: use tissue mask if available, fallback to brain mask
+        mask_path = pair.get("tissue_mask_path") or pair.get("mask")
         if mask_path and Path(mask_path).exists():
             mask = self._load_volume(Path(mask_path))
-            # Ensure it is uint8 and handle alignment/squeezing
-            mask = (mask > 0.5).astype(np.uint8)
+            # Ensure it is uint8 and handle alignment (no more binarization threshold)
+            mask = mask.astype(np.uint8)
         else:
             # Create brain mask from input as fallback
             # With diffusion normalization: background = -1.0, brain = [-1, 1] but mostly > -0.9
@@ -675,6 +675,10 @@ def load_pairs_manifest(manifest_path: Path, data_root: Optional[Path] = None) -
             p["target_7t"] = resolve_path(p["target_7t"])
             if "input_3t_t2" in p:
                 p["input_3t_t2"] = resolve_path(p["input_3t_t2"])
+            if "mask" in p:
+                p["mask"] = resolve_path(p["mask"])
+            if "tissue_mask_path" in p:
+                p["tissue_mask_path"] = resolve_path(p["tissue_mask_path"])
 
     logger.info(f"Loaded {len(pairs)} pairs from {manifest_path}")
     return pairs
