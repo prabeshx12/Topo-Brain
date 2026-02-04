@@ -258,28 +258,35 @@ class GaussianDiffusion(nn.Module):
         noise_pred = outputs['prediction']
         seg_pred = outputs['segmentation']
         
-        # 1. Diffusion Loss (MSE on noise)
+        # Apply Timestep Gating (Stage 4.7: Grain Removal)
+        # We only apply auxiliary guidance when the image is clean enough (T < 400)
+        # This prevents 'hallucinated' noise gradients at high T.
+        t_gate = (t < 400).float()
+        
+        # 1. Diffusion Loss (MSE on noise) - ALWAYS ACTIVE
         if self.loss_type == 'l1':
             loss_diff = F.l1_loss(noise_pred, noise)
         else:
             loss_diff = F.mse_loss(noise_pred, noise)
             
         # 2. Auxiliary L1 Loss (on predicted Img)
-        # We need to predict x_0 first
         x_recon = self.predict_start_from_noise(x_noisy, t, noise_pred)
-        loss_pixel = F.l1_loss(x_recon, x_start)
+        loss_pixel = (F.l1_loss(x_recon, x_start, reduction='none').mean(dim=(1,2,3,4)) * t_gate).mean()
         
         # 3. Perceptual Loss (VGG)
         if lambda_percep > 0:
-            loss_vgg = self.get_perceptual_loss()(x_recon, x_start)
+            # Note: We compute the loss and then gate it
+            vgg_raw = self.get_perceptual_loss()(x_recon, x_start)
+            loss_vgg = vgg_raw * t_gate.mean() # Approximate gating
         else:
             loss_vgg = torch.tensor(0.0, device=x_start.device)
             
         # 4. Topology Loss (Segmentation)
         if seg_target is not None and lambda_topo > 0:
-            # seg_target: [B, D, H, W] (long) or [B, K, D, H, W] (one-hot)
-            # Assuming seg_target is long class indices [B, D, H, W]
-            loss_topo = self._compute_topology_loss(seg_pred, seg_target)
+            # Multi-scale loss is expensive, so we gate the actual computation if possible
+            # or just zero out the loss for samples where T >= 400
+            topo_raw = self._compute_topology_loss(seg_pred, seg_target)
+            loss_topo = topo_raw * t_gate.mean()
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
             

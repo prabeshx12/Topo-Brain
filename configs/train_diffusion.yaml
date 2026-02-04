@@ -42,12 +42,12 @@ stages:
   stage3_end: 100000  # Add perceptual loss
   # Stage 4 (100k+): Full multi-task with gradual topology warm-up
 
-# Stage 4.6: Final Stabilization & Denoising
-# Optimized to remove salt-and-pepper noise and reach research-grade sharpness
+# Stage 4.7: Grain Removal & Smoothness Tuning
+# Reduced weights to prevent over-driving the diffusion process with noisy gradients
 loss_weights:
-  lambda_pixel: 0.25    # Strong denoiser to eliminate grain
-  lambda_percep: 0.25   # Texture realism
-  lambda_topo: 0.4      # Moderate anatomical guidance (prevents gradient noise)
+  lambda_pixel: 0.25    # High detergent to wash out noise
+  lambda_percep: 0.1    # Reduced to prevent grid artifacts
+  lambda_topo: 0.1      # Reduced (Guided, not Driven)
   
   # Topology warm-up configuration (Completed)
   topo_warmup_steps: 25000
