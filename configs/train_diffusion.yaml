@@ -14,8 +14,8 @@ model:
   out_channels: 1
   num_classes: 4
   features: [32, 64, 128, 256]
-  dropout: 0.0  # Disable dropout for initial training
-  use_attention: false  # Toggles the 3D-Transformer/Global-Context modules
+  dropout: 0.1  # Added slight dropout for regularization in scratch run
+  use_attention: true  # State-of-the-art global context module enabled
 
 diffusion:
   timesteps: 1000
@@ -23,7 +23,7 @@ diffusion:
   loss_type: "l1"
 
 training:
-  lr: 1e-5  # Level 4.6: Low LR for final fine-tuning
+  lr: 1e-4  # Standard starting LR for training from scratch
   weight_decay: 1e-4
   grad_clip: 1.0  # Gradient clipping for stability
   n_iters: 200000
