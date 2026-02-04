@@ -79,9 +79,10 @@ class SelfAttention3D(nn.Module):
     def forward(self, x):
         b, c, d, h, w = x.shape
         qkv = self.qkv(self.norm(x)).view(b, 3, self.num_heads, c // self.num_heads, -1)
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        q, k, v = qkv.unbind(1) # [b, heads, head_dim, length]
         
-        attn = (q.transpose(-2, -1) @ k) * self.scale
+        # Attention: (length, length) map
+        attn = (q.transpose(-2, -1) @ k) * self.scale # [b, heads, length, length]
         attn = attn.softmax(dim=-1)
         
         out = (v @ attn.transpose(-2, -1)).view(b, c, d, h, w)
