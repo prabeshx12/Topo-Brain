@@ -288,6 +288,13 @@ def main():
                 lambda_topo = final_lambda_topo
                 
             lambda_pixel, lambda_percep = final_lambda_pixel, final_lambda_percep
+        
+        # Log loss weights on first iteration of Stage 4 for verification
+        if step == stage3_end + 1:
+            logger.info(f"Stage 4 started - Loss weights from config:")
+            logger.info(f"  lambda_pixel: {final_lambda_pixel}")
+            logger.info(f"  lambda_percep: {final_lambda_percep}")
+            logger.info(f"  lambda_topo: {final_lambda_topo} (will warm up over {topo_warmup_steps} steps)")
 
         loss_dict = diffusion(x_start, cond, seg_target, lambda_pixel=lambda_pixel, lambda_percep=lambda_percep, lambda_topo=lambda_topo)
         
