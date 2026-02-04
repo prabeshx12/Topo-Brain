@@ -217,16 +217,17 @@ class PairedPatchDataset(Dataset):
         # Setup Monai transforms for valid 3D augmentation
         if self.augment:
             self.transform = Compose([
-                EnsureTyped(keys=["input", "target"]),
-                # Random flip along axes
+                EnsureTyped(keys=["input", "target", "seg"]),
+                # Random flip along axes (Discrete - no mode needed)
                 RandFlipd(keys=["input", "target", "seg"], prob=0.5, spatial_axis=0),
                 RandFlipd(keys=["input", "target", "seg"], prob=0.5, spatial_axis=1),
                 RandFlipd(keys=["input", "target", "seg"], prob=0.5, spatial_axis=2),
-                # Random 90-degree rotations
+                # Random 90-degree rotations (Discrete - no mode needed)
                 RandRotate90d(keys=["input", "target", "seg"], prob=0.5, max_k=3),
                 # Elastic deformation (crucial for anatomy)
                 Rand3DElasticd(
                     keys=["input", "target", "seg"],
+                    mode=("bilinear", "bilinear", "nearest"),
                     sigma_range=(5, 7),
                     magnitude_range=(50, 150),
                     prob=0.3,
@@ -234,7 +235,8 @@ class PairedPatchDataset(Dataset):
                 ),
                 # Affine (scaling/rotation/shift)
                 RandAffined(
-                    keys=["input", "target", "seg"], # Add seg for multi-task consistency
+                    keys=["input", "target", "seg"],
+                    mode=("bilinear", "bilinear", "nearest"),
                     prob=0.3,
                     rotate_range=(0.1, 0.1, 0.1),
                     scale_range=(0.1, 0.1, 0.1),

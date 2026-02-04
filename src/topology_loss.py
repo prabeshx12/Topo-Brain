@@ -155,7 +155,7 @@ class MultiScaleTopologyLoss(nn.Module):
             if scale == 1.0:
                 # Original scale
                 pred_scaled = pred_logits
-                target_scaled = target_mask
+                target_scaled = target_mask.long()
             else:
                 # Downsample
                 scale_factor = scale
