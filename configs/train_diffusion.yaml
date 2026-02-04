@@ -40,12 +40,12 @@ stages:
   stage3_end: 100000  # Add perceptual loss
   # Stage 4 (100k+): Full multi-task with gradual topology warm-up
 
-# Loss weights (final values for Stage 4)
-# Rebalanced based on 100k iteration analysis
+# Loss weights (Optimized for Stage 4.5 Sharpening)
+# These values are tuned to turn the current anatomical grain into sharp tissue boundaries
 loss_weights:
-  lambda_pixel: 0.05    # Reduced from 0.1 to prevent over-smoothing
-  lambda_percep: 0.3    # Reduced from 0.5 to control grain
-  lambda_topo: 0.3      # Increased from 0.1 for stronger anatomical guidance
+  lambda_pixel: 0.12    # Increased from 0.05 to act as a stronger denoiser
+  lambda_percep: 0.25   # Slightly reduced to prevent excess hallucinated grain
+  lambda_topo: 0.8      # Significantly increased from 0.3 for maximum anatomical guidance
   
-  # Topology warm-up configuration
-  topo_warmup_steps: 25000  # Gradual ramp from 0.0 to lambda_topo over 25k iterations
+  # Topology warm-up configuration (already largely completed)
+  topo_warmup_steps: 25000

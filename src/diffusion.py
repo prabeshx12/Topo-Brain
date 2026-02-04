@@ -151,11 +151,37 @@ class GaussianDiffusion(nn.Module):
         # We instantiate lazily or here? Need to handle device placement.
         # Ideally, passed in or handled in training loop, but class encapsulation is nice.
         self.perceptual_loss = None # Initialize in training or verify device later
+        
+        # Advanced Topology Loss helper initialization
+        self._topology_loss_module = None
 
     def get_perceptual_loss(self):
         if self.perceptual_loss is None:
             self.perceptual_loss = PerceptualLoss().to(self.betas.device)
         return self.perceptual_loss
+
+    def _compute_topology_loss(self, seg_pred, seg_target):
+        """Compute topology loss with advanced edge-aware features."""
+        if self._topology_loss_module is None:
+            if HAS_TOPOLOGY_LOSS:
+                try:
+                    from .topology_loss import create_topology_loss
+                    self._topology_loss_module = create_topology_loss(
+                        num_classes=seg_pred.shape[1],
+                        use_multiscale=True
+                    ).to(seg_pred.device)
+                    print("✓ Activated Advanced Multi-Scale Topology Loss")
+                except Exception as e:
+                    print(f"Warning: Could not init advanced topology loss: {e}")
+                    self._topology_loss_module = "standard"
+            else:
+                self._topology_loss_module = "standard"
+        
+        if self._topology_loss_module != "standard":
+            loss_dict = self._topology_loss_module(seg_pred, seg_target)
+            return loss_dict['loss']
+        else:
+            return F.cross_entropy(seg_pred, seg_target)
 
     def q_sample(self, x_start, t, noise=None):
         if noise is None:
@@ -250,7 +276,7 @@ class GaussianDiffusion(nn.Module):
         if seg_target is not None and lambda_topo > 0:
             # seg_target: [B, D, H, W] (long) or [B, K, D, H, W] (one-hot)
             # Assuming seg_target is long class indices [B, D, H, W]
-            loss_topo = F.cross_entropy(seg_pred, seg_target)
+            loss_topo = self._compute_topology_loss(seg_pred, seg_target)
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
             
