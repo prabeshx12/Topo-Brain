@@ -277,16 +277,15 @@ class GaussianDiffusion(nn.Module):
         if lambda_percep > 0:
             # Note: We compute the loss and then gate it
             vgg_raw = self.get_perceptual_loss()(x_recon, x_start)
-            loss_vgg = vgg_raw * t_gate.mean() # Approximate gating
+            loss_vgg = vgg_raw * t_gate.mean() 
         else:
             loss_vgg = torch.tensor(0.0, device=x_start.device)
             
         # 4. Topology Loss (Segmentation)
         if seg_target is not None and lambda_topo > 0:
-            # Multi-scale loss is expensive, so we gate the actual computation if possible
-            # or just zero out the loss for samples where T >= 400
-            topo_raw = self._compute_topology_loss(seg_pred, seg_target)
-            loss_topo = topo_raw * t_gate.mean()
+            # We pass the per-sample gating mask to the topology loss module
+            topo_dict = self._topology_loss_module(seg_pred, seg_target, mask=t_gate)
+            loss_topo = topo_dict['loss']
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
             

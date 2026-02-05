@@ -21,10 +21,14 @@ class EdgeAwareTopologyLoss(nn.Module):
     - Multi-scale consistency for structural preservation
     """
     
-    def __init__(self, num_classes=2, edge_weight=2.0):
+    def __init__(self, num_classes=4, edge_weight=2.0):
         super().__init__()
         self.num_classes = num_classes
         self.edge_weight = edge_weight
+        
+        # Class weights for brain tissue (BG, CSF, GM, WM)
+        # Prioritize smaller classes (CSF, GM) over dominant ones (BG, WM)
+        self.register_buffer('class_weights', torch.tensor([0.5, 2.0, 1.5, 1.0]))
         
         # Sobel filters for edge detection (3D)
         self.register_buffer('sobel_x', self._create_sobel_kernel('x'))
@@ -80,40 +84,53 @@ class EdgeAwareTopologyLoss(nn.Module):
         
         return edge_map
     
-    def forward(self, pred_logits, target_mask):
+    def forward(self, pred_logits, target_mask, mask=None):
         """
-        Compute edge-aware topology loss.
-        
         Args:
-            pred_logits: [B, C, D, H, W] predicted class logits
-            target_mask: [B, D, H, W] ground truth class indices
-            
-        Returns:
-            loss_dict: Dictionary with total loss and components
+            mask: Optional [B] binary mask for timestep gating
         """
-        # 1. Standard cross-entropy loss
-        loss_ce = F.cross_entropy(pred_logits, target_mask, reduction='none')
+        # 1. Weighted cross-entropy loss
+        loss_ce = F.cross_entropy(pred_logits, target_mask, weight=self.class_weights, reduction='none')
         
         # 2. Detect edges in target
-        edge_map = self.detect_edges(target_mask)  # [B, 1, D, H, W]
-        edge_map = edge_map.squeeze(1)  # [B, D, H, W]
+        edge_map = self.detect_edges(target_mask)
+        edge_map = edge_map.squeeze(1)
         
-        # 3. Weight loss by edges (emphasize boundary regions)
+        # 3. Weight loss by edges and mask by timestep gating
         edge_weights = 1.0 + (self.edge_weight - 1.0) * edge_map
-        loss_weighted = (loss_ce * edge_weights).mean()
+        loss_weighted = (loss_ce * edge_weights)
         
-        # 4. Boundary consistency loss
-        # Encourage predicted boundaries to align with target boundaries
-        pred_probs = F.softmax(pred_logits, dim=1)
+        if mask is not None:
+             # Apply sample-wise gating [B, 1, 1, 1]
+             loss_weighted = loss_weighted * mask.view(-1, 1, 1, 1)
+        
+        loss_weighted = loss_weighted.mean()
+        
+        # Dice-like component on predicted edges (gated)
+        if mask is not None:
+            # Only compute for gated samples to save time
+            gated_indices = torch.where(mask > 0.5)[0]
+            if len(gated_indices) == 0:
+                return {'loss': torch.tensor(0.0, device=pred_logits.device), 
+                        'loss_ce': loss_ce.mean(), 'loss_boundary': torch.tensor(0.0, device=pred_logits.device)}
+            
+            # Sub-select batch
+            curr_pred = pred_logits[gated_indices]
+            curr_target = target_mask[gated_indices]
+            curr_edge_map = edge_map[gated_indices]
+        else:
+            curr_pred = pred_logits
+            curr_target = target_mask
+            curr_edge_map = edge_map
+
+        pred_probs = F.softmax(curr_pred, dim=1)
         pred_class = torch.argmax(pred_probs, dim=1)
         pred_edges = self.detect_edges(pred_class).squeeze(1)
         
-        # Dice loss on edges
-        intersection = (pred_edges * edge_map).sum()
-        union = pred_edges.sum() + edge_map.sum()
+        intersection = (pred_edges * curr_edge_map).sum()
+        union = pred_edges.sum() + curr_edge_map.sum()
         loss_boundary = 1.0 - (2.0 * intersection + 1e-8) / (union + 1e-8)
         
-        # Total loss
         loss_total = loss_weighted + 0.5 * loss_boundary
         
         return {
@@ -137,7 +154,7 @@ class MultiScaleTopologyLoss(nn.Module):
         self.scales = scales
         self.edge_aware_loss = EdgeAwareTopologyLoss(num_classes)
     
-    def forward(self, pred_logits, target_mask):
+    def forward(self, pred_logits, target_mask, mask=None):
         """
         Compute multi-scale topology loss.
         
@@ -172,7 +189,7 @@ class MultiScaleTopologyLoss(nn.Module):
                 ).squeeze(1).long()
             
             # Compute loss at this scale
-            loss_dict = self.edge_aware_loss(pred_scaled, target_scaled)
+            loss_dict = self.edge_aware_loss(pred_scaled, target_scaled, mask=mask)
             scale_loss = loss_dict['loss']
             
             # Weight by scale (finer scales get more weight)
