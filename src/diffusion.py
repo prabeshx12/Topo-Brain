@@ -160,7 +160,7 @@ class GaussianDiffusion(nn.Module):
             self.perceptual_loss = PerceptualLoss().to(self.betas.device)
         return self.perceptual_loss
 
-    def _compute_topology_loss(self, seg_pred, seg_target):
+    def _compute_topology_loss(self, seg_pred, seg_target, mask=None):
         """Compute topology loss with advanced edge-aware features."""
         if self._topology_loss_module is None:
             if HAS_TOPOLOGY_LOSS:
@@ -178,10 +178,15 @@ class GaussianDiffusion(nn.Module):
                 self._topology_loss_module = "standard"
         
         if self._topology_loss_module != "standard":
-            loss_dict = self._topology_loss_module(seg_pred, seg_target)
+            loss_dict = self._topology_loss_module(seg_pred, seg_target, mask=mask)
             return loss_dict['loss']
         else:
-            return F.cross_entropy(seg_pred, seg_target)
+            # Fallback to class-weighted Cross-Entropy
+            weights = torch.tensor([0.5, 2.0, 1.5, 1.0], device=seg_pred.device)
+            loss_ce = F.cross_entropy(seg_pred, seg_target, weight=weights, reduction='none')
+            if mask is not None:
+                loss_ce = loss_ce * mask.view(-1, 1, 1, 1)
+            return loss_ce.mean()
 
     def q_sample(self, x_start, t, noise=None):
         if noise is None:
@@ -283,9 +288,8 @@ class GaussianDiffusion(nn.Module):
             
         # 4. Topology Loss (Segmentation)
         if seg_target is not None and lambda_topo > 0:
-            # We pass the per-sample gating mask to the topology loss module
-            topo_dict = self._topology_loss_module(seg_pred, seg_target, mask=t_gate)
-            loss_topo = topo_dict['loss']
+            # Safely compute topology loss via helper (handles initialization)
+            loss_topo = self._compute_topology_loss(seg_pred, seg_target, mask=t_gate)
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
             
