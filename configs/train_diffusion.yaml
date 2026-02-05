@@ -49,5 +49,6 @@ loss_weights:
   lambda_percep: 0.1    # Reduced to prevent grid artifacts
   lambda_topo: 0.1      # Reduced (Guided, not Driven)
   
-  # Topology warm-up configuration (Completed)
+  # Guidance warm-up configuration (Stage 4.9: Stability)
   topo_warmup_steps: 25000
+  percep_warmup_steps: 20000 

@@ -97,7 +97,6 @@ class PerceptualLoss(nn.Module):
         
         loss = F.mse_loss(x_feat, y_feat)
         
-        # Clamp to prevent explosion on outlier patches
         return torch.clamp(loss, max=self.max_loss)
 
 class GaussianDiffusion(nn.Module):
@@ -275,8 +274,18 @@ class GaussianDiffusion(nn.Module):
             loss_diff = F.mse_loss(noise_pred, noise)
             
         # 2. Auxiliary L1 Loss (on predicted Img)
-        x_recon = self.predict_start_from_noise(x_noisy, t, noise_pred)
-        loss_pixel = (F.l1_loss(x_recon, x_start, reduction='none').mean(dim=(1,2,3,4)) * t_gate).mean()
+        # We need to predict x_0 first
+        x_recon_raw = self.predict_start_from_noise(x_noisy, t, noise_pred)
+        
+        # Stage 4.9 Safeguard: Gradient-friendly clipping
+        # Limits values to [-1.1, 1.1] to prevent black/white saturation
+        x_recon = torch.tanh(x_recon_raw) * 1.05 
+        
+        loss_pixel_full = F.l1_loss(x_recon, x_start, reduction='none').mean(dim=(1,2,3,4))
+        loss_pixel = (loss_pixel_full * t_gate).mean()
+        
+        # Clamp individual sample losses to prevent spikes
+        loss_pixel = torch.clamp(loss_pixel, max=2.0)
         
         # 3. Perceptual Loss (VGG)
         if lambda_percep > 0:

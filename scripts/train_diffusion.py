@@ -272,6 +272,7 @@ def main():
         final_lambda_percep = loss_config.get("lambda_percep", 0.3)
         final_lambda_topo = loss_config.get("lambda_topo", 0.3)
         topo_warmup_steps = loss_config.get("topo_warmup_steps", 25000)
+        percep_warmup_steps = loss_config.get("percep_warmup_steps", 20000) 
         
         # Progressive loss weighting (Rebalanced curriculum)
         if step < stage1_end:
@@ -281,8 +282,14 @@ def main():
             # Stage 2: Add light pixel guidance (reduced to prevent over-smoothing)
             lambda_pixel, lambda_percep, lambda_topo = final_lambda_pixel, 0.0, 0.0
         elif step < stage3_end:
-            # Stage 3: Add perceptual detail loss (controlled to manage grain)
-            lambda_pixel, lambda_percep, lambda_topo = final_lambda_pixel, final_lambda_percep, 0.0
+            # Stage 3: Add perceptual detail loss with its own warm-up
+            steps_into_stage3 = step - stage2_end
+            if steps_into_stage3 < percep_warmup_steps:
+                lambda_percep = final_lambda_percep * (steps_into_stage3 / percep_warmup_steps)
+            else:
+                lambda_percep = final_lambda_percep
+                
+            lambda_pixel, lambda_topo = final_lambda_pixel, 0.0
         else:
             # Stage 4: Full curriculum with gradual topology warm-up
             # Since seg head was re-initialized at 100k, we need to warm it up slowly
