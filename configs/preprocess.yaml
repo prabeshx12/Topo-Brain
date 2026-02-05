@@ -35,6 +35,8 @@ bias_correction:
 
 normalization:
   method: diffusion  # Outputs [-1, 1] range for diffusion model training
+  # Blueprint specifies z-score, but diffusion method preserves contrast while
+  # providing stable [-1,1] range required by DDPM mathematics
   percentile_lower: 0.5  # Use wider percentiles to preserve contrast
   percentile_upper: 99.5
   clip_lower_percentile: null  # Disable redundant pre-clipping

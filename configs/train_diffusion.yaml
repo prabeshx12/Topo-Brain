@@ -18,7 +18,7 @@ model:
   use_attention: true  # State-of-the-art global context module enabled
 
 diffusion:
-  timesteps: 1000
+  timesteps: 200  # Blueprint requirement: 100-200 (reduced from 1000 for efficiency)
   beta_schedule: "cosine"  # Cosine is more stable for medical imaging
   loss_type: "l1"
 
@@ -36,19 +36,18 @@ training:
   ema_start: 2000
   
 stages:
-  # Curriculum learning stages (step-based)
-  stage1_end: 10000   # Pure diffusion loss
-  stage2_end: 50000   # Add pixel loss
+  # Blueprint-aligned curriculum learning stages (step-based)
+  stage1_end: 10000   # Diffusion + 50% pixel loss (warm-up)
+  stage2_end: 50000   # Diffusion + full pixel loss
   stage3_end: 100000  # Add perceptual loss
   # Stage 4 (100k+): Full multi-task with gradual topology warm-up
 
-# Stage 4.7: Grain Removal & Smoothness Tuning
-# Reduced weights to prevent over-driving the diffusion process with noisy gradients
+# Blueprint-aligned loss weights (CRITICAL FOR CONVERGENCE)
 loss_weights:
-  lambda_pixel: 0.25    # High detergent to wash out noise
-  lambda_percep: 0.1    # Reduced to prevent grid artifacts
-  lambda_topo: 0.1      # Reduced (Guided, not Driven)
+  lambda_pixel: 1.0     # PRIMARY reconstruction loss (blueprint requirement)
+  lambda_percep: 0.3    # Moderate perceptual guidance
+  lambda_topo: 0.2      # Anatomical structure preservation
   
-  # Guidance warm-up configuration (Stage 4.9: Stability)
+  # Warm-up configuration
   topo_warmup_steps: 25000
-  percep_warmup_steps: 20000 
+  percep_warmup_steps: 10000  # Reduced to activate earlier 

@@ -274,12 +274,12 @@ def main():
         topo_warmup_steps = loss_config.get("topo_warmup_steps", 25000)
         percep_warmup_steps = loss_config.get("percep_warmup_steps", 20000) 
         
-        # Progressive loss weighting (Rebalanced curriculum)
+        # Progressive loss weighting (Blueprint-aligned curriculum)
         if step < stage1_end:
-            # Stage 1: Pure diffusion loss (Noise matching)
-            lambda_pixel, lambda_percep, lambda_topo = 0.0, 0.0, 0.0
+            # Stage 1: Diffusion + Pixel loss (blueprint requires pixel from start)
+            lambda_pixel, lambda_percep, lambda_topo = final_lambda_pixel * 0.5, 0.0, 0.0
         elif step < stage2_end:
-            # Stage 2: Add light pixel guidance (reduced to prevent over-smoothing)
+            # Stage 2: Full pixel loss
             lambda_pixel, lambda_percep, lambda_topo = final_lambda_pixel, 0.0, 0.0
         elif step < stage3_end:
             # Stage 3: Add perceptual detail loss with its own warm-up
@@ -320,23 +320,38 @@ def main():
         optimizer.step()
         ema.step_ema(ema_model, model)
         
-        # Log to TensorBoard
+        # Log to TensorBoard (all loss components)
         tb_logger.log_scalar("Loss/Total", loss_dict["loss"].item(), step)
         tb_logger.log_scalar("Loss/Diff", loss_dict["loss_diff"].item(), step)
+        tb_logger.log_scalar("Loss/Pixel", loss_dict["loss_pixel"].item(), step)
+        tb_logger.log_scalar("Loss/Perceptual", loss_dict["loss_vgg"].item(), step)
         tb_logger.log_scalar("Loss/Topo", loss_dict["loss_topo"].item(), step)
+        tb_logger.log_scalar("LossWeights/Pixel", lambda_pixel, step)
+        tb_logger.log_scalar("LossWeights/Percep", lambda_percep, step)
+        tb_logger.log_scalar("LossWeights/Topo", lambda_topo, step)
         
         # Log to W&B
         if args.use_wandb:
             wandb.log({
                 "loss_total": loss_dict["loss"].item(),
                 "loss_diff": loss_dict["loss_diff"].item(),
+                "loss_pixel": loss_dict["loss_pixel"].item(),
+                "loss_perceptual": loss_dict["loss_vgg"].item(),
                 "loss_topo": loss_dict["loss_topo"].item(),
+                "lambda_pixel": lambda_pixel,
+                "lambda_percep": lambda_percep,
+                "lambda_topo": lambda_topo,
                 "step": step
             })
         
-        if step % 10 == 0:
-            # Concise log to console
-            tqdm.write(f"Step {step}: L={loss_dict['loss'].item():.4f} D={loss_dict['loss_diff'].item():.4f} S={loss_dict['loss_topo'].item():.4f}")
+        if step % 50 == 0:
+            # Comprehensive loss logging to console
+            tqdm.write(
+                f"Step {step}: Total={loss_dict['loss'].item():.4f} | "
+                f"Diff={loss_dict['loss_diff'].item():.4f} Pixel={loss_dict['loss_pixel'].item():.4f} "
+                f"Percep={loss_dict['loss_vgg'].item():.4f} Topo={loss_dict['loss_topo'].item():.4f} | "
+                f"λ=({lambda_pixel:.2f},{lambda_percep:.2f},{lambda_topo:.2f})"
+            )
 
         # Saving
         if step > 0 and step % config["training"]["save_freq"] == 0:

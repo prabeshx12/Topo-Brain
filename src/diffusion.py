@@ -262,10 +262,9 @@ class GaussianDiffusion(nn.Module):
         noise_pred = outputs['prediction']
         seg_pred = outputs['segmentation']
         
-        # Apply Timestep Gating (Stage 4.7: Grain Removal)
-        # We only apply auxiliary guidance when the image is clean enough (T < 400)
-        # This prevents 'hallucinated' noise gradients at high T.
-        t_gate = (t < 400).float()
+        # REMOVED TIMESTEP GATING - It was causing model collapse
+        # All auxiliary losses now apply at ALL timesteps (per blueprint requirement)
+        t_gate = torch.ones_like(t).float()
         
         # 1. Diffusion Loss (MSE on noise) - ALWAYS ACTIVE
         if self.loss_type == 'l1':
@@ -274,31 +273,21 @@ class GaussianDiffusion(nn.Module):
             loss_diff = F.mse_loss(noise_pred, noise)
             
         # 2. Auxiliary L1 Loss (on predicted Img)
-        # We need to predict x_0 first
-        x_recon_raw = self.predict_start_from_noise(x_noisy, t, noise_pred)
+        x_recon = self.predict_start_from_noise(x_noisy, t, noise_pred)
         
-        # Stage 4.9 Safeguard: Gradient-friendly clipping
-        # Limits values to [-1.1, 1.1] to prevent black/white saturation
-        x_recon = torch.tanh(x_recon_raw) * 1.05 
-        
-        loss_pixel_full = F.l1_loss(x_recon, x_start, reduction='none').mean(dim=(1,2,3,4))
-        loss_pixel = (loss_pixel_full * t_gate).mean()
-        
-        # Clamp individual sample losses to prevent spikes
-        loss_pixel = torch.clamp(loss_pixel, max=2.0)
+        # Simple pixel loss without destructive clamping
+        loss_pixel = F.l1_loss(x_recon, x_start)
         
         # 3. Perceptual Loss (VGG)
         if lambda_percep > 0:
-            # Note: We compute the loss and then gate it
-            vgg_raw = self.get_perceptual_loss()(x_recon, x_start)
-            loss_vgg = vgg_raw * t_gate.mean() 
+            loss_vgg = self.get_perceptual_loss()(x_recon, x_start)
         else:
             loss_vgg = torch.tensor(0.0, device=x_start.device)
             
         # 4. Topology Loss (Segmentation)
         if seg_target is not None and lambda_topo > 0:
             # Safely compute topology loss via helper (handles initialization)
-            loss_topo = self._compute_topology_loss(seg_pred, seg_target, mask=t_gate)
+            loss_topo = self._compute_topology_loss(seg_pred, seg_target, mask=None)
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
             
