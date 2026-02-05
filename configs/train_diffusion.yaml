@@ -18,7 +18,9 @@ model:
   use_attention: true  # State-of-the-art global context module enabled
 
 diffusion:
-  timesteps: 200  # Blueprint requirement: 100-200 (reduced from 1000 for efficiency)
+  timesteps: 200  # Using 200 timesteps (last 15 excluded for stability)
+  # Note: Cosine schedule has numerical instability at final timesteps
+  # Training automatically excludes t > 185 to prevent loss spikes
   beta_schedule: "cosine"  # Cosine is more stable for medical imaging
   loss_type: "l1"
 

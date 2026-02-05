@@ -263,7 +263,12 @@ class GaussianDiffusion(nn.Module):
         Compute total loss.
         """
         b, c, d, h, w = x_start.shape
-        t = torch.randint(0, len(self.betas), (b,), device=x_start.device).long()
+        
+        # CRITICAL FIX: Exclude last 15 timesteps due to numerical instability
+        # The cosine schedule produces coefficients > 4000x at t > 185 for T=200
+        # This causes catastrophic loss spikes when these timesteps are sampled
+        max_safe_timestep = len(self.betas) - 15
+        t = torch.randint(0, max_safe_timestep, (b,), device=x_start.device).long()
         
         noise = torch.randn_like(x_start)
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
