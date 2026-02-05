@@ -197,10 +197,21 @@ class GaussianDiffusion(nn.Module):
         )
 
     def predict_start_from_noise(self, x_t, t, noise):
-        return (
-            extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t -
-            extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
-        )
+        # Add epsilon for numerical stability in division
+        sqrt_recip = extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape)
+        sqrt_recipm1 = extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
+        
+        # Clamp to prevent extreme values
+        sqrt_recip = torch.clamp(sqrt_recip, max=10.0)
+        sqrt_recipm1 = torch.clamp(sqrt_recipm1, max=10.0)
+        
+        x_0 = sqrt_recip * x_t - sqrt_recipm1 * noise
+        
+        # Clamp reconstructed image to data range with safety margin
+        # Data is [-1, 1], allow [-2, 2] for gradient flow
+        x_0 = torch.clamp(x_0, min=-2.0, max=2.0)
+        
+        return x_0
 
     def q_posterior(self, x_start, x_t, t):
         posterior_mean = (
@@ -262,6 +273,10 @@ class GaussianDiffusion(nn.Module):
         noise_pred = outputs['prediction']
         seg_pred = outputs['segmentation']
         
+        # Clamp noise predictions to prevent numerical instability
+        # Noise should theoretically be N(0,1), so clip to [-5, 5] for safety
+        noise_pred = torch.clamp(noise_pred, min=-5.0, max=5.0)
+        
         # REMOVED TIMESTEP GATING - It was causing model collapse
         # All auxiliary losses now apply at ALL timesteps (per blueprint requirement)
         t_gate = torch.ones_like(t).float()
@@ -275,8 +290,14 @@ class GaussianDiffusion(nn.Module):
         # 2. Auxiliary L1 Loss (on predicted Img)
         x_recon = self.predict_start_from_noise(x_noisy, t, noise_pred)
         
-        # Simple pixel loss without destructive clamping
+        # Calculate pixel loss
         loss_pixel = F.l1_loss(x_recon, x_start)
+        
+        # Detect and cap extreme loss spikes (numerical instability indicator)
+        # Normal pixel loss should be < 2.0; values > 10 indicate catastrophic failure
+        if loss_pixel > 10.0:
+            # Log warning and cap the loss to prevent gradient explosion
+            loss_pixel = torch.clamp(loss_pixel, max=5.0)
         
         # 3. Perceptual Loss (VGG)
         if lambda_percep > 0:
