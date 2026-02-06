@@ -19,7 +19,12 @@ sys.path.insert(0, str(project_root))
 
 from src.diffusion import GaussianDiffusion
 from src.model import AnatomyGuidedUNet
-from src.synthesis_dataset import PairedPatchDataset
+from src.synthesis_dataset import (
+    PairedPatchDataset,
+    PatchConfig,
+    load_pairs_manifest,
+    create_synthesis_dataloaders
+)
 
 
 def calculate_metrics(pred, target, seg_pred, seg_target):
@@ -207,23 +212,22 @@ def main():
     
     # Load validation dataset
     print("Loading validation dataset...")
-    dataset = PairedPatchDataset(
-        pairs_csv='pairs.csv',
-        patch_size=tuple(config['dataset']['patch_size']),
-        num_patches_per_scan=1,  # Just 1 patch per scan for faster evaluation
-        split='val',
-        cache_data=True
-    )
+    pairs_path = Path(config['dataset']['pairs_csv'])
+    pairs = load_pairs_manifest(pairs_path)
     
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
+    # Create dataloaders
+    _, val_loader, _ = create_synthesis_dataloaders(
+        pairs,
+        config=PatchConfig(
+            patch_size=tuple(config['dataset']['patch_size']),
+            patches_per_volume=1,  # Just 1 patch per volume for faster evaluation
+        ),
         batch_size=1,
-        shuffle=False,
         num_workers=0,
-        pin_memory=True if torch.cuda.is_available() else False
+        val_fold=0
     )
     
-    print(f"Validation dataset size: {len(dataset)} patches")
+    print(f"Validation dataset ready")
     
     # Find all checkpoint files
     checkpoint_dir = Path('checkpoints')
@@ -248,7 +252,7 @@ def main():
         
         try:
             metrics = evaluate_checkpoint(
-                ckpt_path, model, diffusion, dataloader, device,
+                ckpt_path, model, diffusion, val_loader, device,
                 save_images=True,
                 image_output_dir=image_output_dir,
                 iteration=iteration
