@@ -3,6 +3,7 @@ Evaluate all saved checkpoints to find the best one based on validation metrics.
 Also generates visual comparison images for qualitative assessment.
 """
 import os
+import sys
 import torch
 import yaml
 import pandas as pd
@@ -11,6 +12,10 @@ from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.diffusion import GaussianDiffusion
 from src.model import AnatomyGuidedUNet
