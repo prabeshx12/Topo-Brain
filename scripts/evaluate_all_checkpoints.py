@@ -20,7 +20,6 @@ sys.path.insert(0, str(project_root))
 from src.diffusion import GaussianDiffusion
 from src.model import AnatomyGuidedUNet
 from src.synthesis_dataset import PairedPatchDataset
-from src.quality_control import QualityControl
 
 
 def calculate_metrics(pred, target, seg_pred, seg_target):
