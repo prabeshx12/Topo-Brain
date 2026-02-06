@@ -217,7 +217,8 @@ def main():
         in_channels=config['model']['in_channels'],
         out_channels=config['model']['out_channels'],
         features=config['model']['features'],
-        use_attention=config['model']['use_attention']
+        use_attention=config['model']['use_attention'],
+        num_classes=config['model']['num_classes']
     ).to(device)
     
     # Initialize diffusion
