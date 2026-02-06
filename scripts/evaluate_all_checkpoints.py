@@ -117,7 +117,18 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
     """Evaluate a single checkpoint."""
     # Load checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    # Handle different checkpoint formats
+    if 'model' in checkpoint:
+        model.load_state_dict(checkpoint['model'])
+    elif 'ema' in checkpoint:
+        model.load_state_dict(checkpoint['ema'])  # Use EMA if available
+    elif 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        # Direct state dict
+        model.load_state_dict(checkpoint)
+    
     model.eval()
     
     all_ssim = []
