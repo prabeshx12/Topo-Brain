@@ -173,24 +173,14 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
             'dice_wm_mean': np.mean(all_dice_wm),
             'dice_avg': np.mean(all_dice_csf + all_dice_gm + all_dice_wm)
         })
-    Create output directory for images
-    image_output_dir = Path('checkpoint_comparisons')
-    image_output_dir.mkdir(exist_ok=True)
-    print(f"Visual comparisons will be saved to: {image_output_dir}/")
     
-    # Evaluate each checkpoint
-    results = []
-    for ckpt_path in tqdm(checkpoint_files, desc="Evaluating checkpoints"):
-        # Extract iteration number from filename
-        iteration = int(ckpt_path.stem.split('_')[1])
-        
-        try:
-            metrics = evaluate_checkpoint(
-                ckpt_path, model, diffusion, dataloader, device,
-                save_images=True,
-                image_output_dir=image_output_dir,
-                iteration=iteration
-            
+    return results
+
+
+def main():
+    # Load config
+    config_path = 'configs/train_diffusion.yaml'
+    with open(config_path) as f:
         config = yaml.safe_load(f)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -241,6 +231,11 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
     
     print(f"Found {len(checkpoint_files)} checkpoints to evaluate")
     
+    # Create output directory for images
+    image_output_dir = Path('checkpoint_comparisons')
+    image_output_dir.mkdir(exist_ok=True)
+    print(f"Visual comparisons will be saved to: {image_output_dir}/")
+    
     # Evaluate each checkpoint
     results = []
     for ckpt_path in tqdm(checkpoint_files, desc="Evaluating checkpoints"):
@@ -248,7 +243,12 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
         iteration = int(ckpt_path.stem.split('_')[1])
         
         try:
-            metrics = evaluate_checkpoint(ckpt_path, model, diffusion, dataloader, device)
+            metrics = evaluate_checkpoint(
+                ckpt_path, model, diffusion, dataloader, device,
+                save_images=True,
+                image_output_dir=image_output_dir,
+                iteration=iteration
+            )
             metrics['iteration'] = iteration
             metrics['checkpoint'] = ckpt_path.name
             results.append(metrics)
@@ -276,11 +276,6 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
     best_ssim = df.loc[df['ssim_mean'].idxmax()]
     print(f"\nBest SSIM: {best_ssim['ssim_mean']:.4f} at iteration {int(best_ssim['iteration'])}")
     print(f"  Checkpoint: {best_ssim['checkpoint']}")
-    print(f"  PSNR: {best_ssim['psnr_mean']:.2f} dB")
-    
-    best_psnr = df.loc[df['psnr_mean'].idxmax()]
-    print(f"\nBest PSNR: {best_psnr['psnr_mean']:.2f} dB at iteration {int(best_psnr['iteration'])}")
-    print(f"  Checkpoint: {best_psnr['checkpoint']}")
     print(f"  SSIM: {best_psnr['ssim_mean']:.4f}")
     
     if 'dice_avg' in df.columns:
@@ -291,8 +286,8 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
     print(f"Visual comparisons saved to: checkpoint_comparisons/")
     print(f"Review the images to assess visual quality alongside metrics!")
     print(f"{'='*80}")
-        print(f"  Checkpoint: {best_dice['checkpoint']}")
-        print(f"  SSIM: {best_dice['ssim_mean']:.4f}, PSNR: {best_dice['psnr_mean']:.2f} dB")
+    print(f"  Checkpoint: {best_dice['checkpoint']}")
+    print(f"  SSIM: {best_dice['ssim_mean']:.4f}, PSNR: {best_dice['psnr_mean']:.2f} dB")
     
     # Show top 5 overall (by SSIM)
     print(f"\n{'='*80}")
@@ -305,3 +300,8 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
 
 if __name__ == '__main__':
     main()
+    
+    print(f"\n{'='*80}")
+    print(f"Visual comparisons saved to: checkpoint_comparisons/")
+    print(f"Review the images to assess visual quality alongside metrics!")
+    print(f"{'='*80}")
