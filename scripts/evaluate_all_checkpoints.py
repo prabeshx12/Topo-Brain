@@ -19,7 +19,7 @@ sys.path.insert(0, str(project_root))
 
 from src.diffusion import GaussianDiffusion
 from src.model import AnatomyGuidedUNet
-from src.synthesis_dataset import SynthesisDataset
+from src.synthesis_dataset import PairedPatchDataset
 from src.quality_control import QualityControl
 
 
@@ -208,7 +208,7 @@ def main():
     
     # Load validation dataset
     print("Loading validation dataset...")
-    dataset = SynthesisDataset(
+    dataset = PairedPatchDataset(
         pairs_csv='pairs.csv',
         patch_size=tuple(config['data']['patch_size']),
         num_patches_per_scan=1,  # Just 1 patch per scan for faster evaluation
