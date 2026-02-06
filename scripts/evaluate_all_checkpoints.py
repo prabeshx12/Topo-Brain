@@ -209,7 +209,7 @@ def main():
     print("Loading validation dataset...")
     dataset = PairedPatchDataset(
         pairs_csv='pairs.csv',
-        patch_size=tuple(config['data']['patch_size']),
+        patch_size=tuple(config['dataset']['patch_size']),
         num_patches_per_scan=1,  # Just 1 patch per scan for faster evaluation
         split='val',
         cache_data=True
