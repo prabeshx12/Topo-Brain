@@ -187,6 +187,12 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Evaluate all checkpoints')
+    parser.add_argument('--checkpoint_dir', type=str, default='checkpoints',
+                       help='Directory containing checkpoint files')
+    args = parser.parse_args()
+    
     # Load config
     config_path = 'configs/train_diffusion.yaml'
     with open(config_path) as f:
@@ -230,11 +236,17 @@ def main():
     print(f"Validation dataset ready")
     
     # Find all checkpoint files
-    checkpoint_dir = Path('checkpoints')
+    checkpoint_dir = Path(args.checkpoint_dir)
+    if not checkpoint_dir.exists():
+        print(f"ERROR: Checkpoint directory not found: {checkpoint_dir}")
+        print(f"Please provide the correct path using --checkpoint_dir argument")
+        return
+    
     checkpoint_files = sorted(checkpoint_dir.glob('checkpoint_*.pt'))
     
     if not checkpoint_files:
-        print("No checkpoint files found in 'checkpoints/' directory")
+        print(f"No checkpoint files found in '{checkpoint_dir}/' directory")
+        print(f"Looking for files matching pattern: checkpoint_*.pt")
         return
     
     print(f"Found {len(checkpoint_files)} checkpoints to evaluate")
