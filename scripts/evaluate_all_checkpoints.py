@@ -141,11 +141,11 @@ def evaluate_checkpoint(checkpoint_path, model, diffusion, dataloader, device,
     
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
-            input_3t = batch['input_3t'].to(device)
-            target_7t = batch['target_7t'].to(device)
+            input_3t = batch['input'].to(device)
+            target_7t = batch['target'].to(device)
             
-            if 'seg_7t' in batch:
-                seg_target = batch['seg_7t'].to(device)
+            if 'seg' in batch:
+                seg_target = batch['seg'].to(device)
             else:
                 seg_target = None
             
