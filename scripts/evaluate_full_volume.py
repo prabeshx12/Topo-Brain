@@ -61,7 +61,22 @@ def compute_metrics(pred_np, target_np):
 # Tiled inference
 # ---------------------------------------------------------------------------
 
-def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=16):
+def _tukey_window_1d(n, alpha=0.5):
+    """1-D Tukey (tapered-cosine) window.  alpha=fraction that is cosine-tapered."""
+    if alpha <= 0:
+        return np.ones(n)
+    if alpha >= 1:
+        return np.hanning(n)
+    w = np.ones(n)
+    taper = int(alpha * n / 2)
+    # left taper
+    w[:taper] = 0.5 * (1 - np.cos(np.pi * np.arange(taper) / taper))
+    # right taper
+    w[-taper:] = 0.5 * (1 - np.cos(np.pi * np.arange(taper, 0, -1) / taper))
+    return w
+
+
+def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32):
     """
     Run diffusion inference on overlapping 64³ tiles and stitch the result.
 
@@ -70,7 +85,7 @@ def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=16):
         input_vol:  numpy array [D, H, W] in [-1, 1]
         device:     torch device
         patch_size: side length of cubic patch  (default 64)
-        overlap:    overlap between adjacent patches (default 16)
+        overlap:    overlap between adjacent patches (default 32 = 50%)
 
     Returns:
         output_vol: numpy array [D, H, W]  predicted 7T
@@ -84,8 +99,10 @@ def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=16):
     seg_acc = np.zeros((4, D, H, W), dtype=np.float64)  # num_classes=4
     weight_acc = np.zeros((D, H, W), dtype=np.float64)
 
-    # Blending weight (raised-cosine window for smooth stitching)
-    w1d = np.hanning(patch_size)
+    # Tukey window: flat center (weight=1) with cosine taper in the overlap zone.
+    # alpha = overlap/patch_size  →  only the overlap fraction gets tapered.
+    alpha = overlap / patch_size   # 0.5 when overlap=32, patch=64
+    w1d = _tukey_window_1d(patch_size, alpha=alpha)
     window = w1d[None, None, :] * w1d[None, :, None] * w1d[:, None, None]
     window = window.astype(np.float64)
 
@@ -238,7 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description='Full-volume evaluation')
     parser.add_argument('--checkpoint', type=str, required=True)
     parser.add_argument('--config', type=str, default='configs/train_diffusion.yaml')
-    parser.add_argument('--overlap', type=int, default=16, help='Patch overlap for tiling')
+    parser.add_argument('--overlap', type=int, default=32, help='Patch overlap for tiling (default 32 = 50%%)')
     parser.add_argument('--output_dir', type=str, default='results/full_volume_eval')
 
     # Option A: direct paths
@@ -321,47 +338,55 @@ def main():
         overlap=args.overlap,
     )
 
+    # ---- brain mask: remove background noise from prediction ----
+    # The diffusion model generates noise outside the brain.  We mask it out
+    # by copying the input's background values into the prediction.
+    brain_mask = (input_vol > -0.95)   # True inside brain
+    pred_masked = pred_vol.copy()
+    pred_masked[~brain_mask] = input_vol[~brain_mask]  # keep original BG
+
     # ---- output directory ----
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- save NIfTI ----
-    pred_nii = nib.Nifti1Image(pred_vol, affine)
-    nib.save(pred_nii, out_dir / 'predicted_7T.nii.gz')
-    print(f"Saved: {out_dir / 'predicted_7T.nii.gz'}")
+    # Raw (unmasked) – for debugging
+    nib.save(nib.Nifti1Image(pred_vol, affine), out_dir / 'predicted_7T_raw.nii.gz')
+    # Masked (clean) – primary output
+    nib.save(nib.Nifti1Image(pred_masked, affine), out_dir / 'predicted_7T.nii.gz')
+    print(f"Saved: {out_dir / 'predicted_7T.nii.gz'}  (brain-masked)")
+    print(f"Saved: {out_dir / 'predicted_7T_raw.nii.gz'}  (raw)")
 
     seg_nii = nib.Nifti1Image(seg_vol, affine)
     nib.save(seg_nii, out_dir / 'predicted_seg.nii.gz')
     print(f"Saved: {out_dir / 'predicted_seg.nii.gz'}")
 
-    # ---- compute metrics on FULL volume ----
+    # ---- compute metrics ----
     if target_vol is not None:
-        # Brain mask: only evaluate inside brain (not background)
-        brain_mask = (input_vol > -0.95)
-        
-        # Full volume metrics
-        ssim_full, psnr_full = compute_metrics(pred_vol, target_vol)
-        
-        # Brain-only metrics (mask out background)
-        pred_brain = pred_vol.copy()
-        tgt_brain = target_vol.copy()
-        pred_brain[~brain_mask] = 0
-        tgt_brain[~brain_mask] = 0
-        ssim_brain, psnr_brain = compute_metrics(pred_brain, tgt_brain)
-        
-        # Center 64³ crop metrics (same region as sample_diffusion.py)
+        # 1) Full-volume masked (primary metric – no BG noise)
+        ssim_masked, psnr_masked = compute_metrics(pred_masked, target_vol)
+
+        # 2) Brain-only: crop to tight bounding box of brain for SSIM
+        coords = np.argwhere(brain_mask)
+        lo = coords.min(axis=0)
+        hi = coords.max(axis=0) + 1
+        pred_bb = pred_masked[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+        tgt_bb = target_vol[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+        ssim_brain, psnr_brain = compute_metrics(pred_bb, tgt_bb)
+
+        # 3) Center 64³ crop (directly comparable to sample_diffusion.py)
         D, H, W = input_vol.shape
         cd, ch, cw = D // 2, H // 2, W // 2
         rad = 32
-        crop_pred = pred_vol[cd-rad:cd+rad, ch-rad:ch+rad, cw-rad:cw+rad]
+        crop_pred = pred_masked[cd-rad:cd+rad, ch-rad:ch+rad, cw-rad:cw+rad]
         crop_tgt = target_vol[cd-rad:cd+rad, ch-rad:ch+rad, cw-rad:cw+rad]
         ssim_crop, psnr_crop = compute_metrics(crop_pred, crop_tgt)
 
         print("\n" + "=" * 60)
         print("METRICS (all use [0,1] range, data_range=1.0)")
         print("=" * 60)
-        print(f"  Full volume :  SSIM = {ssim_full:.4f}   PSNR = {psnr_full:.2f} dB")
-        print(f"  Brain only  :  SSIM = {ssim_brain:.4f}   PSNR = {psnr_brain:.2f} dB")
+        print(f"  Full masked :  SSIM = {ssim_masked:.4f}   PSNR = {psnr_masked:.2f} dB")
+        print(f"  Brain bbox  :  SSIM = {ssim_brain:.4f}   PSNR = {psnr_brain:.2f} dB")
         print(f"  Center 64³  :  SSIM = {ssim_crop:.4f}   PSNR = {psnr_crop:.2f} dB")
         print("=" * 60)
 
@@ -370,14 +395,15 @@ def main():
             f.write(f"Checkpoint: {args.checkpoint}\n")
             f.write(f"Input:      {input_path}\n")
             f.write(f"Target:     {target_path}\n")
-            f.write(f"Volume shape: {input_vol.shape}\n\n")
-            f.write(f"Full volume :  SSIM = {ssim_full:.4f}   PSNR = {psnr_full:.2f} dB\n")
-            f.write(f"Brain only  :  SSIM = {ssim_brain:.4f}   PSNR = {psnr_brain:.2f} dB\n")
+            f.write(f"Volume shape: {input_vol.shape}\n")
+            f.write(f"Overlap: {args.overlap}  (stride={patch_size - args.overlap})\n\n")
+            f.write(f"Full masked :  SSIM = {ssim_masked:.4f}   PSNR = {psnr_masked:.2f} dB\n")
+            f.write(f"Brain bbox  :  SSIM = {ssim_brain:.4f}   PSNR = {psnr_brain:.2f} dB\n")
             f.write(f"Center 64^3 :  SSIM = {ssim_crop:.4f}   PSNR = {psnr_crop:.2f} dB\n")
 
-    # ---- visualizations ----
+    # ---- visualizations (use the MASKED prediction for clean images) ----
     print("\nSaving visualizations ...")
-    save_multi_view(input_vol, pred_vol, target_vol, out_dir, tag="eval")
+    save_multi_view(input_vol, pred_masked, target_vol, out_dir, tag="eval")
     print(f"All outputs saved to: {out_dir}/")
 
 
