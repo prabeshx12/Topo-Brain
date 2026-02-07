@@ -49,8 +49,12 @@ def compute_metrics(pred_np, target_np):
     from skimage.metrics import structural_similarity as ssim
     from skimage.metrics import peak_signal_noise_ratio as psnr
 
-    pred_01 = np.clip((pred_np + 1.0) / 2.0, 0.0, 1.0)
-    tgt_01 = np.clip((target_np + 1.0) / 2.0, 0.0, 1.0)
+    # First clamp to [-1, 1] (diffusion output may exceed this range),
+    # then rescale to [0, 1]
+    pred_np = np.clip(pred_np, -1.0, 1.0)
+    target_np = np.clip(target_np, -1.0, 1.0)
+    pred_01 = (pred_np + 1.0) / 2.0
+    tgt_01 = (target_np + 1.0) / 2.0
 
     ssim_val = ssim(tgt_01, pred_01, data_range=1.0)
     psnr_val = psnr(tgt_01, pred_01, data_range=1.0)
@@ -201,30 +205,37 @@ def save_multi_view(input_vol, pred_vol, target_vol, output_dir, tag="full"):
         },
     }
 
+    # Compute a SHARED display range across all three volumes so
+    # intensity differences are visible (no per-image auto-scaling).
+    all_vols = [v for v in [input_vol, pred_vol, target_vol] if v is not None]
+    vmin = min(v.min() for v in all_vols)
+    vmax = max(v.max() for v in all_vols)
+
     for view_name, info in slices_info.items():
         for pos in info['positions']:
             inp_sl = np.rot90(info['func'](input_vol, pos))
             pred_sl = np.rot90(info['func'](pred_vol, pos))
-            err_sl = np.abs(pred_sl - np.rot90(info['func'](target_vol, pos)))
 
             ncols = 4 if target_vol is not None else 2
             fig, axes = plt.subplots(1, ncols, figsize=(5 * ncols, 5))
 
-            axes[0].imshow(inp_sl, cmap='gray')
+            # All grayscale images share the SAME vmin/vmax
+            axes[0].imshow(inp_sl, cmap='gray', vmin=vmin, vmax=vmax)
             axes[0].set_title('Input 3T', fontsize=12)
             axes[0].axis('off')
 
-            axes[1].imshow(pred_sl, cmap='gray')
+            axes[1].imshow(pred_sl, cmap='gray', vmin=vmin, vmax=vmax)
             axes[1].set_title('Predicted 7T', fontsize=12)
             axes[1].axis('off')
 
             if target_vol is not None:
                 tgt_sl = np.rot90(info['func'](target_vol, pos))
-                axes[2].imshow(tgt_sl, cmap='gray')
+                axes[2].imshow(tgt_sl, cmap='gray', vmin=vmin, vmax=vmax)
                 axes[2].set_title('Target 7T', fontsize=12)
                 axes[2].axis('off')
 
-                im = axes[3].imshow(err_sl, cmap='hot')
+                err_sl = np.abs(pred_sl - tgt_sl)
+                im = axes[3].imshow(err_sl, cmap='hot', vmin=0, vmax=1.0)
                 axes[3].set_title('Abs Error', fontsize=12)
                 axes[3].axis('off')
                 plt.colorbar(im, ax=axes[3], fraction=0.046)
@@ -330,6 +341,14 @@ def main():
 
     print(f"Volume shape: {input_vol.shape}")
 
+    # ---- intensity distribution diagnostic ----
+    brain_diag = input_vol > -0.95
+    print(f"\n--- Intensity Diagnostic (brain voxels only) ---")
+    print(f"  Input  3T :  min={input_vol[brain_diag].min():.3f}  max={input_vol[brain_diag].max():.3f}  mean={input_vol[brain_diag].mean():.3f}  std={input_vol[brain_diag].std():.3f}")
+    if target_vol is not None:
+        print(f"  Target 7T :  min={target_vol[brain_diag].min():.3f}  max={target_vol[brain_diag].max():.3f}  mean={target_vol[brain_diag].mean():.3f}  std={target_vol[brain_diag].std():.3f}")
+    print(f"---")
+
     # ---- full-volume tiled inference ----
     patch_size = config['dataset']['patch_size'][0]  # 64
     pred_vol, seg_vol = tiled_inference(
@@ -344,6 +363,14 @@ def main():
     brain_mask = (input_vol > -0.95)   # True inside brain
     pred_masked = pred_vol.copy()
     pred_masked[~brain_mask] = input_vol[~brain_mask]  # keep original BG
+
+    print(f"\n--- Post-Inference Intensity Diagnostic (brain voxels only) ---")
+    print(f"  Pred   7T :  min={pred_masked[brain_mask].min():.3f}  max={pred_masked[brain_mask].max():.3f}  mean={pred_masked[brain_mask].mean():.3f}  std={pred_masked[brain_mask].std():.3f}")
+    if target_vol is not None:
+        print(f"  Target 7T :  min={target_vol[brain_mask].min():.3f}  max={target_vol[brain_mask].max():.3f}  mean={target_vol[brain_mask].mean():.3f}  std={target_vol[brain_mask].std():.3f}")
+        mean_diff = pred_masked[brain_mask].mean() - target_vol[brain_mask].mean()
+        print(f"  Mean shift:  {mean_diff:+.3f}  ({'pred brighter' if mean_diff > 0 else 'pred darker'})")
+    print(f"---")
 
     # ---- output directory ----
     out_dir = Path(args.output_dir)

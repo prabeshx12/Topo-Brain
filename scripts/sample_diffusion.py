@@ -181,6 +181,9 @@ def run_inference(args):
         gt_np = crop_gt.cpu().numpy().squeeze()
         
         # Scale to [0, 1] for metrics if originally [-1, 1]
+        # Clamp to [-1,1] before rescaling (diffusion output may exceed range)
+        gen_np = np.clip(gen_np, -1.0, 1.0)
+        gt_np = np.clip(gt_np, -1.0, 1.0)
         gen_norm = (gen_np + 1) / 2
         gt_norm = (gt_np + 1) / 2
         

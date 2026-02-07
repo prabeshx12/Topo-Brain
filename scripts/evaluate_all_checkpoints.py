@@ -48,13 +48,12 @@ def calculate_metrics(pred, target):
     pred_np = pred.cpu().numpy().squeeze()
     target_np = target.cpu().numpy().squeeze()
 
-    # Rescale from [-1, 1] to [0, 1] (same as sample_diffusion.py)
+    # Clamp to [-1, 1] FIRST (diffusion output may exceed this range),
+    # then rescale to [0, 1]
+    pred_np = np.clip(pred_np, -1.0, 1.0)
+    target_np = np.clip(target_np, -1.0, 1.0)
     pred_np = (pred_np + 1.0) / 2.0
     target_np = (target_np + 1.0) / 2.0
-
-    # Clip to valid range
-    pred_np = np.clip(pred_np, 0.0, 1.0)
-    target_np = np.clip(target_np, 0.0, 1.0)
 
     ssim_val = ssim(target_np, pred_np, data_range=1.0)
     psnr_val = psnr(target_np, pred_np, data_range=1.0)

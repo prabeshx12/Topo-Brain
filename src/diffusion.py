@@ -252,6 +252,12 @@ class GaussianDiffusion(nn.Module):
         for i in reversed(range(0, len(self.betas))):
             t = torch.full((b,), i, device=device, dtype=torch.long)
             img, final_seg = self.p_sample(img, t, conditioning, i)
+
+        # Clamp final output to training data range [-1, 1].
+        # predict_start_from_noise allows [-2, 2] for gradient flow during
+        # training, but the final sample must respect the data range.
+        # Without this, out-of-range voxels cause large MSE → low PSNR.
+        img = torch.clamp(img, -1.0, 1.0)
             
         if return_all:
             return img, final_seg

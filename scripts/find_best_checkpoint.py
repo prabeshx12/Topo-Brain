@@ -44,8 +44,10 @@ def compute_metrics(pred_np, target_np):
     from skimage.metrics import structural_similarity as ssim
     from skimage.metrics import peak_signal_noise_ratio as psnr
 
-    pred_01 = np.clip((pred_np + 1.0) / 2.0, 0, 1)
-    tgt_01  = np.clip((target_np + 1.0) / 2.0, 0, 1)
+    pred_np = np.clip(pred_np, -1.0, 1.0)
+    target_np = np.clip(target_np, -1.0, 1.0)
+    pred_01 = (pred_np + 1.0) / 2.0
+    tgt_01  = (target_np + 1.0) / 2.0
 
     return ssim(tgt_01, pred_01, data_range=1.0), psnr(tgt_01, pred_01, data_range=1.0)
 
