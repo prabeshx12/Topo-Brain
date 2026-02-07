@@ -38,19 +38,26 @@ from src.synthesis_dataset import (
 # ---------------------------------------------------------------------------
 
 def calculate_metrics(pred, target):
-    """Calculate SSIM and PSNR between two 3D tensors."""
+    """Calculate SSIM and PSNR between two 3D tensors.
+    
+    Matches sample_diffusion.py: rescale [-1, 1] -> [0, 1], data_range=1.0
+    """
     from skimage.metrics import structural_similarity as ssim
     from skimage.metrics import peak_signal_noise_ratio as psnr
 
     pred_np = pred.cpu().numpy().squeeze()
     target_np = target.cpu().numpy().squeeze()
 
-    data_range = target_np.max() - target_np.min()
-    if data_range < 1e-8:
-        return 0.0, 0.0
+    # Rescale from [-1, 1] to [0, 1] (same as sample_diffusion.py)
+    pred_np = (pred_np + 1.0) / 2.0
+    target_np = (target_np + 1.0) / 2.0
 
-    ssim_val = ssim(target_np, pred_np, data_range=data_range)
-    psnr_val = psnr(target_np, pred_np, data_range=data_range)
+    # Clip to valid range
+    pred_np = np.clip(pred_np, 0.0, 1.0)
+    target_np = np.clip(target_np, 0.0, 1.0)
+
+    ssim_val = ssim(target_np, pred_np, data_range=1.0)
+    psnr_val = psnr(target_np, pred_np, data_range=1.0)
 
     return ssim_val, psnr_val
 
@@ -231,7 +238,12 @@ def main():
     # ---- evaluate each checkpoint ----
     results = []
     for path in tqdm(ckpt_files, desc='Evaluating'):
-        iteration = int(path.stem.split('_')[1])
+        # Extract iteration number from filename (skip non-numeric like checkpoint_latest.pt)
+        parts = path.stem.split('_')
+        if len(parts) < 2 or not parts[1].isdigit():
+            tqdm.write(f"  Skipping {path.name} (not a numbered checkpoint)")
+            continue
+        iteration = int(parts[1])
         try:
             metrics = evaluate_checkpoint(
                 path, model, diffusion, val_loader, device,
