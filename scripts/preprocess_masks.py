@@ -91,7 +91,7 @@ def main():
                  print(f"Skipping {subj}: Target 7T not found at {target_path}")
                  updated_rows.append(row)
                  continue
-                 
+        # added search dir       
         search_dir = root / subj
         candidates = list(search_dir.rglob("*aseg*.nii*"))
         
