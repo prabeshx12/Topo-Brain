@@ -105,7 +105,19 @@ def run_inference(args):
         if not path: return None, None
         img = nib.load(path)
         data = img.get_fdata().astype(np.float32)
-        # Data is already normalized to [-1, 1] from preprocessing
+        if "input" in str(path).lower():
+            # Robust Z-score (Ignore background zeros, match training preprocessing)
+            mask = data > 0
+            if mask.sum() > 0:
+                mean = data[mask].mean()
+                std = data[mask].std()
+                if std > 0:
+                    data = (data - mean) / std
+            else:
+                 # Fallback if empty
+                 if data.std() > 0:
+                     data = (data - data.mean()) / data.std()
+        
         tensor = torch.from_numpy(data).float()
         if len(tensor.shape) == 3:
             tensor = tensor.unsqueeze(0).unsqueeze(0)

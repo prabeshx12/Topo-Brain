@@ -292,7 +292,8 @@ class PairedPatchDataset(Dataset):
         target_7t = self._load_volume(Path(pair["target_7t"]))
         
         # Load mask: use tissue mask if available, fallback to brain mask
-        mask_path = pair.get("tissue_mask_path") or pair.get("mask")
+        # Priority: seg (manual/freesurfer) > tissue_mask_path (heuristic) > mask (binary)
+        mask_path = pair.get("seg") or pair.get("tissue_mask_path") or pair.get("mask")
         if mask_path and Path(mask_path).exists():
             mask = self._load_volume(Path(mask_path))
             # Ensure it is uint8 and handle alignment (no more binarization threshold)

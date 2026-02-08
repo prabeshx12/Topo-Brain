@@ -253,7 +253,8 @@ def main():
             x_start = batch['target'].to(device)
             cond = batch['input'].to(device)
             # Ensure segmentation target is on the correct device
-            seg_target = batch.get('seg', torch.zeros_like(x_start, dtype=torch.long)).to(device)
+            # synthesis_dataset.py now guarantees 'seg' key exists (even if zeros)
+            seg_target = batch['seg'].to(device)
             if len(seg_target.shape) == 5: seg_target = seg_target.squeeze(1)
         else:
             x_start = torch.randn(2, 1, 64, 64, 64).to(device)
