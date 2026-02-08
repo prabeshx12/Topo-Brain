@@ -45,12 +45,17 @@ def map_labels(data, mapping):
 
 def main():
     parser = argparse.ArgumentParser(description="Preprocess segmentation masks")
-    parser.add_argument("--pairs-csv", default="derivatives/topobrain-preproc/pairs.csv")
-    parser.add_argument("--data-root", required=True, help="Root of raw BIDS data for finding asegs")
+    parser.add_argument("--pairs-csv", required=True, help="Path to pairs.csv from preprocessing")
+    parser.add_argument("--data-root", required=True, help="Root of RAW data (for finding input asegs)")
+    parser.add_argument("--preproc-root", required=True, help="Root of PREPROCESSED data (for finding target 7T reference)")
+    parser.add_argument("--output-csv", default=None, help="Path to save updated pairs.csv (defaults to overtime input)")
     parser.add_argument("--output-col", default="seg", help="Column name to add to pairs.csv")
     args = parser.parse_args()
     
     pairs_path = Path(args.pairs_csv)
+    preproc_root = Path(args.preproc_root)
+    output_csv_path = Path(args.output_csv) if args.output_csv else pairs_path
+    
     if not pairs_path.exists():
         raise FileNotFoundError(f"Pairs file not found: {pairs_path}")
         
@@ -68,15 +73,19 @@ def main():
     
     for row in tqdm(rows, desc="Processing Masks"):
         subj = row['subject']
-        target_path = Path(row['target_7t']) # Already processed 7T
         
-        # 1. Find Raw Aseg
-        # Strategy: Look in BIDS structure derivatives/freesurfer or similar?
-        # Or look for `aseg.nii.gz` inside the subject folder structure provided
-        # Current pattern: {data_root}/{subject}/...
-        # We'll search recursively for *aseg*.nii*
+        # Resolve target 7T path (Reference Geometry)
+        target_rel_path = row['target_7t']
+        target_path = preproc_root / target_rel_path
         
-        search_dir = root / subj
+        if not target_path.exists():
+             # Try absolute path fallback if CSV has absolute paths
+             if Path(target_rel_path).exists():
+                 target_path = Path(target_rel_path)
+             else:
+                 print(f"Skipping {subj}: Target 7T not found at {target_path}")
+                 updated_rows.append(row)
+                 continue
         candidates = list(search_dir.rglob("*aseg*.nii*"))
         
         # Filter out "aparc" if we just want simple aseg, or keep it.
@@ -127,9 +136,12 @@ def main():
             nib.save(new_img, out_path)
             
             # 5. Update Row
-            # Store relative path if original was relative, or absolute?
-            # Usually pairs.csv has relative paths.
-            row[args.output_col] = str(out_path).replace("\\", "/") # Ensure forward slashes
+            # Store relative path if original was relative
+            try:
+                rel_out_path = out_path.relative_to(preproc_root)
+                row[args.output_col] = str(rel_out_path).replace("\\", "/") 
+            except ValueError:
+                row[args.output_col] = str(out_path).replace("\\", "/") 
             
         except Exception as e:
             print(f"Failed {subj}: {e}")
@@ -137,12 +149,12 @@ def main():
         updated_rows.append(row)
         
     # Write back pairs.csv
-    with open(pairs_path, 'w', newline='') as f:
+    with open(output_csv_path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(updated_rows)
         
-    print(f"Updated {pairs_path} with segmentation paths.")
+    print(f"Updated {output_csv_path} with segmentation paths.")
 
 if __name__ == "__main__":
     main()
