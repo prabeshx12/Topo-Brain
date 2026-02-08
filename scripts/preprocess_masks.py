@@ -49,12 +49,17 @@ def main():
     parser.add_argument("--data-root", required=True, help="Root of RAW data (for finding input asegs)")
     parser.add_argument("--preproc-root", required=True, help="Root of PREPROCESSED data (for finding target 7T reference)")
     parser.add_argument("--output-csv", default=None, help="Path to save updated pairs.csv (defaults to overtime input)")
+    parser.add_argument("--mask-output-dir", default=None, help="Directory to save generated masks (optional, for read-only source)")
     parser.add_argument("--output-col", default="seg", help="Column name to add to pairs.csv")
     args = parser.parse_args()
     
     pairs_path = Path(args.pairs_csv)
     preproc_root = Path(args.preproc_root)
     output_csv_path = Path(args.output_csv) if args.output_csv else pairs_path
+    
+    mask_output_root = Path(args.mask_output_dir) if args.mask_output_dir else None
+    if mask_output_root:
+        mask_output_root.mkdir(parents=True, exist_ok=True)
     
     if not pairs_path.exists():
         raise FileNotFoundError(f"Pairs file not found: {pairs_path}")
@@ -141,18 +146,34 @@ def main():
             else:
                 out_name = target_path.name + "_seg.nii.gz"
                 
-            out_path = target_path.parent / out_name
+            if mask_output_root:
+                try:
+                    rel_structure = target_path.parent.relative_to(preproc_root)
+                except ValueError:
+                    rel_structure = Path(subj) / "anat"
+                
+                out_dir = mask_output_root / rel_structure
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_path = out_dir / out_name
+            else:
+                out_path = target_path.parent / out_name
             
             new_img = nib.Nifti1Image(mapped_data.astype(np.uint8), target_img.affine)
             nib.save(new_img, out_path)
             
             # 5. Update Row
-            # Store relative path if original was relative
-            try:
-                rel_out_path = out_path.relative_to(preproc_root)
-                row[args.output_col] = str(rel_out_path).replace("\\", "/") 
-            except ValueError:
-                row[args.output_col] = str(out_path).replace("\\", "/") 
+            # Store absolute path in CSV for maximum safety if separate dir used
+            # Or relative if inside preproc root?
+            if mask_output_root:
+                 # Absolute path is safest for separate output dir
+                 row[args.output_col] = str(out_path.absolute()).replace("\\", "/") 
+            else:
+                # Store relative path if under preproc root
+                try:
+                    rel_out_path = out_path.relative_to(preproc_root)
+                    row[args.output_col] = str(rel_out_path).replace("\\", "/") 
+                except ValueError:
+                    row[args.output_col] = str(out_path).replace("\\", "/") 
             
         except Exception as e:
             print(f"Failed {subj}: {e}")
