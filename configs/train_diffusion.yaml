@@ -2,7 +2,7 @@
 # Diffusion Model Training with Blueprint-aligned hyperparameters
 
 dataset:
-  pairs_csv: "/eos/home-i04/p/ppokhrel/Untitled Folder 1/tissue_masks/pairs_with_tissue_masks.csv"
+  pairs_csv: "/kaggle/working/Topo-Brain/pairs_new.csv"
   batch_size: 2  # Reduced for stability
   patch_size: [64, 64, 64]
   num_workers: 4
