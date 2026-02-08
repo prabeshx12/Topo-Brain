@@ -101,14 +101,14 @@ def main():
         candidates = list(search_dir.rglob("*aseg*.nii*"))
         
         # Filter out "aparc" if we just want simple aseg, or keep it.
-        # Prefer "aseg.nii.gz" or "aseg.mgz" (freesurfer output)
+        # Prefer "aparc+aseg.nii.gz" (more detailed) or "aseg.nii.gz"
         aseg_path = None
         
-        # Priority sort: aseg.nii.gz > aseg.mgz > *aseg*
+        # Priority sort: aparc+aseg.nii.gz > aparc+aseg.nii > aseg.nii.gz > aseg.nii
         candidates = sorted(candidates, key=lambda p: (
-            p.name != 'aseg.nii.gz', 
-            p.name != 'aseg.mgz', 
-            len(str(p))
+            'aparc+aseg' not in p.name,  # False (0) comes first
+            not p.name.endswith('.gz'),   # False (0) comes first
+            len(str(p))                   # Shorter paths preferred if tie
         ))
         
         if candidates:
@@ -162,19 +162,25 @@ def main():
             nib.save(new_img, out_path)
             
             # 5. Update Row
-            # Store absolute path in CSV for maximum safety if separate dir used
-            # Or relative if inside preproc root?
+            # Store RELATIVE path in CSV so it can be re-rooted during training
             if mask_output_root:
-                 # Absolute path is safest for separate output dir
-                 row[args.output_col] = str(out_path.absolute()).replace("\\", "/") 
+                 # If we saved to a separate dir, make path relative to THAT dir
+                 # e.g. sub-01/anat/mask.nii.gz
+                 try:
+                     rel_out_path = out_path.relative_to(mask_output_root)
+                     row[args.output_col] = str(rel_out_path).replace("\\", "/")
+                 except ValueError:
+                     # Fallback: Just store the name if relative calc fails (unlikely if we just constructed it)
+                     row[args.output_col] = out_path.name
             else:
-                # Store relative path if under preproc root
+                # If we saved to preproc dir, make relative to preproc root
                 try:
                     rel_out_path = out_path.relative_to(preproc_root)
                     row[args.output_col] = str(rel_out_path).replace("\\", "/") 
                 except ValueError:
-                    row[args.output_col] = str(out_path).replace("\\", "/") 
-            
+                    # Fallback to name
+                    row[args.output_col] = out_path.name
+
         except Exception as e:
             print(f"Failed {subj}: {e}")
             

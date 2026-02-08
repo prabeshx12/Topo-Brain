@@ -62,6 +62,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Run a single batch for verification")
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint")
     parser.add_argument("--data-root", type=str, default=None, help="Root directory for data (prepended to CSV paths)")
+    parser.add_argument("--masks-root", type=str, default=None, help="Root directory for masks (prepended to seg paths)")
     parser.add_argument("--output", type=str, default=None, help="Output directory for checkpoints and logs")
     parser.add_argument("--use-wandb", action="store_true", help="Enable Weights & Biases logging")
     parser.add_argument("--wandb-project", type=str, default="topobrain", help="W&B Project Name")
@@ -134,7 +135,18 @@ def main():
                     for p in pairs:
                         if 'input_3t' in p: p['input_3t'] = str(root / p['input_3t'])
                         if 'target_7t' in p: p['target_7t'] = str(root / p['target_7t'])
-                        if 'mask' in p and p['mask']: p['mask'] = str(root / p['mask'])
+                        # Fallback for old masks/t2 if no mask root
+                        if not args.masks_root:
+                             if 'mask' in p and p['mask']: p['mask'] = str(root / p['mask'])
+                             if 'seg' in p and p['seg']: p['seg'] = str(root / p['seg'])
+                
+                # Prepend masks root if provided (overrides data root for masks)
+                if args.masks_root:
+                    mask_root = Path(args.masks_root)
+                    logger.info(f"Prepending masks root: {mask_root}")
+                    for p in pairs:
+                        if 'seg' in p and p['seg']: p['seg'] = str(mask_root / p['seg'])
+                        elif 'mask' in p and p['mask']: p['mask'] = str(mask_root / p['mask'])
                 
                 train_loader, _, _ = create_synthesis_dataloaders(pairs, batch_size=config["dataset"].get("batch_size", 4))
                 train_iter = cycle(train_loader)
