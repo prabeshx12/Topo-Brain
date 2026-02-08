@@ -82,10 +82,17 @@ def main():
              # Try absolute path fallback if CSV has absolute paths
              if Path(target_rel_path).exists():
                  target_path = Path(target_rel_path)
+             # Try replacing extension .nii.gz <-> .nii
+             elif target_path.with_name(target_path.name.replace(".nii.gz", ".nii")).exists():
+                 target_path = target_path.with_name(target_path.name.replace(".nii.gz", ".nii"))
+             elif target_path.with_suffix(".gz").exists():
+                 target_path = target_path.with_suffix(".gz")
              else:
                  print(f"Skipping {subj}: Target 7T not found at {target_path}")
                  updated_rows.append(row)
                  continue
+                 
+        search_dir = root / subj
         candidates = list(search_dir.rglob("*aseg*.nii*"))
         
         # Filter out "aparc" if we just want simple aseg, or keep it.
@@ -110,12 +117,10 @@ def main():
         # 2. Resample to match Target 7T
         # We need the geometry of the PROCESSED 7T file
         if not target_path.exists():
-            # If path is relative to some root not here, this might fail.
-            # Assume running from project root where pairs.csv is.
-            # Try prepending 'derivatives/topobrain-preproc' if needed?
-            # Actually, user usually passes data-root. But for this script, let's assume
-            # we can read the file as listed in csv.
-            pass
+            # Should have been caught above, but safety check
+             print(f"Skipping {subj}: Target 7T disappeared?")
+             updated_rows.append(row)
+             continue
             
         try:
             target_img = nib.load(target_path)
@@ -129,7 +134,13 @@ def main():
             mapped_data = map_labels(data, FS_MAPPING)
             
             # 4. Save
-            out_name = target_path.name.replace(".nii.gz", "_seg.nii.gz")
+            if target_path.name.endswith(".nii.gz"):
+                out_name = target_path.name.replace(".nii.gz", "_seg.nii.gz")
+            elif target_path.name.endswith(".nii"):
+                out_name = target_path.name.replace(".nii", "_seg.nii.gz") # Always save masks as .nii.gz
+            else:
+                out_name = target_path.name + "_seg.nii.gz"
+                
             out_path = target_path.parent / out_name
             
             new_img = nib.Nifti1Image(mapped_data.astype(np.uint8), target_img.affine)
