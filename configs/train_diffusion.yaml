@@ -38,11 +38,11 @@ training:
   ema_start: 2000
   
 stages:
-  # Blueprint-aligned curriculum learning stages (step-based)
-  stage1_end: 10000   # Diffusion + 50% pixel loss (warm-up)
-  stage2_end: 50000   # Diffusion + full pixel loss
-  stage3_end: 100000  # Add perceptual loss
-  # Stage 4 (100k+): Full multi-task with gradual topology warm-up
+  # Adjusted Curriculum for Fresh Training with High-Quality Masks
+  stage1_end: 5000    # Diffusion + pixel loss (rapid structure learning)
+  stage2_end: 20000   # Introduce Perceptual Loss early
+  stage3_end: 50000   # Introduce Topology Loss (Masks) early!
+  # After 50k: Full multi-task learning for remaining 150k steps
 
 # Blueprint-aligned loss weights (CRITICAL FOR CONVERGENCE)
 loss_weights:
