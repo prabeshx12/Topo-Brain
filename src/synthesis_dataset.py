@@ -259,7 +259,7 @@ class PairedPatchDataset(Dataset):
     def __len__(self) -> int:
         return self._length
     
-    def _load_volume(self, path: Path) -> np.ndarray:
+    def _load_volume(self, path: Path, expect_normalized: bool = True) -> np.ndarray:
         """Load a NIfTI volume with extension fallback."""
         if not path.exists():
             # Try alternate extension
@@ -279,7 +279,22 @@ class PairedPatchDataset(Dataset):
                      raise FileNotFoundError(f"File not found: {path} (checked alternates)")
 
         nib_img = nib.load(str(path))
-        return nib_img.get_fdata().astype(np.float32)
+        data = nib_img.get_fdata().astype(np.float32)
+        if not expect_normalized:
+            return data
+        return self._robust_normalize(data)
+
+    def _robust_normalize(self, data):
+        # Strict mode: training expects preprocessed, diffusion-normalized inputs in [-1, 1].
+        data_min = float(np.min(data))
+        data_max = float(np.max(data))
+        if data_min < -1.1 or data_max > 1.1:
+            raise ValueError(
+                "Input volume is not normalized to [-1, 1]. "
+                "Run preprocessing with normalization.method='diffusion' "
+                "and use those outputs for training."
+            )
+        return np.clip(data, -1.0, 1.0)
     
     def _get_cached_pair(self, pair_idx: int) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]:
         """Get or load a cached volume pair."""
@@ -291,14 +306,14 @@ class PairedPatchDataset(Dataset):
             return cached["input_3t"], cached["target_7t"], cached.get("mask"), cached.get("input_3t_t2")
         
         # Load volumes (already normalized to [-1, 1] during preprocessing)
-        input_3t = self._load_volume(Path(pair["input_3t"]))
-        target_7t = self._load_volume(Path(pair["target_7t"]))
+        input_3t = self._load_volume(Path(pair["input_3t"]), expect_normalized=True)
+        target_7t = self._load_volume(Path(pair["target_7t"]), expect_normalized=True)
         
         # Load mask: use tissue mask if available, fallback to brain mask
         # Priority: seg (manual/freesurfer) > tissue_mask_path (heuristic) > mask (binary)
         mask_path = pair.get("seg") or pair.get("tissue_mask_path") or pair.get("mask")
         if mask_path and Path(mask_path).exists():
-            mask = self._load_volume(Path(mask_path))
+            mask = self._load_volume(Path(mask_path), expect_normalized=False)
             # Ensure it is uint8 and handle alignment (no more binarization threshold)
             mask = mask.astype(np.uint8)
         else:
@@ -313,13 +328,13 @@ class PairedPatchDataset(Dataset):
                 "target_7t": target_7t,
                 "mask": mask,
             }
-            if "input_3t_t2" in pair and self.config.use_t2:
-                # Load T2 if configured and available
-                t2_path = pair["input_3t_t2"]
-                if t2_path and Path(t2_path).exists():
-                    cache_entry["input_3t_t2"] = self._load_volume(Path(t2_path))
-                else:
-                    logger.warning(f"T2 specified but not found for {cache_key}: {t2_path}")
+                if "input_3t_t2" in pair and self.config.use_t2:
+                    # Load T2 if configured and available
+                    t2_path = pair["input_3t_t2"]
+                    if t2_path and Path(t2_path).exists():
+                        cache_entry["input_3t_t2"] = self._load_volume(Path(t2_path), expect_normalized=True)
+                    else:
+                        logger.warning(f"T2 specified but not found for {cache_key}: {t2_path}")
             
             self._cache[cache_key] = cache_entry
         
@@ -329,7 +344,7 @@ class PairedPatchDataset(Dataset):
             if cache_key in self._cache and "input_3t_t2" in self._cache[cache_key]:
                 t2_vol = self._cache[cache_key]["input_3t_t2"]
             elif "input_3t_t2" in pair and Path(pair["input_3t_t2"]).exists():
-                t2_vol = self._load_volume(Path(pair["input_3t_t2"]))
+                t2_vol = self._load_volume(Path(pair["input_3t_t2"]), expect_normalized=True)
                 
         return input_3t, target_7t, mask, t2_vol
     

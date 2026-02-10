@@ -101,22 +101,23 @@ def run_inference(args):
     # 4. Input & Target Loading
     # Ensure 5D: [B, C, D, H, W]
     # Note: Data should be pre-normalized to [-1, 1] during preprocessing
+    folder = Path(args.checkpoint).parent.parent
+    
     def load_nii(path):
         if not path: return None, None
         img = nib.load(path)
         data = img.get_fdata().astype(np.float32)
-        if "input" in str(path).lower():
-            # Robust Z-score (Ignore background zeros, match training preprocessing)
-            mask = data > 0
-            if mask.sum() > 0:
-                mean = data[mask].mean()
-                std = data[mask].std()
-                if std > 0:
-                    data = (data - mean) / std
-            else:
-                 # Fallback if empty
-                 if data.std() > 0:
-                     data = (data - data.mean()) / data.std()
+
+        # Strict mode: inference expects preprocessed, diffusion-normalized inputs in [-1, 1].
+        data_min = float(np.min(data))
+        data_max = float(np.max(data))
+        if data_min < -1.1 or data_max > 1.1:
+            raise ValueError(
+                "Input volume is not normalized to [-1, 1]. "
+                "Run preprocessing with normalization.method='diffusion' "
+                "and use those outputs for inference."
+            )
+        data = np.clip(data, -1.0, 1.0)
         
         tensor = torch.from_numpy(data).float()
         if len(tensor.shape) == 3:

@@ -222,6 +222,7 @@ class BIDSPreprocessingPipeline:
                     mask_for_n4 = mask_output_path
 
                 if self.bias_corrector is not None:
+                    logger.info("Applying N4 bias correction: %s", entry.path)
                     image_array = self.bias_corrector(entry.path, mask_for_n4)
 
                 # NOTE: Do NOT apply mask before normalization - normalization handles background
