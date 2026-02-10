@@ -1,10 +1,10 @@
 """
 Full-volume evaluation of a single checkpoint with tiled patch inference.
 
-- Tiles the full volume into overlapping 64³ patches
+- Tiles the full volume into overlapping 64^3 patches
 - Runs diffusion inference on each patch
 - Stitches results back into a full volume
-- Computes metrics on the FULL volume (consistent & reproducible)
+- Computes metrics on the masked brain region (consistent & reproducible)
 - Saves multi-slice visualizations (axial, coronal, sagittal)
 - Saves output as NIfTI for external inspection
 
@@ -62,6 +62,104 @@ def compute_metrics(pred_np, target_np):
 
 
 # ---------------------------------------------------------------------------
+# Brain mask helpers
+# ---------------------------------------------------------------------------
+
+
+def load_mask(mask_path, ref_shape):
+    """Load a brain mask NIfTI and validate its shape."""
+    mask_nii = nib.load(mask_path)
+    mask = mask_nii.get_fdata().astype('float32')
+    if mask.shape != ref_shape:
+        raise ValueError(f"Mask shape {mask.shape} does not match volume shape {ref_shape}")
+    mask = mask > 0.5
+    if not mask.any():
+        print(f"WARNING: Mask is empty: {mask_path}. Falling back to full-volume mask.")
+        mask = np.ones(ref_shape, dtype=bool)
+    return mask
+
+
+def make_brain_mask(input_vol, threshold=-0.95):
+    """Simple threshold-based brain mask for normalized inputs in [-1, 1]."""
+    mask = input_vol > threshold
+    if not mask.any():
+        # Fallback: avoid empty mask to prevent crashes downstream
+        mask = np.ones_like(input_vol, dtype=bool)
+    return mask
+
+
+def resolve_freesurfer_mask(mask_root, subject, session=None):
+    """
+    Resolve a FreeSurfer-derived mask for a subject/session.
+    Preference order:
+      1) aparc+aseg.nii(.gz)
+      2) aseg.nii(.gz)
+    """
+    mask_root = Path(mask_root)
+    if session:
+        candidates = [
+            mask_root / subject / session / "anat" / "aparc+aseg.nii.gz",
+            mask_root / subject / session / "anat" / "aparc+aseg.nii",
+            mask_root / subject / session / "anat" / "aseg.nii.gz",
+            mask_root / subject / session / "anat" / "aseg.nii",
+        ]
+    else:
+        candidates = [
+            mask_root / subject / "anat" / "aparc+aseg.nii.gz",
+            mask_root / subject / "anat" / "aparc+aseg.nii",
+            mask_root / subject / "anat" / "aseg.nii.gz",
+            mask_root / subject / "anat" / "aseg.nii",
+        ]
+
+    for cand in candidates:
+        if cand.exists():
+            return cand
+    return None
+
+
+def compute_metric_set(label, brain_mask, pred_vol, target_vol, input_vol):
+    """Compute masked, brain-bbox, and center-crop metrics for a given mask."""
+    # 1) Full-volume masked (primary metric - no BG noise)
+    pred_for_metrics = pred_vol.copy()
+    pred_for_metrics[~brain_mask] = target_vol[~brain_mask]
+    ssim_masked, psnr_masked = compute_metrics(pred_for_metrics, target_vol)
+
+    # 2) Brain-only: crop to tight bounding box of brain for SSIM
+    if brain_mask.any():
+        coords = np.argwhere(brain_mask)
+        lo = coords.min(axis=0)
+        hi = coords.max(axis=0) + 1
+        pred_bb = pred_for_metrics[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+        tgt_bb = target_vol[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+        ssim_brain, psnr_brain = compute_metrics(pred_bb, tgt_bb)
+    else:
+        print(f"WARNING: Empty brain mask for {label}; skipping brain-bbox metrics.")
+        ssim_brain, psnr_brain = float('nan'), float('nan')
+
+    # 3) Center 64^3 crop (directly comparable to sample_diffusion.py)
+    D, H, W = input_vol.shape
+    if min(D, H, W) >= 64:
+        cd, ch, cw = D // 2, H // 2, W // 2
+        rad = 32
+        crop_pred = pred_for_metrics[cd-rad:cd+rad, ch-rad:ch+rad, cw-rad:cw+rad]
+        crop_tgt = target_vol[cd-rad:cd+rad, ch-rad:ch+rad, cw-rad:cw+rad]
+        ssim_crop, psnr_crop = compute_metrics(crop_pred, crop_tgt)
+    else:
+        print(f"WARNING: Volume smaller than 64^3; skipping center-crop metrics for {label}.")
+        ssim_crop, psnr_crop = float('nan'), float('nan')
+
+    return {
+        "label": label,
+        "ssim_masked": ssim_masked,
+        "psnr_masked": psnr_masked,
+        "ssim_brain": ssim_brain,
+        "psnr_brain": psnr_brain,
+        "ssim_crop": ssim_crop,
+        "psnr_crop": psnr_crop,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Tiled inference
 # ---------------------------------------------------------------------------
 
@@ -82,7 +180,7 @@ def _tukey_window_1d(n, alpha=0.5):
 
 def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32):
     """
-    Run diffusion inference on overlapping 64³ tiles and stitch the result.
+    Run diffusion inference on overlapping 64^3 tiles and stitch the result.
 
     Args:
         diffusion:  GaussianDiffusion model (already on device, eval mode)
@@ -104,7 +202,7 @@ def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32):
     weight_acc = np.zeros((D, H, W), dtype=np.float64)
 
     # Tukey window: flat center (weight=1) with cosine taper in the overlap zone.
-    # alpha = overlap/patch_size  →  only the overlap fraction gets tapered.
+    # alpha = overlap/patch_size  ->  only the overlap fraction gets tapered.
     alpha = overlap / patch_size   # 0.5 when overlap=32, patch=64
     w1d = _tukey_window_1d(patch_size, alpha=alpha)
     window = w1d[None, None, :] * w1d[None, :, None] * w1d[:, None, None]
@@ -240,7 +338,7 @@ def save_multi_view(input_vol, pred_vol, target_vol, output_dir, tag="full"):
                 axes[3].axis('off')
                 plt.colorbar(im, ax=axes[3], fraction=0.046)
 
-            plt.suptitle(f'{view_name.capitalize()} – slice {pos}', fontsize=14)
+            plt.suptitle(f'{view_name.capitalize()} - slice {pos}', fontsize=14)
             plt.tight_layout()
             fname = output_dir / f'{tag}_{view_name}_slice{pos:03d}.png'
             plt.savefig(fname, dpi=150, bbox_inches='tight')
@@ -278,6 +376,14 @@ def main():
                         help='Subject ID (e.g. sub-01).  Looks up paths from --pairs_csv.')
     parser.add_argument('--pairs_csv', type=str, default=None,
                         help='Pairs CSV.  Defaults to dataset.pairs_csv from config.')
+    parser.add_argument('--mask', type=str, default=None,
+                        help='Optional brain mask NIfTI (binary). If not provided, uses threshold mask.')
+    parser.add_argument('--mask-root', type=str, default=None,
+                        help='Root with FreeSurfer masks (aparc+aseg/aseg). Requires --subject.')
+    parser.add_argument('--session', type=str, default=None,
+                        help='Session ID (e.g. ses-1) when using --subject and --mask-root.')
+    parser.add_argument('--mask-threshold', type=float, default=-0.95,
+                        help='Threshold for brain mask when --mask not provided (default -0.95).')
     args = parser.parse_args()
 
     # ---- config ----
@@ -341,8 +447,44 @@ def main():
 
     print(f"Volume shape: {input_vol.shape}")
 
+    # ---- brain mask selection ----
+    # We support TWO metric sets:
+    # 1) FreeSurfer mask (aparc+aseg / aseg) if available
+    # 2) User mask (e.g., seg-masks) OR threshold mask
+    masks = []
+
+    # FreeSurfer mask (preferred for evaluation)
+    if args.mask_root and args.subject:
+        fs_mask = resolve_freesurfer_mask(args.mask_root, args.subject, args.session)
+        if fs_mask is not None:
+            fs_mask_arr = load_mask(fs_mask, input_vol.shape)
+            masks.append(("FreeSurfer", fs_mask_arr, f"freesurfer mask: {fs_mask}"))
+        else:
+            print("WARNING: FreeSurfer mask not found; skipping FreeSurfer metrics.")
+    elif args.mask_root and not args.subject:
+        print("WARNING: --mask-root provided without --subject; skipping FreeSurfer metrics.")
+
+    # User-provided mask (seg-masks) or threshold fallback
+    if args.mask:
+        user_mask = load_mask(args.mask, input_vol.shape)
+        masks.append(("SegMask", user_mask, f"mask file: {args.mask}"))
+    else:
+        thresh_mask = make_brain_mask(input_vol, threshold=args.mask_threshold)
+        masks.append(("Threshold", thresh_mask, f"threshold: {args.mask_threshold}"))
+
+    # Primary mask for diagnostics/visuals: prefer FreeSurfer if present
+    if masks:
+        primary_label, brain_mask, mask_source = masks[0]
+    else:
+        brain_mask = make_brain_mask(input_vol, threshold=args.mask_threshold)
+        mask_source = f"threshold: {args.mask_threshold}"
+        primary_label = "Threshold"
+        masks = [(primary_label, brain_mask, mask_source)]
+
+    print(f"Brain mask source (primary): {mask_source}  (voxels={int(brain_mask.sum())})")
+
     # ---- intensity distribution diagnostic ----
-    brain_diag = input_vol > -0.95
+    brain_diag = brain_mask
     print(f"\n--- Intensity Diagnostic (brain voxels only) ---")
     print(f"  Input  3T :  min={input_vol[brain_diag].min():.3f}  max={input_vol[brain_diag].max():.3f}  mean={input_vol[brain_diag].mean():.3f}  std={input_vol[brain_diag].std():.3f}")
     if target_vol is not None:
@@ -360,7 +502,6 @@ def main():
     # ---- brain mask: remove background noise from prediction ----
     # The diffusion model generates noise outside the brain.  We mask it out
     # by copying the input's background values into the prediction.
-    brain_mask = (input_vol > -0.95)   # True inside brain
     pred_masked = pred_vol.copy()
     pred_masked[~brain_mask] = input_vol[~brain_mask]  # keep original BG
 
@@ -377,9 +518,9 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- save NIfTI ----
-    # Raw (unmasked) – for debugging
+    # Raw (unmasked) - for debugging
     nib.save(nib.Nifti1Image(pred_vol, affine), out_dir / 'predicted_7T_raw.nii.gz')
-    # Masked (clean) – primary output
+    # Masked (clean) - primary output
     nib.save(nib.Nifti1Image(pred_masked, affine), out_dir / 'predicted_7T.nii.gz')
     print(f"Saved: {out_dir / 'predicted_7T.nii.gz'}  (brain-masked)")
     print(f"Saved: {out_dir / 'predicted_7T_raw.nii.gz'}  (raw)")
@@ -390,31 +531,21 @@ def main():
 
     # ---- compute metrics ----
     if target_vol is not None:
-        # 1) Full-volume masked (primary metric – no BG noise)
-        ssim_masked, psnr_masked = compute_metrics(pred_masked, target_vol)
-
-        # 2) Brain-only: crop to tight bounding box of brain for SSIM
-        coords = np.argwhere(brain_mask)
-        lo = coords.min(axis=0)
-        hi = coords.max(axis=0) + 1
-        pred_bb = pred_masked[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
-        tgt_bb = target_vol[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
-        ssim_brain, psnr_brain = compute_metrics(pred_bb, tgt_bb)
-
-        # 3) Center 64³ crop (directly comparable to sample_diffusion.py)
-        D, H, W = input_vol.shape
-        cd, ch, cw = D // 2, H // 2, W // 2
-        rad = 32
-        crop_pred = pred_masked[cd-rad:cd+rad, ch-rad:ch+rad, cw-rad:cw+rad]
-        crop_tgt = target_vol[cd-rad:cd+rad, ch-rad:ch+rad, cw-rad:cw+rad]
-        ssim_crop, psnr_crop = compute_metrics(crop_pred, crop_tgt)
+        metrics_all = []
+        for label, mask_arr, source in masks:
+            print(f"Computing metrics for {label} ({source})")
+            metrics_all.append(
+                compute_metric_set(label, mask_arr, pred_vol, target_vol, input_vol)
+            )
 
         print("\n" + "=" * 60)
         print("METRICS (all use [0,1] range, data_range=1.0)")
         print("=" * 60)
-        print(f"  Full masked :  SSIM = {ssim_masked:.4f}   PSNR = {psnr_masked:.2f} dB")
-        print(f"  Brain bbox  :  SSIM = {ssim_brain:.4f}   PSNR = {psnr_brain:.2f} dB")
-        print(f"  Center 64³  :  SSIM = {ssim_crop:.4f}   PSNR = {psnr_crop:.2f} dB")
+        for m in metrics_all:
+            print(f"[{m['label']}]")
+            print(f"  Full masked :  SSIM = {m['ssim_masked']:.4f}   PSNR = {m['psnr_masked']:.2f} dB")
+            print(f"  Brain bbox  :  SSIM = {m['ssim_brain']:.4f}   PSNR = {m['psnr_brain']:.2f} dB")
+            print(f"  Center 64^3  :  SSIM = {m['ssim_crop']:.4f}   PSNR = {m['psnr_crop']:.2f} dB")
         print("=" * 60)
 
         # Save metrics to file
@@ -424,9 +555,12 @@ def main():
             f.write(f"Target:     {target_path}\n")
             f.write(f"Volume shape: {input_vol.shape}\n")
             f.write(f"Overlap: {args.overlap}  (stride={patch_size - args.overlap})\n\n")
-            f.write(f"Full masked :  SSIM = {ssim_masked:.4f}   PSNR = {psnr_masked:.2f} dB\n")
-            f.write(f"Brain bbox  :  SSIM = {ssim_brain:.4f}   PSNR = {psnr_brain:.2f} dB\n")
-            f.write(f"Center 64^3 :  SSIM = {ssim_crop:.4f}   PSNR = {psnr_crop:.2f} dB\n")
+            for m in metrics_all:
+                f.write(f"[{m['label']}]\n")
+                f.write(f"Full masked :  SSIM = {m['ssim_masked']:.4f}   PSNR = {m['psnr_masked']:.2f} dB\n")
+                f.write(f"Brain bbox  :  SSIM = {m['ssim_brain']:.4f}   PSNR = {m['psnr_brain']:.2f} dB\n")
+                f.write(f"Center 64^3 :  SSIM = {m['ssim_crop']:.4f}   PSNR = {m['psnr_crop']:.2f} dB\n")
+                f.write("\n")
 
     # ---- visualizations (use the MASKED prediction for clean images) ----
     print("\nSaving visualizations ...")

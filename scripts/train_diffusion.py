@@ -9,7 +9,7 @@ import yaml
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from pathlib import Path
 from tqdm import tqdm
 import time
@@ -353,7 +353,7 @@ def main():
                 f"(warm-up over {topo_warmup_steps} steps starting at step {stage3_end})"
             )
 
-        with autocast(enabled=use_amp):
+        with autocast(device_type=device.type, enabled=use_amp):
             loss_dict = diffusion(
                 x_start,
                 cond,

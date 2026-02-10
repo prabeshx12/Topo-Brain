@@ -207,8 +207,11 @@ class PairedPatchDataset(Dataset):
         # Total samples = pairs * patches_per_volume
         self._length = len(pairs) * self.config.patches_per_volume
         
-        # Determine if we have mask paths in pairs
-        self.has_masks = any(p.get("mask") for p in pairs)
+        # Determine if we have any segmentation/mask paths in pairs
+        self.has_masks = any(
+            p.get("seg") or p.get("tissue_mask_path") or p.get("mask")
+            for p in pairs
+        )
         if self.has_masks:
             logger.info("Found mask paths in pairs manifest. Real masks will be used for Topology Loss.")
         else:
