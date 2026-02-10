@@ -2,11 +2,18 @@
 # Diffusion Model Training with Blueprint-aligned hyperparameters
 
 dataset:
-  pairs_csv: "/kaggle/working/Topo-Brain/pairs_new.csv"
-  batch_size: 2  # Reduced for stability
+  pairs_csv: "pairs_new.csv"
+  batch_size: 8  # RTX 4090 (24GB) baseline with AMP
   patch_size: [64, 64, 64]
-  num_workers: 4
+  patches_per_volume: 32
+  min_brain_fraction: 0.1
+  num_workers: 6
   use_t2: false # Multi-modal input support (Section 6.3)
+  seed: 42
+  n_folds: 10
+  val_fold: 0
+  test_fold: 1
+  use_loocv: true
 
 model:
   in_channels: 1
@@ -25,31 +32,34 @@ diffusion:
   loss_type: "l1"
 
 training:
-  lr: 1e-4  # Standard starting LR for training from scratch
+  lr: 1e-4  # Standard starting LR
+  lr_decay_step: 120000  # Start refinement at 80% of 150k steps
+  lr_decay_factor: 0.2  # Drops to 2e-5 for final precision
   weight_decay: 1e-4
   grad_clip: 1.0  # Gradient clipping for stability
-  n_iters: 200000
+  n_iters: 150000
   save_freq: 5000
   val_freq: 5000
   log_freq: 50
+  use_amp: true
   
   # EMA settings
   ema_decay: 0.9999
   ema_start: 2000
   
 stages:
-  # Adjusted Curriculum for Fresh Training with High-Quality Masks
-  stage1_end: 5000    # Diffusion + pixel loss (rapid structure learning)
-  stage2_end: 20000   # Introduce Perceptual Loss early
-  stage3_end: 50000   # Introduce Topology Loss (Masks) early!
-  # After 50k: Full multi-task learning for remaining 150k steps
+  # Rapid Curriculum (BS=8): Prevents the "Late Introduction" hallucination bias
+  stage1_end: 3000    # Diffusion + low pixel only
+  stage2_end: 12000   # Full pixel loss
+  stage3_end: 30000   # Perceptual warmup active
+  # Steps 30k -> 150k: full anatomy-guided refinement
 
 # Blueprint-aligned loss weights (CRITICAL FOR CONVERGENCE)
 loss_weights:
   lambda_pixel: 1.0     # PRIMARY reconstruction loss (blueprint requirement)
-  lambda_percep: 0.3    # Moderate perceptual guidance
+  lambda_percep: 0.25   # Moderate perceptual guidance
   lambda_topo: 0.2      # Anatomical structure preservation
   
-  # Warm-up configuration
-  topo_warmup_steps: 25000
-  percep_warmup_steps: 10000  # Reduced to activate earlier 
+  # Warm-up configuration (Synchronized with BS=8 velocity)
+  topo_warmup_steps: 25000    # Gradual topology ramp (30k -> 55k)
+  percep_warmup_steps: 8000   # Perceptual ramp (12k -> 20k)

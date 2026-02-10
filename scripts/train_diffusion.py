@@ -9,6 +9,7 @@ import yaml
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.cuda.amp import autocast, GradScaler
 from pathlib import Path
 from tqdm import tqdm
 import time
@@ -19,7 +20,7 @@ sys.path.append(os.getcwd())
 
 from src.model import AnatomyGuidedUNet
 from src.diffusion import GaussianDiffusion
-from src.synthesis_dataset import create_synthesis_dataloaders, load_pairs_manifest
+from src.synthesis_dataset import create_synthesis_dataloaders, load_pairs_manifest, PatchConfig, SplitConfig
 from src.utils import setup_logging, TensorBoardLogger
 
 # ... imports ...
@@ -148,7 +149,29 @@ def main():
                         if 'seg' in p and p['seg']: p['seg'] = str(mask_root / p['seg'])
                         elif 'mask' in p and p['mask']: p['mask'] = str(mask_root / p['mask'])
                 
-                train_loader, _, _ = create_synthesis_dataloaders(pairs, batch_size=config["dataset"].get("batch_size", 4))
+                dataset_cfg = config.get("dataset", {})
+                patch_cfg = PatchConfig(
+                    patch_size=tuple(dataset_cfg.get("patch_size", (64, 64, 64))),
+                    patches_per_volume=int(dataset_cfg.get("patches_per_volume", 32)),
+                    min_brain_fraction=float(dataset_cfg.get("min_brain_fraction", 0.1)),
+                    use_t2=bool(dataset_cfg.get("use_t2", False)),
+                    seed=int(dataset_cfg.get("seed", 42)),
+                )
+                split_cfg = SplitConfig(
+                    n_folds=int(dataset_cfg.get("n_folds", 10)),
+                    val_fold=int(dataset_cfg.get("val_fold", 0)),
+                    test_fold=int(dataset_cfg.get("test_fold", 1)),
+                    use_loocv=bool(dataset_cfg.get("use_loocv", True)),
+                    seed=int(dataset_cfg.get("seed", 42)),
+                )
+                train_loader, _, _ = create_synthesis_dataloaders(
+                    pairs,
+                    config=patch_cfg,
+                    split_config=split_cfg,
+                    batch_size=int(dataset_cfg.get("batch_size", 4)),
+                    num_workers=int(dataset_cfg.get("num_workers", 4)),
+                    val_fold=int(dataset_cfg.get("val_fold", 0)),
+                )
                 train_iter = cycle(train_loader)
                 has_data = True
             else:
@@ -253,6 +276,10 @@ def main():
             logger.error(f"Checkpoint not found at {args.resume}")
             raise FileNotFoundError(f"Checkpoint not found at {args.resume}")
 
+    # Mixed precision
+    use_amp = bool(config["training"].get("use_amp", True))
+    scaler = GradScaler(enabled=use_amp)
+
     # Training Loop
     n_iters = 10 if args.dry_run else config["training"]["n_iters"]
     
@@ -305,7 +332,7 @@ def main():
             lambda_pixel, lambda_topo = final_lambda_pixel, 0.0
         else:
             # Stage 4: Full curriculum with gradual topology warm-up
-            # Since seg head was re-initialized at 100k, we need to warm it up slowly
+            # Topology loss warm-up starts at stage3_end (config-driven)
             steps_into_stage4 = step - stage3_end
             
             if steps_into_stage4 < topo_warmup_steps:
@@ -321,16 +348,38 @@ def main():
             logger.info(f"Stage 4 started - Loss weights from config:")
             logger.info(f"  lambda_pixel: {final_lambda_pixel}")
             logger.info(f"  lambda_percep: {final_lambda_percep}")
-            logger.info(f"  lambda_topo: {final_lambda_topo} (will warm up over {topo_warmup_steps} steps)")
+            logger.info(
+                f"  lambda_topo: {final_lambda_topo} "
+                f"(warm-up over {topo_warmup_steps} steps starting at step {stage3_end})"
+            )
 
-        loss_dict = diffusion(x_start, cond, seg_target, lambda_pixel=lambda_pixel, lambda_percep=lambda_percep, lambda_topo=lambda_topo)
+        with autocast(enabled=use_amp):
+            loss_dict = diffusion(
+                x_start,
+                cond,
+                seg_target,
+                lambda_pixel=lambda_pixel,
+                lambda_percep=lambda_percep,
+                lambda_topo=lambda_topo,
+            )
         
-        loss_dict["loss"].backward()
+        scaler.scale(loss_dict["loss"]).backward()
         
         # Gradient clipping for stability
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         
-        optimizer.step()
+        # Learning Rate Decay (Manual Scheduler)
+        lr_decay_step = config["training"].get("lr_decay_step", 0)
+        if lr_decay_step > 0 and step == lr_decay_step:
+            lr_decay_factor = config["training"].get("lr_decay_factor", 0.5)
+            new_lr = config["training"]["lr"] * lr_decay_factor
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = new_lr
+            logger.info(f"Step {step}: Learning rate decayed from {config['training']['lr']} to {new_lr}")
+
+        scaler.step(optimizer)
+        scaler.update()
         ema.step_ema(ema_model, model)
         
         # Log to TensorBoard (all loss components)
