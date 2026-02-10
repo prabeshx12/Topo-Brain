@@ -268,7 +268,7 @@ class PairedPatchDataset(Dataset):
                 alt_path = None
                 
             if alt_path and alt_path.exists():
-                logger.info(f"File {path} not found, using {alt_path} instead.")
+                logger.debug(f"File {path} not found, using {alt_path} instead.")
                 path = alt_path
             else:
                  # Raise original error if fallback fails
