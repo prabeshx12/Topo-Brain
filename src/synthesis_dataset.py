@@ -328,13 +328,13 @@ class PairedPatchDataset(Dataset):
                 "target_7t": target_7t,
                 "mask": mask,
             }
-                if "input_3t_t2" in pair and self.config.use_t2:
-                    # Load T2 if configured and available
-                    t2_path = pair["input_3t_t2"]
-                    if t2_path and Path(t2_path).exists():
-                        cache_entry["input_3t_t2"] = self._load_volume(Path(t2_path), expect_normalized=True)
-                    else:
-                        logger.warning(f"T2 specified but not found for {cache_key}: {t2_path}")
+            if "input_3t_t2" in pair and self.config.use_t2:
+                # Load T2 if configured and available
+                t2_path = pair["input_3t_t2"]
+                if t2_path and Path(t2_path).exists():
+                    cache_entry["input_3t_t2"] = self._load_volume(Path(t2_path), expect_normalized=True)
+                else:
+                    logger.warning(f"T2 specified but not found for {cache_key}: {t2_path}")
             
             self._cache[cache_key] = cache_entry
         

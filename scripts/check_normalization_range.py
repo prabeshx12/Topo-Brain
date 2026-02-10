@@ -36,17 +36,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Check normalization range for NIfTI volumes in pairs CSV.")
     parser.add_argument("--pairs", type=str, default=None, help="Pairs CSV (default: pairs_new.csv or pairs.csv)")
     parser.add_argument("--num", type=int, default=3, help="Number of rows to inspect (default: 3)")
+    parser.add_argument("--root", type=str, default=".", help="Root directory for paths inside pairs CSV (default: current directory)")
     args = parser.parse_args()
+
+    root_dir = Path(args.root).expanduser().resolve()
 
     if args.pairs:
         pairs_path = Path(args.pairs)
     else:
         pairs_path = Path("pairs_new.csv") if Path("pairs_new.csv").exists() else Path("pairs.csv")
-
+    
+    pairs_path = pairs_path.resolve()
+    
     if not pairs_path.exists():
         raise FileNotFoundError(f"Pairs CSV not found: {pairs_path}")
-
-    print(f"Using pairs file: {pairs_path.resolve()}")
 
     rows = []
     with pairs_path.open(newline="") as f:
@@ -65,7 +68,7 @@ def main() -> None:
             if not path_str:
                 print(f"{subj} {label}: missing")
                 continue
-            p = resolve_nii_path(path_str)
+            p = resolve_nii_path(root_dir/path_str)
             if not p:
                 print(f"{subj} {label}: not found -> {path_str}")
                 continue
