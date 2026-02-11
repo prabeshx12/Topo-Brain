@@ -259,6 +259,14 @@ def main():
     # Gradient clipping value
     grad_clip = config["training"].get("grad_clip", 1.0)
 
+    # Mixed precision
+    use_amp = bool(config["training"].get("use_amp", True))
+    scaler = GradScaler(enabled=use_amp)
+
+    # Skip statistics for stability monitoring
+    skipped_steps = 0
+    attempted_steps = 0
+
     # Resume from checkpoint
     if args.resume:
         if os.path.exists(args.resume):
@@ -297,6 +305,12 @@ def main():
                         optimizer.load_state_dict(checkpoint['optimizer'])
                     except Exception as e:
                         logger.warning(f"Optimizer state could not be loaded: {e}. Starting with fresh optimizer state.")
+            if 'scaler' in checkpoint and use_amp:
+                try:
+                    scaler.load_state_dict(checkpoint['scaler'])
+                    logger.info("Loaded AMP GradScaler state from checkpoint.")
+                except Exception as e:
+                    logger.warning(f"GradScaler state could not be loaded: {e}. Starting with fresh scaler state.")
             
             if 'step' in checkpoint:
                 start_step = checkpoint['step'] + 1
@@ -306,14 +320,11 @@ def main():
             logger.error(f"Checkpoint not found at {args.resume}")
             raise FileNotFoundError(f"Checkpoint not found at {args.resume}")
 
-    # Mixed precision
-    use_amp = bool(config["training"].get("use_amp", True))
-    scaler = GradScaler(enabled=use_amp)
-
     # Training Loop
     n_iters = 10 if args.dry_run else config["training"]["n_iters"]
     
     for step in tqdm(range(start_step, n_iters), initial=start_step, total=n_iters):
+        attempted_steps += 1
         optimizer.zero_grad()
         
         # Batch Data
@@ -416,6 +427,7 @@ def main():
             if isinstance(v, torch.Tensor) and not torch.isfinite(v).all()
         ]
         if non_finite_keys:
+            skipped_steps += 1
             logger.warning(
                 f"Step {step}: non-finite losses in {non_finite_keys} "
                 f"(diff={loss_dict['loss_diff'].item()}, "
@@ -438,6 +450,7 @@ def main():
             for p in model.parameters() if p.grad is not None
         )
         if has_nan_grad:
+            skipped_steps += 1
             logger.warning(f"Step {step}: NaN/Inf gradient detected - skipping optimizer step")
             optimizer.zero_grad()
             scaler.update()
@@ -479,16 +492,20 @@ def main():
                 "lambda_pixel": lambda_pixel,
                 "lambda_percep": lambda_percep,
                 "lambda_topo": lambda_topo,
+                "skipped_steps": skipped_steps,
+                "skip_ratio": (skipped_steps / attempted_steps) if attempted_steps > 0 else 0.0,
                 "step": step
             })
         
         if step % 50 == 0:
             # Comprehensive loss logging to console
+            skip_ratio = (skipped_steps / attempted_steps) if attempted_steps > 0 else 0.0
             tqdm.write(
                 f"Step {step}: Total={loss_dict['loss'].item():.4f} | "
                 f"Diff={loss_dict['loss_diff'].item():.4f} Pixel={loss_dict['loss_pixel'].item():.4f} "
                 f"Percep={loss_dict['loss_vgg'].item():.4f} Topo={loss_dict['loss_topo'].item():.4f} | "
-                f"λ=({lambda_pixel:.2f},{lambda_percep:.2f},{lambda_topo:.2f})"
+                f"lambda=({lambda_pixel:.2f},{lambda_percep:.2f},{lambda_topo:.2f}) | "
+                f"skip={skipped_steps}/{attempted_steps} ({100.0 * skip_ratio:.2f}%)"
             )
 
         # Saving
@@ -504,6 +521,7 @@ def main():
                 'model': model.state_dict(),
                 'ema': ema_model.state_dict(),
                 'optimizer': optimizer.state_dict(),
+                'scaler': scaler.state_dict(),
                 'config': config,
             }
             
@@ -517,7 +535,11 @@ def main():
             torch.save(ckpt_data, latest_path)
             logger.info(f"Saved latest checkpoint to {latest_path}")
 
-    logger.info("Training Complete.")
+    final_skip_ratio = (skipped_steps / attempted_steps) if attempted_steps > 0 else 0.0
+    logger.info(
+        f"Training Complete. skipped_steps={skipped_steps}, "
+        f"attempted_steps={attempted_steps}, skip_ratio={100.0 * final_skip_ratio:.2f}%"
+    )
 
 if __name__ == "__main__":
     main()

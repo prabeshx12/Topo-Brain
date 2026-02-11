@@ -10,9 +10,10 @@ Full-volume evaluation of a single checkpoint with tiled patch inference.
 
 Usage:
     python scripts/evaluate_full_volume.py \
-        --checkpoint "/path/to/checkpoint_141000.pt" \
-        --input "/path/to/sub-01_3T_preprocessed.nii.gz" \
-        --target "/path/to/sub-01_7T_preprocessed.nii.gz" \
+        --checkpoint "output/checkpoint_75000/checkpoint_75000.pt" \
+        --subject "sub-01" \
+        --data-root "/path/to/data" \
+        --masks-root "/path/to/masks" \
         --output_dir "results/sub-01_eval"
 """
 import os
@@ -31,7 +32,8 @@ import matplotlib.pyplot as plt
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-os.chdir(project_root)
+# Do not change CWD to project_root here to allow relative paths from execution dir
+# os.chdir(project_root) 
 
 from src.diffusion import GaussianDiffusion
 from src.model import AnatomyGuidedUNet
@@ -356,7 +358,7 @@ def resolve_paths_from_csv(pairs_csv, subject):
         reader = csv.DictReader(f)
         for row in reader:
             if row.get('subject', '') == subject:
-                return row.get('input_3t', row.get('input')), row.get('target_7t', row.get('target'))
+                return row.get('input_3t', row.get('input')), row.get('target_7t', row.get('target')), row.get('seg')
     raise ValueError(f"Subject '{subject}' not found in {pairs_csv}")
 
 
@@ -366,22 +368,25 @@ def main():
     parser.add_argument('--config', type=str, default='configs/train_diffusion.yaml')
     parser.add_argument('--overlap', type=int, default=32, help='Patch overlap for tiling (default 32 = 50%%)')
     parser.add_argument('--output_dir', type=str, default='results/full_volume_eval')
+    parser.add_argument('--data-root', type=str, default=None, help='Base directory for MRI volumes')
+    parser.add_argument('--masks-root', type=str, default=None, help='Base directory for segmentation masks')
 
-    # Option A: direct paths
+    # Option A: direct paths (relative to data/masks root if provided)
     parser.add_argument('--input', type=str, default=None, help='3T preprocessed NIfTI')
     parser.add_argument('--target', type=str, default=None, help='7T ground truth NIfTI')
+    parser.add_argument('--mask', type=str, default=None, help='Explicitly point to mask file')
 
     # Option B: resolve from pairs CSV
     parser.add_argument('--subject', type=str, default=None,
                         help='Subject ID (e.g. sub-01).  Looks up paths from --pairs_csv.')
     parser.add_argument('--pairs_csv', type=str, default=None,
                         help='Pairs CSV.  Defaults to dataset.pairs_csv from config.')
-    parser.add_argument('--mask', type=str, default=None,
-                        help='Optional brain mask NIfTI (binary). If not provided, uses threshold mask.')
-    parser.add_argument('--mask-root', type=str, default=None,
+    
+    # Advanced mask options
+    parser.add_argument('--fs-mask-root', type=str, default=None,
                         help='Root with FreeSurfer masks (aparc+aseg/aseg). Requires --subject.')
     parser.add_argument('--session', type=str, default=None,
-                        help='Session ID (e.g. ses-1) when using --subject and --mask-root.')
+                        help='Session ID (e.g. ses-1) when using --subject and --fs-mask-root.')
     parser.add_argument('--mask-threshold', type=float, default=-0.95,
                         help='Threshold for brain mask when --mask not provided (default -0.95).')
     args = parser.parse_args()
@@ -390,16 +395,35 @@ def main():
     with open(args.config) as f:
         config = yaml.safe_load(f)
 
-    # ---- resolve input / target paths ----
+    # ---- resolve input / target / mask paths ----
+    seg_csv_path = None
     if args.subject:
         csv_path = args.pairs_csv or config['dataset']['pairs_csv']
-        input_path, target_path = resolve_paths_from_csv(csv_path, args.subject)
+        input_path, target_path, seg_csv_path = resolve_paths_from_csv(csv_path, args.subject)
+        
+        # Prepend roots if provided
+        if args.data_root:
+            dr = Path(args.data_root)
+            input_path = str(dr / input_path)
+            if target_path:
+                target_path = str(dr / target_path)
+            
         print(f"Resolved from CSV for {args.subject}:")
         print(f"  input  = {input_path}")
         print(f"  target = {target_path}")
+        
+        if not args.mask and seg_csv_path and args.masks_root:
+            args.mask = str(Path(args.masks_root) / seg_csv_path)
+            print(f"  mask (from CSV) = {args.mask}")
+            
     elif args.input:
         input_path = args.input
         target_path = args.target
+        if args.data_root:
+            dr = Path(args.data_root)
+            input_path = str(dr / input_path)
+            if target_path:
+                target_path = str(dr / target_path)
     else:
         parser.error("Provide either --input or --subject")
 
@@ -454,15 +478,13 @@ def main():
     masks = []
 
     # FreeSurfer mask (preferred for evaluation)
-    if args.mask_root and args.subject:
-        fs_mask = resolve_freesurfer_mask(args.mask_root, args.subject, args.session)
+    if args.fs_mask_root and args.subject:
+        fs_mask = resolve_freesurfer_mask(args.fs_mask_root, args.subject, args.session)
         if fs_mask is not None:
             fs_mask_arr = load_mask(fs_mask, input_vol.shape)
             masks.append(("FreeSurfer", fs_mask_arr, f"freesurfer mask: {fs_mask}"))
         else:
             print("WARNING: FreeSurfer mask not found; skipping FreeSurfer metrics.")
-    elif args.mask_root and not args.subject:
-        print("WARNING: --mask-root provided without --subject; skipping FreeSurfer metrics.")
 
     # User-provided mask (seg-masks) or threshold fallback
     if args.mask:
@@ -483,14 +505,6 @@ def main():
 
     print(f"Brain mask source (primary): {mask_source}  (voxels={int(brain_mask.sum())})")
 
-    # ---- intensity distribution diagnostic ----
-    brain_diag = brain_mask
-    print(f"\n--- Intensity Diagnostic (brain voxels only) ---")
-    print(f"  Input  3T :  min={input_vol[brain_diag].min():.3f}  max={input_vol[brain_diag].max():.3f}  mean={input_vol[brain_diag].mean():.3f}  std={input_vol[brain_diag].std():.3f}")
-    if target_vol is not None:
-        print(f"  Target 7T :  min={target_vol[brain_diag].min():.3f}  max={target_vol[brain_diag].max():.3f}  mean={target_vol[brain_diag].mean():.3f}  std={target_vol[brain_diag].std():.3f}")
-    print(f"---")
-
     # ---- full-volume tiled inference ----
     patch_size = config['dataset']['patch_size'][0]  # 64
     pred_vol, seg_vol = tiled_inference(
@@ -500,33 +514,18 @@ def main():
     )
 
     # ---- brain mask: remove background noise from prediction ----
-    # The diffusion model generates noise outside the brain.  We mask it out
-    # by copying the input's background values into the prediction.
     pred_masked = pred_vol.copy()
     pred_masked[~brain_mask] = input_vol[~brain_mask]  # keep original BG
-
-    print(f"\n--- Post-Inference Intensity Diagnostic (brain voxels only) ---")
-    print(f"  Pred   7T :  min={pred_masked[brain_mask].min():.3f}  max={pred_masked[brain_mask].max():.3f}  mean={pred_masked[brain_mask].mean():.3f}  std={pred_masked[brain_mask].std():.3f}")
-    if target_vol is not None:
-        print(f"  Target 7T :  min={target_vol[brain_mask].min():.3f}  max={target_vol[brain_mask].max():.3f}  mean={target_vol[brain_mask].mean():.3f}  std={target_vol[brain_mask].std():.3f}")
-        mean_diff = pred_masked[brain_mask].mean() - target_vol[brain_mask].mean()
-        print(f"  Mean shift:  {mean_diff:+.3f}  ({'pred brighter' if mean_diff > 0 else 'pred darker'})")
-    print(f"---")
 
     # ---- output directory ----
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- save NIfTI ----
-    # Raw (unmasked) - for debugging
     nib.save(nib.Nifti1Image(pred_vol, affine), out_dir / 'predicted_7T_raw.nii.gz')
-    # Masked (clean) - primary output
     nib.save(nib.Nifti1Image(pred_masked, affine), out_dir / 'predicted_7T.nii.gz')
+    nib.save(nib.Nifti1Image(seg_vol, affine), out_dir / 'predicted_seg.nii.gz')
     print(f"Saved: {out_dir / 'predicted_7T.nii.gz'}  (brain-masked)")
-    print(f"Saved: {out_dir / 'predicted_7T_raw.nii.gz'}  (raw)")
-
-    seg_nii = nib.Nifti1Image(seg_vol, affine)
-    nib.save(seg_nii, out_dir / 'predicted_seg.nii.gz')
     print(f"Saved: {out_dir / 'predicted_seg.nii.gz'}")
 
     # ---- compute metrics ----
@@ -539,30 +538,12 @@ def main():
             )
 
         print("\n" + "=" * 60)
-        print("METRICS (all use [0,1] range, data_range=1.0)")
+        print("METRICS")
         print("=" * 60)
         for m in metrics_all:
-            print(f"[{m['label']}]")
-            print(f"  Full masked :  SSIM = {m['ssim_masked']:.4f}   PSNR = {m['psnr_masked']:.2f} dB")
-            print(f"  Brain bbox  :  SSIM = {m['ssim_brain']:.4f}   PSNR = {m['psnr_brain']:.2f} dB")
-            print(f"  Center 64^3  :  SSIM = {m['ssim_crop']:.4f}   PSNR = {m['psnr_crop']:.2f} dB")
-        print("=" * 60)
+            print(f"[{m['label']}] SSIM={m['ssim_masked']:.4f} PSNR={m['psnr_masked']:.2f}")
 
-        # Save metrics to file
-        with open(out_dir / 'metrics.txt', 'w') as f:
-            f.write(f"Checkpoint: {args.checkpoint}\n")
-            f.write(f"Input:      {input_path}\n")
-            f.write(f"Target:     {target_path}\n")
-            f.write(f"Volume shape: {input_vol.shape}\n")
-            f.write(f"Overlap: {args.overlap}  (stride={patch_size - args.overlap})\n\n")
-            for m in metrics_all:
-                f.write(f"[{m['label']}]\n")
-                f.write(f"Full masked :  SSIM = {m['ssim_masked']:.4f}   PSNR = {m['psnr_masked']:.2f} dB\n")
-                f.write(f"Brain bbox  :  SSIM = {m['ssim_brain']:.4f}   PSNR = {m['psnr_brain']:.2f} dB\n")
-                f.write(f"Center 64^3 :  SSIM = {m['ssim_crop']:.4f}   PSNR = {m['psnr_crop']:.2f} dB\n")
-                f.write("\n")
-
-    # ---- visualizations (use the MASKED prediction for clean images) ----
+    # ---- visualizations ----
     print("\nSaving visualizations ...")
     save_multi_view(input_vol, pred_masked, target_vol, out_dir, tag="eval")
     print(f"All outputs saved to: {out_dir}/")
