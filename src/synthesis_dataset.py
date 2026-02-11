@@ -259,6 +259,23 @@ class PairedPatchDataset(Dataset):
     def __len__(self) -> int:
         return self._length
     
+    def _resolve_path(self, path_str: str) -> Optional[Path]:
+        """Resolve a NIfTI path, trying both .nii and .nii.gz extensions."""
+        p = Path(path_str)
+        if p.exists():
+            return p
+        # Try alternate extension
+        if p.suffix == '.gz':
+            alt = p.with_suffix('').with_suffix('.nii')  # .nii.gz -> .nii
+        elif p.suffix == '.nii':
+            alt = p.with_suffix('.nii.gz')  # .nii -> .nii.gz
+        else:
+            return None
+        if alt.exists():
+            logger.debug(f"Resolved {p} -> {alt}")
+            return alt
+        return None
+
     def _load_volume(self, path: Path, expect_normalized: bool = True) -> np.ndarray:
         """Load a NIfTI volume with extension fallback."""
         if not path.exists():
@@ -312,8 +329,9 @@ class PairedPatchDataset(Dataset):
         # Load mask: use tissue mask if available, fallback to brain mask
         # Priority: seg (manual/freesurfer) > tissue_mask_path (heuristic) > mask (binary)
         mask_path = pair.get("seg") or pair.get("tissue_mask_path") or pair.get("mask")
-        if mask_path and Path(mask_path).exists():
-            mask = self._load_volume(Path(mask_path), expect_normalized=False)
+        resolved_mask = self._resolve_path(mask_path) if mask_path else None
+        if resolved_mask is not None:
+            mask = self._load_volume(resolved_mask, expect_normalized=False)
             # Ensure it is uint8 and handle alignment (no more binarization threshold)
             mask = mask.astype(np.uint8)
         else:

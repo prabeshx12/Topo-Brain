@@ -294,11 +294,28 @@ def main():
             # Ensure segmentation target is on the correct device
             # synthesis_dataset.py now guarantees 'seg' key exists (even if zeros)
             seg_target = batch['seg'].to(device)
-            if len(seg_target.shape) == 5: seg_target = seg_target.squeeze(1)
+            if len(seg_target.shape) == 5:
+                seg_target = seg_target.squeeze(1)
         else:
             x_start = torch.randn(2, 1, 64, 64, 64).to(device)
             cond = torch.randn(2, 1, 64, 64, 64).to(device)
             seg_target = torch.randint(0, 3, (2, 64, 64, 64)).to(device)
+
+        # Guard segmentation labels against out-of-range values from masks.
+        # Topology CE expects class ids in [0, num_classes - 1].
+        num_classes = int(config["model"].get("num_classes", 4))
+        invalid_mask = (seg_target < 0) | (seg_target >= num_classes)
+        if invalid_mask.any():
+            invalid_count = int(invalid_mask.sum().item())
+            max_label = int(seg_target.max().item())
+            min_label = int(seg_target.min().item())
+            logger.warning(
+                f"Step {step}: seg_target has {invalid_count} invalid voxels "
+                f"(label range [{min_label}, {max_label}], num_classes={num_classes}). "
+                "Remapping invalid labels to background."
+            )
+            seg_target = seg_target.clone()
+            seg_target[invalid_mask] = 0
 
         # Curriculum Stages based on config
         stages = config.get("stages", {})
@@ -362,11 +379,40 @@ def main():
                 lambda_percep=lambda_percep,
                 lambda_topo=lambda_topo,
             )
+
+        # Non-finite loss guard before backward
+        non_finite_keys = [
+            k for k, v in loss_dict.items()
+            if isinstance(v, torch.Tensor) and not torch.isfinite(v).all()
+        ]
+        if non_finite_keys:
+            logger.warning(
+                f"Step {step}: non-finite losses in {non_finite_keys} "
+                f"(diff={loss_dict['loss_diff'].item()}, "
+                f"pixel={loss_dict['loss_pixel'].item()}, "
+                f"percep={loss_dict['loss_vgg'].item()}, "
+                f"topo={loss_dict['loss_topo'].item()}). Skipping step."
+            )
+            optimizer.zero_grad()
+            scaler.update()
+            continue
         
         scaler.scale(loss_dict["loss"]).backward()
         
         # Gradient clipping for stability
         scaler.unscale_(optimizer)
+        
+        # NaN Safety: Skip optimizer step if any gradient is NaN/Inf
+        has_nan_grad = any(
+            torch.isnan(p.grad).any() or torch.isinf(p.grad).any()
+            for p in model.parameters() if p.grad is not None
+        )
+        if has_nan_grad:
+            logger.warning(f"Step {step}: NaN/Inf gradient detected - skipping optimizer step")
+            optimizer.zero_grad()
+            scaler.update()
+            continue
+        
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         
         # Learning Rate Decay (Manual Scheduler)

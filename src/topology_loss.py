@@ -89,6 +89,13 @@ class EdgeAwareTopologyLoss(nn.Module):
         Args:
             mask: Optional [B] binary mask for timestep gating
         """
+        # Force float32 to prevent AMP float16 overflow in cross-entropy
+        pred_logits = pred_logits.float()
+        target_mask = target_mask.long()
+        
+        # Clamp logits to prevent extreme values under AMP
+        pred_logits = torch.clamp(pred_logits, -50.0, 50.0)
+        
         # 1. Weighted cross-entropy loss
         loss_ce = F.cross_entropy(pred_logits, target_mask, weight=self.class_weights, reduction='none')
         

@@ -322,6 +322,21 @@ class GaussianDiffusion(nn.Module):
             loss_topo = self._compute_topology_loss(seg_pred, seg_target, mask=None)
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
+        
+        # NaN Guard: Replace any NaN loss with 0.0 to prevent poisoning
+        # This is a safety net — the root cause (AMP overflow) is fixed in topology_loss.py
+        def _safe(loss, name=""):
+            # Handle scalar or tensor losses robustly under AMP.
+            if not torch.isfinite(loss).all():
+                safe = torch.zeros((), device=loss.device, dtype=loss.dtype)
+                safe.requires_grad_(True)
+                return safe
+            return loss
+        
+        loss_diff = _safe(loss_diff, "diff")
+        loss_pixel = _safe(loss_pixel, "pixel")
+        loss_vgg = _safe(loss_vgg, "percep")
+        loss_topo = _safe(loss_topo, "topo")
             
         # Total Weighted Loss
         loss_total = loss_diff + lambda_pixel * loss_pixel + lambda_percep * loss_vgg + lambda_topo * loss_topo
