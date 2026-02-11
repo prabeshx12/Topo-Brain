@@ -149,6 +149,36 @@ def main():
                         if 'seg' in p and p['seg']: p['seg'] = str(mask_root / p['seg'])
                         elif 'mask' in p and p['mask']: p['mask'] = str(mask_root / p['mask'])
                 
+                # Validate seg mask paths at startup
+                logger.info("=" * 60)
+                logger.info("Seg Mask Path Validation:")
+                _mf, _mm = 0, 0
+                for p in pairs:
+                    _subj = p.get("subject", "?")
+                    _seg = p.get("seg", "")
+                    if _seg:
+                        _sp = Path(_seg)
+                        if _sp.exists():
+                            logger.info("  FOUND  %s: %s", _subj, _sp)
+                            _mf += 1
+                        else:
+                            _alt = None
+                            if _sp.suffix == ".gz":
+                                _alt = _sp.with_suffix("").with_suffix(".nii")
+                            elif _sp.suffix == ".nii":
+                                _alt = _sp.with_suffix(".nii.gz")
+                            if _alt and _alt.exists():
+                                logger.info("  FOUND  %s: %s (alt ext)", _subj, _alt)
+                                _mf += 1
+                            else:
+                                logger.warning("  MISS   %s: %s", _subj, _sp)
+                                _mm += 1
+                    else:
+                        logger.warning("  MISS   %s: no seg in CSV", _subj)
+                        _mm += 1
+                logger.info("Masks: %d found, %d missing (fallback=binary)", _mf, _mm)
+                logger.info("=" * 60)
+
                 dataset_cfg = config.get("dataset", {})
                 patch_cfg = PatchConfig(
                     patch_size=tuple(dataset_cfg.get("patch_size", (64, 64, 64))),
@@ -463,32 +493,28 @@ def main():
 
         # Saving
         if step > 0 and step % config["training"]["save_freq"] == 0:
-            if args.output:
-                checkpoint_dir = Path(args.output) / "checkpoints"
-            else:
-                # Default: save to checkpoints/ in current working directory
-                checkpoint_dir = Path("checkpoints")
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            output_root = Path(args.output) if args.output else Path(".")
             
-            save_path = checkpoint_dir / f"checkpoint_{step}.pt"
-            torch.save({
-                'step': step,
-                'model': model.state_dict(),
-                'ema': ema_model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'config': config, # Save config for self-contained inference
-            }, save_path)
-            logger.info(f"Saved checkpoint to {save_path}")
+            # Save numbered checkpoint in its own subdirectory
+            step_dir = output_root / f"checkpoint_{step}"
+            step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Also save as latest
-            latest_path = checkpoint_dir / "checkpoint_latest.pt"
-            torch.save({
+            ckpt_data = {
                 'step': step,
                 'model': model.state_dict(),
                 'ema': ema_model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'config': config,
-            }, latest_path)
+            }
+            
+            save_path = step_dir / f"checkpoint_{step}.pt"
+            torch.save(ckpt_data, save_path)
+            logger.info(f"Saved checkpoint to {save_path}")
+            
+            # Also save as latest (in output root for easy discovery)
+            output_root.mkdir(parents=True, exist_ok=True)
+            latest_path = output_root / "checkpoint_latest.pt"
+            torch.save(ckpt_data, latest_path)
             logger.info(f"Saved latest checkpoint to {latest_path}")
 
     logger.info("Training Complete.")
