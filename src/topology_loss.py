@@ -76,8 +76,8 @@ class EdgeAwareTopologyLoss(nn.Module):
         grad_y = F.conv3d(mask_float, self.sobel_y, padding=1)
         grad_z = F.conv3d(mask_float, self.sobel_z, padding=1)
         
-        # Compute gradient magnitude
-        edge_map = torch.sqrt(grad_x**2 + grad_y**2 + grad_z**2 + 1e-8)
+        # Compute gradient magnitude (Force float32 for geometric precision)
+        edge_map = torch.sqrt(grad_x.float()**2 + grad_y.float()**2 + grad_z.float()**2 + 1e-8)
         
         # Threshold to binary
         edge_map = (edge_map > 0.1).float()
@@ -134,8 +134,13 @@ class EdgeAwareTopologyLoss(nn.Module):
         pred_class = torch.argmax(pred_probs, dim=1)
         pred_edges = self.detect_edges(pred_class).squeeze(1)
         
-        intersection = (pred_edges * curr_edge_map).sum()
-        union = pred_edges.sum() + curr_edge_map.sum()
+        # Force float32 for sums to prevent AMP float16 overflow (max 65,504)
+        # A 64x64x64 patch has 262,144 voxels. Any sum > 25% of the patch will overflow float16.
+        edge_map_f32 = curr_edge_map.float()
+        pred_edges_f32 = pred_edges.float()
+        
+        intersection = (pred_edges_f32 * edge_map_f32).sum()
+        union = pred_edges_f32.sum() + edge_map_f32.sum()
         loss_boundary = 1.0 - (2.0 * intersection + 1e-8) / (union + 1e-8)
         
         loss_total = loss_weighted + 0.5 * loss_boundary
