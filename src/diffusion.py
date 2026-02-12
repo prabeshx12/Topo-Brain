@@ -317,8 +317,13 @@ class GaussianDiffusion(nn.Module):
             
         # 4. Topology Loss (Segmentation)
         if seg_target is not None and lambda_topo > 0:
-            # Safely compute topology loss via helper (handles initialization)
-            loss_topo = self._compute_topology_loss(seg_pred, seg_target, mask=None)
+            # Force strict FP32 for topology math to avoid AMP overflow in edge ops.
+            with torch.autocast(device_type=seg_pred.device.type, enabled=False):
+                loss_topo = self._compute_topology_loss(
+                    seg_pred.float(),
+                    seg_target.long(),
+                    mask=None,
+                )
         else:
             loss_topo = torch.tensor(0.0, device=x_start.device)
         
