@@ -105,13 +105,14 @@ class EdgeAwareTopologyLoss(nn.Module):
         
         # 3. Weight loss by edges and mask by timestep gating
         edge_weights = 1.0 + (self.edge_weight - 1.0) * edge_map
-        loss_weighted = (loss_ce * edge_weights)
+        loss_weighted = (loss_ce.float() * edge_weights.float())
         
         if mask is not None:
              # Apply sample-wise gating [B, 1, 1, 1]
-             loss_weighted = loss_weighted * mask.view(-1, 1, 1, 1)
+             loss_weighted = loss_weighted * mask.view(-1, 1, 1, 1).float()
         
-        loss_weighted = loss_weighted.mean()
+        # Force float32 for mean to prevent 65k overflow on 262k voxels
+        loss_weighted_val = loss_weighted.float().mean()
         
         # Dice-like component on predicted edges (gated)
         if mask is not None:
@@ -143,11 +144,11 @@ class EdgeAwareTopologyLoss(nn.Module):
         union = pred_edges_f32.sum() + edge_map_f32.sum()
         loss_boundary = 1.0 - (2.0 * intersection + 1e-8) / (union + 1e-8)
         
-        loss_total = loss_weighted + 0.5 * loss_boundary
+        loss_total = loss_weighted_val + 0.5 * loss_boundary
         
         return {
             'loss': loss_total,
-            'loss_ce': loss_ce.mean(),
+            'loss_ce': loss_ce.float().mean(),
             'loss_boundary': loss_boundary,
         }
 

@@ -288,31 +288,30 @@ class GaussianDiffusion(nn.Module):
         # Noise should theoretically be N(0,1), so clip to [-5, 5] for safety
         noise_pred = torch.clamp(noise_pred, min=-5.0, max=5.0)
         
-        # REMOVED TIMESTEP GATING - It was causing model collapse
-        # All auxiliary losses now apply at ALL timesteps (per blueprint requirement)
-        t_gate = torch.ones_like(t).float()
-        
         # 1. Diffusion Loss (MSE on noise) - ALWAYS ACTIVE
+        # Force float32 for mean accumulation to prevent AMP overflow (max 65,504)
+        # on 64x64x64 patches (262,144 voxels).
         if self.loss_type == 'l1':
-            loss_diff = F.l1_loss(noise_pred, noise)
+            loss_diff = F.l1_loss(noise_pred.float(), noise.float())
         else:
-            loss_diff = F.mse_loss(noise_pred, noise)
+            loss_diff = F.mse_loss(noise_pred.float(), noise.float())
             
         # 2. Auxiliary L1 Loss (on predicted Img)
         x_recon = self.predict_start_from_noise(x_noisy, t, noise_pred)
         
-        # Calculate pixel loss
-        loss_pixel = F.l1_loss(x_recon, x_start)
+        # Calculate pixel loss in float32 for stability
+        loss_pixel = F.l1_loss(x_recon.float(), x_start.float())
         
         # Detect and cap extreme loss spikes (numerical instability indicator)
         # Normal pixel loss should be < 2.0; values > 10 indicate catastrophic failure
         if loss_pixel > 10.0:
             # Log warning and cap the loss to prevent gradient explosion
             loss_pixel = torch.clamp(loss_pixel, max=5.0)
+
         
         # 3. Perceptual Loss (VGG)
         if lambda_percep > 0:
-            loss_vgg = self.get_perceptual_loss()(x_recon, x_start)
+            loss_vgg = self.get_perceptual_loss()(x_recon.float(), x_start.float())
         else:
             loss_vgg = torch.tensor(0.0, device=x_start.device)
             
