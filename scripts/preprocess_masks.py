@@ -9,6 +9,9 @@ from pathlib import Path
 from tqdm import tqdm
 import json
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("preprocess_masks")
+
 # FreeSurfer Lookup Table (simplified for TopoBrain)
 # Mapping: FreeSurfer ID -> TopoBrain Class (0:BG, 1:CSF, 2:GM, 3:WM)
 FS_MAPPING = {
@@ -43,106 +46,205 @@ def map_labels(data, mapping):
     
     return out
 
+def find_aseg(folder: Path):
+    """
+    Find the best FreeSurfer segmentation file in a folder.
+    Priority: aparc+aseg.nii.gz > aparc+aseg.nii > aseg.nii.gz > aseg.nii
+    
+    aparc+aseg is preferred because it includes cortical parcellation
+    labels (1000-2999) which get mapped to GM, giving full cortical coverage.
+    """
+    # Search in the given folder AND recursively below it
+    search_dirs = [folder]
+    
+    candidates = []
+    for d in search_dirs:
+        for pattern in ["aparc+aseg.nii.gz", "aparc+aseg.nii",
+                        "aseg.nii.gz", "aseg.nii",
+                        "*aparc+aseg*.nii*", "*aseg*.nii*"]:
+            candidates.extend(d.glob(pattern))
+    
+    if not candidates:
+        # Try recursive search as fallback
+        candidates = list(folder.rglob("*aseg*.nii*"))
+    
+    if not candidates:
+        return None
+    
+    # Priority sort
+    def priority(p):
+        name = p.name.lower()
+        if name == "aparc+aseg.nii.gz":
+            return 0
+        elif name == "aparc+aseg.nii":
+            return 1
+        elif name == "aseg.nii.gz":
+            return 2
+        elif name == "aseg.nii":
+            return 3
+        elif "aparc" in name:
+            return 4
+        else:
+            return 5
+    
+    candidates.sort(key=priority)
+    return candidates[0]
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Preprocess segmentation masks")
-    parser.add_argument("--pairs-csv", default="derivatives/topobrain-preproc/pairs.csv")
-    parser.add_argument("--data-root", required=True, help="Root of raw BIDS data for finding asegs")
-    parser.add_argument("--output-col", default="seg", help="Column name to add to pairs.csv")
+    parser = argparse.ArgumentParser(
+        description="Create 4-class tissue masks from FreeSurfer aseg files.\n\n"
+                    "Finds aseg/aparc+aseg in the same folder as target_7t,\n"
+                    "maps FreeSurfer labels to 4 classes (BG/CSF/GM/WM),\n"
+                    "resamples to match target_7t geometry, and updates pairs CSV.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--pairs-csv", required=True,
+        help="Path to pairs CSV (will be updated in-place with tissue_mask_path column)",
+    )
+    parser.add_argument(
+        "--output-dir", default=None,
+        help="Directory to save mapped masks. Default: same folder as target_7t",
+    )
+    parser.add_argument(
+        "--output-csv", default=None,
+        help="Save updated CSV to a new file instead of overwriting. "
+             "Default: overwrites --pairs-csv",
+    )
+    parser.add_argument(
+        "--mask-col", default="tissue_mask_path",
+        help="Column name for mask path in CSV (default: tissue_mask_path)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Just find and report aseg files without processing",
+    )
     args = parser.parse_args()
     
     pairs_path = Path(args.pairs_csv)
     if not pairs_path.exists():
         raise FileNotFoundError(f"Pairs file not found: {pairs_path}")
         
+    # Read CSV
     with open(pairs_path, 'r') as f:
         reader = csv.DictReader(f)
         rows = list(reader)
-        fieldnames = reader.fieldnames
+        fieldnames = list(reader.fieldnames)
         
-    if args.output_col not in fieldnames:
-        fieldnames.append(args.output_col)
+    if args.mask_col not in fieldnames:
+        fieldnames.append(args.mask_col)
         
-    root = Path(args.data_root)
+    logger.info(f"Processing {len(rows)} subjects from {pairs_path}")
     
     updated_rows = []
+    success_count = 0
     
-    for row in tqdm(rows, desc="Processing Masks"):
+    for row in tqdm(rows, desc="Processing masks"):
         subj = row['subject']
-        target_path = Path(row['target_7t']) # Already processed 7T
+        target_path = Path(row['target_7t'])
         
-        # 1. Find Raw Aseg
-        # Strategy: Look in BIDS structure derivatives/freesurfer or similar?
-        # Or look for `aseg.nii.gz` inside the subject folder structure provided
-        # Current pattern: {data_root}/{subject}/...
-        # We'll search recursively for *aseg*.nii*
+        # The aseg files are in the SAME folder as target_7t
+        target_folder = target_path.parent
         
-        search_dir = root / subj
-        candidates = list(search_dir.rglob("*aseg*.nii*"))
+        # Find aseg
+        aseg_path = find_aseg(target_folder)
         
-        # Filter out "aparc" if we just want simple aseg, or keep it.
-        # Prefer "aseg.nii.gz" or "aseg.mgz" (freesurfer output)
-        aseg_path = None
+        if aseg_path is None:
+            # Also try parent folder and subject root
+            for fallback_dir in [target_folder.parent, target_folder.parent.parent]:
+                aseg_path = find_aseg(fallback_dir)
+                if aseg_path:
+                    break
         
-        # Priority sort: aseg.nii.gz > aseg.mgz > *aseg*
-        candidates = sorted(candidates, key=lambda p: (
-            p.name != 'aseg.nii.gz', 
-            p.name != 'aseg.mgz', 
-            len(str(p))
-        ))
-        
-        if candidates:
-            aseg_path = candidates[0]
-        
-        if not aseg_path or not aseg_path.exists():
-            print(f"Skipping {subj}: No aseg found.")
+        if aseg_path is None:
+            logger.warning(f"  {subj}: No aseg found in {target_folder} or parents. Skipping.")
             updated_rows.append(row)
             continue
-            
-        # 2. Resample to match Target 7T
-        # We need the geometry of the PROCESSED 7T file
-        if not target_path.exists():
-            # If path is relative to some root not here, this might fail.
-            # Assume running from project root where pairs.csv is.
-            # Try prepending 'derivatives/topobrain-preproc' if needed?
-            # Actually, user usually passes data-root. But for this script, let's assume
-            # we can read the file as listed in csv.
-            pass
-            
+        
+        logger.info(f"  {subj}: Found {aseg_path.name} at {aseg_path}")
+        
+        if args.dry_run:
+            success_count += 1
+            updated_rows.append(row)
+            continue
+        
         try:
-            target_img = nib.load(target_path)
-            aseg_img = nib.load(aseg_path)
+            # Load target (for geometry/affine reference)
+            target_img = nib.load(str(target_path))
+            aseg_img = nib.load(str(aseg_path))
             
-            # Resample (Nearest Neighbor for masks!)
-            resampled_aseg = resample_from_to(aseg_img, target_img, order=0)
+            logger.info(f"    aseg shape: {aseg_img.shape}, target shape: {target_img.shape}")
             
-            # 3. Map Labels
-            data = resampled_aseg.get_fdata().astype(np.int32)
-            mapped_data = map_labels(data, FS_MAPPING)
+            # Check if resampling is needed (different geometry)
+            needs_resample = (aseg_img.shape != target_img.shape or
+                              not np.allclose(aseg_img.affine, target_img.affine, atol=1e-3))
             
-            # 4. Save
-            out_name = target_path.name.replace(".nii.gz", "_seg.nii.gz")
-            out_path = target_path.parent / out_name
+            if needs_resample:
+                logger.info(f"    Resampling aseg to match target geometry ...")
+                resampled = resample_from_to(aseg_img, target_img, order=0)  # Nearest neighbor
+                data = resampled.get_fdata().astype(np.int32)
+            else:
+                logger.info(f"    Geometry matches, no resampling needed.")
+                data = aseg_img.get_fdata().astype(np.int32)
             
-            new_img = nib.Nifti1Image(mapped_data.astype(np.uint8), target_img.affine)
-            nib.save(new_img, out_path)
+            # Map FreeSurfer labels → 4 classes
+            mapped = map_labels(data, FS_MAPPING)
             
-            # 5. Update Row
-            # Store relative path if original was relative, or absolute?
-            # Usually pairs.csv has relative paths.
-            row[args.output_col] = str(out_path).replace("\\", "/") # Ensure forward slashes
+            # Report class distribution
+            unique, counts = np.unique(mapped, return_counts=True)
+            total = mapped.size
+            logger.info(f"    Class distribution:")
+            class_names = {0: "BG", 1: "CSF", 2: "GM", 3: "WM"}
+            for u, c in zip(unique, counts):
+                pct = 100 * c / total
+                logger.info(f"      {class_names.get(u, u)}: {c:>10,} voxels ({pct:.1f}%)")
+            
+            # Save mapped mask
+            if args.output_dir:
+                out_dir = Path(args.output_dir)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_name = f"{subj}_tissue_mask.nii.gz"
+                out_path = out_dir / out_name
+            else:
+                out_name = target_path.name.replace(".nii.gz", "_tissue_seg.nii.gz").replace(".nii", "_tissue_seg.nii")
+                out_path = target_folder / out_name
+            
+            mask_img = nib.Nifti1Image(mapped.astype(np.uint8), target_img.affine, target_img.header)
+            nib.save(mask_img, str(out_path))
+            
+            # Update row
+            row[args.mask_col] = str(out_path).replace("\\", "/")
+            success_count += 1
+            logger.info(f"    Saved: {out_path}")
             
         except Exception as e:
-            print(f"Failed {subj}: {e}")
+            logger.error(f"  {subj}: Failed — {e}")
+            import traceback
+            traceback.print_exc()
             
         updated_rows.append(row)
-        
-    # Write back pairs.csv
-    with open(pairs_path, 'w', newline='') as f:
+    
+    if args.dry_run:
+        logger.info(f"\nDry run complete. Found aseg for {success_count}/{len(rows)} subjects.")
+        return
+    
+    # Write updated CSV
+    out_csv = Path(args.output_csv) if args.output_csv else pairs_path
+    with open(out_csv, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(updated_rows)
-        
-    print(f"Updated {pairs_path} with segmentation paths.")
+    
+    logger.info(f"\n{'=' * 60}")
+    logger.info(f"Done! Processed {success_count}/{len(rows)} subjects.")
+    logger.info(f"Updated CSV: {out_csv}")
+    logger.info(f"Mask column: '{args.mask_col}'")
+    logger.info(f"{'=' * 60}")
+    logger.info(f"\nTo use these masks for training, ensure your training config")
+    logger.info(f"pairs_csv points to: {out_csv}")
+    logger.info(f"The dataset will automatically load the masks via the")
+    logger.info(f"'{args.mask_col}' column for topology loss supervision.")
 
 if __name__ == "__main__":
     main()
