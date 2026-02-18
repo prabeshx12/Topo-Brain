@@ -94,14 +94,30 @@ def find_aseg(folder: Path):
 def main():
     parser = argparse.ArgumentParser(
         description="Create 4-class tissue masks from FreeSurfer aseg files.\n\n"
-                    "Finds aseg/aparc+aseg in the same folder as target_7t,\n"
+                    "Finds aseg/aparc+aseg in the --aligned-root directory tree,\n"
                     "maps FreeSurfer labels to 4 classes (BG/CSF/GM/WM),\n"
-                    "resamples to match target_7t geometry, and updates pairs CSV.",
+                    "resamples to match target_7t geometry, and updates pairs CSV.\n\n"
+                    "Example:\n"
+                    "  python preprocess_masks.py \\\n"
+                    "    --pairs-csv /eos/.../pairs.csv \\\n"
+                    "    --aligned-root /eos/.../Aligned \\\n"
+                    "    --data-root /eos/.../tissue_masks \\\n"
+                    "    --output-dir /eos/.../tissue_masks/masks",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--pairs-csv", required=True,
-        help="Path to pairs CSV (will be updated in-place with tissue_mask_path column)",
+        help="Path to pairs CSV (will be updated with tissue_mask_path column)",
+    )
+    parser.add_argument(
+        "--aligned-root", required=True,
+        help="Root of the Aligned folder containing aseg files. "
+             "e.g. '/eos/user/p/ppokhrel/Untitled Folder 1/Aligned'",
+    )
+    parser.add_argument(
+        "--data-root", default=None,
+        help="Root directory that target_7t paths in CSV are relative to. "
+             "If target_7t paths are absolute, leave this empty.",
     )
     parser.add_argument(
         "--output-dir", default=None,
@@ -121,6 +137,12 @@ def main():
         help="Just find and report aseg files without processing",
     )
     args = parser.parse_args()
+    
+    aligned_root = Path(args.aligned_root)
+    if not aligned_root.exists():
+        raise FileNotFoundError(f"Aligned root not found: {aligned_root}")
+    
+    data_root = Path(args.data_root) if args.data_root else None
     
     pairs_path = Path(args.pairs_csv)
     if not pairs_path.exists():
@@ -142,23 +164,33 @@ def main():
     
     for row in tqdm(rows, desc="Processing masks"):
         subj = row['subject']
-        target_path = Path(row['target_7t'])
+        target_rel = row['target_7t']
         
-        # The aseg files are in the SAME folder as target_7t
-        target_folder = target_path.parent
+        # Resolve target_7t to absolute path
+        target_path = Path(target_rel)
+        if not target_path.is_absolute() and data_root:
+            target_path = data_root / target_rel
+        
+        # Derive aseg search folder from aligned root
+        # CSV has: sub-01/ses-2/anat/sub-01_ses-2_desc-preproc_T1w.nii.gz
+        # Aligned has: {aligned_root}/sub-01/ses-2/anat/aparc+aseg.nii
+        # So we take the DIRECTORY part of target_7t relative path
+        target_rel_dir = Path(target_rel).parent  # e.g. sub-01/ses-2/anat
+        aseg_search_dir = aligned_root / target_rel_dir
+        
+        logger.info(f"  {subj}: Searching for aseg in {aseg_search_dir}")
         
         # Find aseg
-        aseg_path = find_aseg(target_folder)
+        aseg_path = find_aseg(aseg_search_dir)
         
         if aseg_path is None:
-            # Also try parent folder and subject root
-            for fallback_dir in [target_folder.parent, target_folder.parent.parent]:
-                aseg_path = find_aseg(fallback_dir)
-                if aseg_path:
-                    break
+            # Fallback: try subject root in aligned (e.g. {aligned_root}/sub-01/)
+            subj_dir = aligned_root / subj
+            if subj_dir.exists():
+                aseg_path = find_aseg(subj_dir)
         
         if aseg_path is None:
-            logger.warning(f"  {subj}: No aseg found in {target_folder} or parents. Skipping.")
+            logger.warning(f"  {subj}: No aseg found in {aseg_search_dir} or {aligned_root / subj}. Skipping.")
             updated_rows.append(row)
             continue
         
@@ -207,6 +239,9 @@ def main():
                 out_name = f"{subj}_tissue_mask.nii.gz"
                 out_path = out_dir / out_name
             else:
+                # Save alongside target_7t (use resolved absolute path)
+                target_folder = target_path.parent
+                target_folder.mkdir(parents=True, exist_ok=True)
                 out_name = target_path.name.replace(".nii.gz", "_tissue_seg.nii.gz").replace(".nii", "_tissue_seg.nii")
                 out_path = target_folder / out_name
             
