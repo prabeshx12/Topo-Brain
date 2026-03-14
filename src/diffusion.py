@@ -71,10 +71,11 @@ class PerceptualLoss(nn.Module):
         # Or simple reshaping: treat Depth as Batch dimension for 2D VGG
         
         b, c, d, h, w = x.shape
-        
-        # Reshape to [B*D, C, H, W]
-        x_2d = x.permute(0, 2, 1, 3, 4).reshape(-1, c, h, w)
-        y_2d = y.permute(0, 2, 1, 3, 4).reshape(-1, c, h, w)
+
+        # Sample every 8th depth slice to avoid OOM (B*D=128 VGG passes is too many)
+        stride = max(1, d // 8)
+        x_2d = x[:, :, ::stride, :, :].permute(0, 2, 1, 3, 4).reshape(-1, c, h, w)
+        y_2d = y[:, :, ::stride, :, :].permute(0, 2, 1, 3, 4).reshape(-1, c, h, w)
         
         # Convert 1 channel to 3 channels (repeat)
         x_2d = x_2d.repeat(1, 3, 1, 1)
@@ -85,8 +86,9 @@ class PerceptualLoss(nn.Module):
         mean = torch.tensor([0.485, 0.456, 0.406], device=x.device).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225], device=x.device).view(1, 3, 1, 1)
         
-        x_2d = (x_2d + 1) * 0.5
-        y_2d = (y_2d + 1) * 0.5
+        # Clamp to [0,1] — x_recon can be in [-2,2] from predict_start_from_noise
+        x_2d = torch.clamp((x_2d + 1) * 0.5, 0.0, 1.0)
+        y_2d = torch.clamp((y_2d + 1) * 0.5, 0.0, 1.0)
         
         x_2d = (x_2d - mean) / std
         y_2d = (y_2d - mean) / std
@@ -180,8 +182,16 @@ class GaussianDiffusion(nn.Module):
             loss_dict = self._topology_loss_module(seg_pred, seg_target, mask=mask)
             return loss_dict['loss']
         else:
-            # Fallback to class-weighted Cross-Entropy
-            weights = torch.tensor([0.5, 2.0, 1.5, 1.0], device=seg_pred.device)
+            # Fallback to class-weighted Cross-Entropy (dynamic weights based on num_classes)
+            nc = seg_pred.shape[1]
+            if nc == 2:
+                weights = torch.tensor([0.5, 1.5], device=seg_pred.device)
+            elif nc == 3:
+                weights = torch.tensor([0.5, 2.0, 1.5], device=seg_pred.device)
+            elif nc == 4:
+                weights = torch.tensor([0.5, 2.0, 1.5, 1.0], device=seg_pred.device)
+            else:
+                weights = torch.ones(nc, device=seg_pred.device)
             loss_ce = F.cross_entropy(seg_pred, seg_target, weight=weights, reduction='none')
             if mask is not None:
                 loss_ce = loss_ce * mask.view(-1, 1, 1, 1)
@@ -248,8 +258,10 @@ class GaussianDiffusion(nn.Module):
         # Start from pure noise
         img = torch.randn(shape, device=device)
         
+        # Use same safe timestep range as training to avoid untrained timesteps
+        max_safe_timestep = len(self.betas) - 15
         final_seg = None
-        for i in reversed(range(0, len(self.betas))):
+        for i in reversed(range(0, max_safe_timestep)):
             t = torch.full((b,), i, device=device, dtype=torch.long)
             img, final_seg = self.p_sample(img, t, conditioning, i)
 
@@ -285,8 +297,9 @@ class GaussianDiffusion(nn.Module):
         seg_pred = outputs['segmentation']
         
         # Clamp noise predictions to prevent numerical instability
-        # Noise should theoretically be N(0,1), so clip to [-5, 5] for safety
-        noise_pred = torch.clamp(noise_pred, min=-5.0, max=5.0)
+        # Noise should theoretically be N(0,1), so clip to [-10, 10] for safety
+        # (wider range to preserve gradient flow for extreme predictions)
+        noise_pred = torch.clamp(noise_pred, min=-10.0, max=10.0)
         
         # 1. Diffusion Loss (MSE on noise) - ALWAYS ACTIVE
         # Force float32 for mean accumulation to prevent AMP overflow (max 65,504)
@@ -302,11 +315,8 @@ class GaussianDiffusion(nn.Module):
         # Calculate pixel loss in float32 for stability
         loss_pixel = F.l1_loss(x_recon.float(), x_start.float())
         
-        # Detect and cap extreme loss spikes (numerical instability indicator)
-        # Normal pixel loss should be < 2.0; values > 10 indicate catastrophic failure
-        if loss_pixel > 10.0:
-            # Log warning and cap the loss to prevent gradient explosion
-            loss_pixel = torch.clamp(loss_pixel, max=5.0)
+        # Cap extreme loss spikes to prevent gradient explosion
+        loss_pixel = torch.clamp(loss_pixel, max=5.0)
 
         
         # 3. Perceptual Loss (VGG)
@@ -332,6 +342,7 @@ class GaussianDiffusion(nn.Module):
         def _safe(loss, name=""):
             # Handle scalar or tensor losses robustly under AMP.
             if not torch.isfinite(loss).all():
+                print(f"WARNING: {name} loss is non-finite (value={loss.item():.6f}), zeroing gradient for this step")
                 safe = torch.zeros((), device=loss.device, dtype=loss.dtype)
                 safe.requires_grad_(True)
                 return safe

@@ -25,10 +25,18 @@ class EdgeAwareTopologyLoss(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.edge_weight = edge_weight
-        
-        # Class weights for brain tissue (BG, CSF, GM, WM)
+
+        # Dynamic class weights based on num_classes
         # Prioritize smaller classes (CSF, GM) over dominant ones (BG, WM)
-        self.register_buffer('class_weights', torch.tensor([0.5, 2.0, 1.5, 1.0]))
+        if num_classes == 2:
+            weights = torch.tensor([0.5, 1.5])
+        elif num_classes == 3:
+            weights = torch.tensor([0.5, 2.0, 1.5])
+        elif num_classes == 4:
+            weights = torch.tensor([0.5, 2.0, 1.5, 1.0])
+        else:
+            weights = torch.ones(num_classes)
+        self.register_buffer('class_weights', weights)
         
         # Sobel filters for edge detection (3D)
         self.register_buffer('sobel_x', self._create_sobel_kernel('x'))
@@ -61,27 +69,35 @@ class EdgeAwareTopologyLoss(nn.Module):
     def detect_edges(self, mask):
         """
         Detect edges in the segmentation mask using 3D Sobel filters.
-        
+        Uses one-hot encoding to avoid treating class indices as continuous values,
+        which would bias edge magnitudes toward numerically distant classes.
+
         Args:
             mask: [B, D, H, W] segmentation mask (class indices)
-            
+
         Returns:
             edge_map: [B, 1, D, H, W] binary edge map
         """
-        # Convert to float and add channel dim
-        mask_float = mask.float().unsqueeze(1)
-        
-        # Apply Sobel filters
-        grad_x = F.conv3d(mask_float, self.sobel_x, padding=1)
-        grad_y = F.conv3d(mask_float, self.sobel_y, padding=1)
-        grad_z = F.conv3d(mask_float, self.sobel_z, padding=1)
-        
-        # Compute gradient magnitude (Force float32 for geometric precision)
-        edge_map = torch.sqrt(grad_x.float()**2 + grad_y.float()**2 + grad_z.float()**2 + 1e-8)
-        
+        # One-hot encode to treat each class boundary equally
+        one_hot = F.one_hot(mask.long(), self.num_classes).float()  # [B, D, H, W, C]
+        one_hot = one_hot.permute(0, 4, 1, 2, 3)  # [B, C, D, H, W]
+
+        # Apply Sobel per class channel and take max edge magnitude
+        edge_magnitudes = []
+        for c in range(self.num_classes):
+            ch = one_hot[:, c:c+1, :, :, :]  # [B, 1, D, H, W]
+            grad_x = F.conv3d(ch, self.sobel_x, padding=1)
+            grad_y = F.conv3d(ch, self.sobel_y, padding=1)
+            grad_z = F.conv3d(ch, self.sobel_z, padding=1)
+            mag = torch.sqrt(grad_x.float()**2 + grad_y.float()**2 + grad_z.float()**2 + 1e-8)
+            edge_magnitudes.append(mag)
+
+        # Max across classes — any class boundary triggers an edge
+        edge_map = torch.max(torch.cat(edge_magnitudes, dim=1), dim=1, keepdim=True)[0]
+
         # Threshold to binary
         edge_map = (edge_map > 0.1).float()
-        
+
         return edge_map
     
     def forward(self, pred_logits, target_mask, mask=None):
@@ -119,8 +135,9 @@ class EdgeAwareTopologyLoss(nn.Module):
             # Only compute for gated samples to save time
             gated_indices = torch.where(mask > 0.5)[0]
             if len(gated_indices) == 0:
-                return {'loss': torch.tensor(0.0, device=pred_logits.device), 
-                        'loss_ce': loss_ce.mean(), 'loss_boundary': torch.tensor(0.0, device=pred_logits.device)}
+                # Return CE-only loss (connected to graph) instead of disconnected zeros
+                return {'loss': loss_weighted_val,
+                        'loss_ce': loss_ce.float().mean(), 'loss_boundary': torch.tensor(0.0, device=pred_logits.device)}
             
             # Sub-select batch
             curr_pred = pred_logits[gated_indices]
@@ -131,18 +148,29 @@ class EdgeAwareTopologyLoss(nn.Module):
             curr_target = target_mask
             curr_edge_map = edge_map
 
-        pred_probs = F.softmax(curr_pred, dim=1)
-        pred_class = torch.argmax(pred_probs, dim=1)
-        pred_edges = self.detect_edges(pred_class).squeeze(1)
-        
+        # Differentiable soft edge detection on class probabilities
+        # (torch.argmax has zero gradient, so we use Sobel on soft probabilities instead)
+        pred_probs = F.softmax(curr_pred, dim=1)  # [B, C, D, H, W]
+        soft_edges_list = []
+        for c in range(pred_probs.shape[1]):
+            ch = pred_probs[:, c:c+1, :, :, :]
+            gx = F.conv3d(ch, self.sobel_x, padding=1)
+            gy = F.conv3d(ch, self.sobel_y, padding=1)
+            gz = F.conv3d(ch, self.sobel_z, padding=1)
+            soft_edges_list.append(torch.sqrt(gx.float()**2 + gy.float()**2 + gz.float()**2 + 1e-8))
+        pred_edges = torch.max(torch.cat(soft_edges_list, dim=1), dim=1)[0]  # [B, D, H, W]
+        # Normalize to [0, 1] for Dice computation
+        pred_edges = torch.sigmoid(pred_edges * 5.0 - 2.5)
+
         # Force float32 for sums to prevent AMP float16 overflow (max 65,504)
         # A 64x64x64 patch has 262,144 voxels. Any sum > 25% of the patch will overflow float16.
         edge_map_f32 = curr_edge_map.float()
         pred_edges_f32 = pred_edges.float()
-        
+
         intersection = (pred_edges_f32 * edge_map_f32).sum()
         union = pred_edges_f32.sum() + edge_map_f32.sum()
-        loss_boundary = 1.0 - (2.0 * intersection + 1e-8) / (union + 1e-8)
+        smooth = 1.0  # Laplace smoothing to prevent gradient spikes when union is small
+        loss_boundary = 1.0 - (2.0 * intersection + smooth) / (union + smooth)
         
         loss_total = loss_weighted_val + 0.5 * loss_boundary
         

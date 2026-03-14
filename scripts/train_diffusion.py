@@ -252,7 +252,7 @@ def main():
     # AdamW optimizer with weight decay
     lr = float(config["training"]["lr"])
     weight_decay = float(config["training"].get("weight_decay", 1e-4))
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-5)
     logger.info(f"Optimizer: AdamW, lr={lr}, weight_decay={weight_decay}")
     start_step = 0
 
@@ -261,7 +261,7 @@ def main():
 
     # Mixed precision
     use_amp = bool(config["training"].get("use_amp", True))
-    scaler = GradScaler(enabled=use_amp)
+    scaler = GradScaler(enabled=use_amp, init_scale=2**12)  # 4096 — safe for 3D medical volumes
 
     # Skip statistics for stability monitoring
     skipped_steps = 0

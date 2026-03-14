@@ -80,11 +80,12 @@ class SelfAttention3D(nn.Module):
         b, c, d, h, w = x.shape
         qkv = self.qkv(self.norm(x)).view(b, 3, self.num_heads, c // self.num_heads, -1)
         q, k, v = qkv.unbind(1) # [b, heads, head_dim, length]
-        
-        # Attention: (length, length) map
+
+        # Attention with numerical stability guard for float16
         attn = (q.transpose(-2, -1) @ k) * self.scale # [b, heads, length, length]
+        attn = attn - attn.max(dim=-1, keepdim=True).values  # prevent exp() overflow in float16
         attn = attn.softmax(dim=-1)
-        
+
         out = (v @ attn.transpose(-2, -1)).view(b, c, d, h, w)
         return x + self.proj(out)
 
