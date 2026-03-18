@@ -10,6 +10,10 @@ import yaml
 
 from src.preprocess_pipeline import BIDSPreprocessingPipeline, PipelineConfig
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 
 def _load_config(path: Path) -> Dict[str, object]:
     if path.exists():
