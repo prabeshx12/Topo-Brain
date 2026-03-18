@@ -27,7 +27,7 @@ from src.utils import setup_logging, TensorBoardLogger
 def load_config(config_path):
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
-
+    
 def cycle(dl):
     while True:
         for data in dl:
