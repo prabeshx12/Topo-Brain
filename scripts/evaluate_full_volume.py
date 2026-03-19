@@ -63,6 +63,96 @@ def compute_metrics(pred_np, target_np):
     return ssim_val, psnr_val
 
 
+def compute_dice_coefficient(pred_np, target_np, mask=None):
+    """
+    Compute Dice coefficient for volumetric overlap.
+
+    Args:
+        pred_np: Predicted volume in [-1, 1]
+        target_np: Target volume in [-1, 1]
+        mask: Optional binary mask to compute Dice only on brain region
+
+    Returns:
+        Dice coefficient (0 to 1, higher is better)
+    """
+    # Binarize volumes at threshold 0 (which maps to 0.5 in [0,1] space)
+    pred_binary = (pred_np > 0.0).astype(np.float32)
+    target_binary = (target_np > 0.0).astype(np.float32)
+
+    # Apply mask if provided
+    if mask is not None:
+        pred_binary = pred_binary[mask]
+        target_binary = target_binary[mask]
+
+    # Compute Dice: 2 * |A ∩ B| / (|A| + |B|)
+    intersection = np.sum(pred_binary * target_binary)
+    denominator = np.sum(pred_binary) + np.sum(target_binary)
+
+    if denominator == 0:
+        return 1.0 if intersection == 0 else 0.0
+
+    dice = (2.0 * intersection) / denominator
+    return float(dice)
+
+
+def compute_hd95(pred_np, target_np, mask=None, voxel_spacing=(1.0, 1.0, 1.0)):
+    """
+    Compute 95th percentile Hausdorff Distance (HD95).
+
+    Args:
+        pred_np: Predicted volume in [-1, 1]
+        target_np: Target volume in [-1, 1]
+        mask: Optional binary mask
+        voxel_spacing: Physical spacing (mm) for each dimension
+
+    Returns:
+        HD95 in mm (lower is better, measures surface distance)
+    """
+    try:
+        from scipy.ndimage import distance_transform_edt
+    except ImportError:
+        print("WARNING: scipy not available, skipping HD95 calculation")
+        return float('nan')
+
+    # Binarize volumes
+    pred_binary = (pred_np > 0.0).astype(bool)
+    target_binary = (target_np > 0.0).astype(bool)
+
+    # Apply mask if provided
+    if mask is not None:
+        pred_binary = pred_binary & mask
+        target_binary = target_binary & mask
+
+    # Check if volumes are non-empty
+    if not pred_binary.any() or not target_binary.any():
+        return float('nan')
+
+    # Extract surface voxels (boundary detection)
+    # Surface = dilated - original
+    from scipy.ndimage import binary_dilation
+    pred_surface = binary_dilation(pred_binary) ^ pred_binary
+    target_surface = binary_dilation(target_binary) ^ target_binary
+
+    if not pred_surface.any() or not target_surface.any():
+        return float('nan')
+
+    # Distance transform from each surface to the other
+    # Distance from pred surface to nearest target voxel
+    dist_pred_to_target = distance_transform_edt(~target_binary, sampling=voxel_spacing)
+    distances_pred = dist_pred_to_target[pred_surface]
+
+    # Distance from target surface to nearest pred voxel
+    dist_target_to_pred = distance_transform_edt(~pred_binary, sampling=voxel_spacing)
+    distances_target = dist_target_to_pred[target_surface]
+
+    # Combine both directions
+    all_distances = np.concatenate([distances_pred, distances_target])
+
+    # 95th percentile (ignores outliers, more robust than max)
+    hd95 = np.percentile(all_distances, 95)
+    return float(hd95)
+
+
 # ---------------------------------------------------------------------------
 # Brain mask helpers
 # ---------------------------------------------------------------------------
@@ -119,12 +209,16 @@ def resolve_freesurfer_mask(mask_root, subject, session=None):
     return None
 
 
-def compute_metric_set(label, brain_mask, pred_vol, target_vol, input_vol):
+def compute_metric_set(label, brain_mask, pred_vol, target_vol, input_vol, voxel_spacing=(1.0, 1.0, 1.0)):
     """Compute masked, brain-bbox, and center-crop metrics for a given mask."""
     # 1) Full-volume masked (primary metric - no BG noise)
     pred_for_metrics = pred_vol.copy()
     pred_for_metrics[~brain_mask] = target_vol[~brain_mask]
     ssim_masked, psnr_masked = compute_metrics(pred_for_metrics, target_vol)
+
+    # Compute Dice and HD95 on brain-masked region
+    dice_masked = compute_dice_coefficient(pred_vol, target_vol, mask=brain_mask)
+    hd95_masked = compute_hd95(pred_vol, target_vol, mask=brain_mask, voxel_spacing=voxel_spacing)
 
     # 2) Brain-only: crop to tight bounding box of brain for SSIM
     if brain_mask.any():
@@ -158,6 +252,8 @@ def compute_metric_set(label, brain_mask, pred_vol, target_vol, input_vol):
         "psnr_brain": psnr_brain,
         "ssim_crop": ssim_crop,
         "psnr_crop": psnr_crop,
+        "dice": dice_masked,
+        "hd95_mm": hd95_masked,
     }
 
 
@@ -530,18 +626,27 @@ def main():
 
     # ---- compute metrics ----
     if target_vol is not None:
+        # Extract voxel spacing from NIfTI header (in mm)
+        voxel_spacing = tuple(np.abs(np.diag(affine)[:3]))
+        print(f"Voxel spacing: {voxel_spacing} mm")
+
         metrics_all = []
         for label, mask_arr, source in masks:
             print(f"Computing metrics for {label} ({source})")
             metrics_all.append(
-                compute_metric_set(label, mask_arr, pred_vol, target_vol, input_vol)
+                compute_metric_set(label, mask_arr, pred_vol, target_vol, input_vol, voxel_spacing)
             )
 
-        print("\n" + "=" * 60)
-        print("METRICS")
-        print("=" * 60)
+        print("\n" + "=" * 80)
+        print("METRICS SUMMARY")
+        print("=" * 80)
         for m in metrics_all:
-            print(f"[{m['label']}] SSIM={m['ssim_masked']:.4f} PSNR={m['psnr_masked']:.2f}")
+            print(f"[{m['label']}]")
+            print(f"  SSIM:      {m['ssim_masked']:.4f}")
+            print(f"  PSNR:      {m['psnr_masked']:.2f} dB")
+            print(f"  Dice:      {m['dice']:.4f}")
+            print(f"  HD95:      {m['hd95_mm']:.2f} mm")
+            print()
 
     # ---- visualizations ----
     print("\nSaving visualizations ...")

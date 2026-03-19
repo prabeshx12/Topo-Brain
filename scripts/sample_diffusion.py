@@ -189,24 +189,65 @@ def run_inference(args):
     if crop_gt is not None:
         from skimage.metrics import structural_similarity as ssim
         from skimage.metrics import peak_signal_noise_ratio as psnr
-        
+
         gen_np = generated.cpu().numpy().squeeze()
         gt_np = crop_gt.cpu().numpy().squeeze()
-        
+
         # Scale to [0, 1] for metrics if originally [-1, 1]
         # Clamp to [-1,1] before rescaling (diffusion output may exceed range)
         gen_np = np.clip(gen_np, -1.0, 1.0)
         gt_np = np.clip(gt_np, -1.0, 1.0)
         gen_norm = (gen_np + 1) / 2
         gt_norm = (gt_np + 1) / 2
-        
+
         cur_ssim = ssim(gen_norm, gt_norm, data_range=1.0)
         cur_psnr = psnr(gt_norm, gen_norm, data_range=1.0)
-        
-        print("-" * 30)
-        print(f"RESULTS (Quantitative):")
-        print(f"  SSIM: {cur_ssim:.4f}")
-        print(f"  PSNR: {cur_psnr:.2f} dB")
+
+        # Compute Dice coefficient (volumetric overlap)
+        gen_binary = (gen_np > 0.0).astype(np.float32)
+        gt_binary = (gt_np > 0.0).astype(np.float32)
+        intersection = np.sum(gen_binary * gt_binary)
+        denominator = np.sum(gen_binary) + np.sum(gt_binary)
+        dice = (2.0 * intersection / denominator) if denominator > 0 else 1.0
+
+        # Compute HD95 (95th percentile Hausdorff Distance)
+        try:
+            from scipy.ndimage import distance_transform_edt, binary_dilation
+
+            gen_bin = (gen_np > 0.0).astype(bool)
+            gt_bin = (gt_np > 0.0).astype(bool)
+
+            if gen_bin.any() and gt_bin.any():
+                # Extract surfaces
+                gen_surface = binary_dilation(gen_bin) ^ gen_bin
+                gt_surface = binary_dilation(gt_bin) ^ gt_bin
+
+                if gen_surface.any() and gt_surface.any():
+                    # Distance transforms (assuming 1mm isotropic voxels for 64^3 crop)
+                    dist_gen = distance_transform_edt(~gt_bin, sampling=(1.0, 1.0, 1.0))
+                    dist_gt = distance_transform_edt(~gen_bin, sampling=(1.0, 1.0, 1.0))
+
+                    distances_gen = dist_gen[gen_surface]
+                    distances_gt = dist_gt[gt_surface]
+                    all_distances = np.concatenate([distances_gen, distances_gt])
+
+                    hd95 = np.percentile(all_distances, 95)
+                else:
+                    hd95 = float('nan')
+            else:
+                hd95 = float('nan')
+        except ImportError:
+            hd95 = float('nan')
+
+        print("-" * 50)
+        print(f"RESULTS (Quantitative - Patch 64³):")
+        print(f"  SSIM:      {cur_ssim:.4f}")
+        print(f"  PSNR:      {cur_psnr:.2f} dB")
+        print(f"  Dice:      {dice:.4f}")
+        if not np.isnan(hd95):
+            print(f"  HD95:      {hd95:.2f} mm")
+        else:
+            print(f"  HD95:      N/A (scipy required)")
         
         # Clinical Volume Analysis (Section 8.3)
         if predicted_seg is not None:

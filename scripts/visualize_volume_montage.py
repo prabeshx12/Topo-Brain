@@ -8,8 +8,8 @@ import nibabel as nib
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-def create_montage(volume, step=4, cols=8):
-    """Create a grid of axial slices."""
+def create_montage(volume, seg=None, step=4, cols=8, alpha=0.5):
+    """Create a grid of axial slices, optionally with segmentation overlay."""
     # Ensure volume is 3D
     if volume.ndim == 4:
         volume = volume.squeeze()
@@ -34,6 +34,13 @@ def create_montage(volume, step=4, cols=8):
     for i, slice_idx in enumerate(slices):
         img = np.rot90(volume[slice_idx, :, :])
         axes[i].imshow(img, cmap='gray', vmin=v_min, vmax=v_max)
+        
+        if seg is not None:
+            seg_slice = np.rot90(seg[slice_idx, :, :])
+            # Mask out background (0) for transparency
+            masked_seg = np.ma.masked_where(seg_slice == 0, seg_slice)
+            axes[i].imshow(masked_seg, cmap='jet', alpha=alpha, vmin=0, vmax=seg.max() or 4)
+            
         axes[i].axis('off')
         axes[i].text(5, 5, f"z={slice_idx}", color='white', fontsize=8, alpha=0.7)
         
@@ -51,6 +58,7 @@ def main():
     parser.add_argument('--output', type=str, help='Output PNG path')
     parser.add_argument('--step', type=int, default=4, help='Slice step for axial view')
     parser.add_argument('--cols', type=int, default=10, help='Columns in montage grid')
+    parser.add_argument('--alpha', type=float, default=0.5, help='Alpha transparency for overlay (0-1)')
     parser.add_argument('--title', type=str, default='Full Brain Axial View')
     args = parser.parse_args()
     
@@ -63,15 +71,20 @@ def main():
     nii = nib.load(str(input_path))
     data = nii.get_fdata()
     
-    fig = create_montage(data, step=args.step, cols=args.cols)
-    
+    seg_data = None
     if args.seg:
         seg_path = Path(args.seg)
         if seg_path.exists():
-            print(f"Overlaying segmentation from {seg_path}...")
-            # This is a bit complex for a montage, perhaps save separate or tinted?
-            # For now, let's keep it simple and just save the volume montage.
-            pass
+            print(f"Loading segmentation from {seg_path}...")
+            seg_nii = nib.load(str(seg_path))
+            seg_data = seg_nii.get_fdata()
+            if seg_data.shape != data.shape:
+                print(f"Warning: Segmentation shape {seg_data.shape} mismatch with volume {data.shape}")
+                seg_data = None
+        else:
+            print(f"Warning: Segmentation path {seg_path} not found.")
+            
+    fig = create_montage(data, seg=seg_data, step=args.step, cols=args.cols, alpha=args.alpha)
 
     out_path = args.output or input_path.with_suffix('').with_suffix('.png')
     plt.savefig(out_path, dpi=200, bbox_inches='tight', facecolor='black')
