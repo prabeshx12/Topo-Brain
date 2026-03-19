@@ -459,32 +459,63 @@ def resolve_paths_from_csv(pairs_csv, subject):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Full-volume evaluation')
-    parser.add_argument('--checkpoint', type=str, required=True)
-    parser.add_argument('--config', type=str, default='configs/train_diffusion.yaml')
-    parser.add_argument('--overlap', type=int, default=32, help='Patch overlap for tiling (default 32 = 50%%)')
-    parser.add_argument('--output_dir', type=str, default='results/full_volume_eval')
-    parser.add_argument('--data-root', type=str, default=None, help='Base directory for MRI volumes')
-    parser.add_argument('--masks-root', type=str, default=None, help='Base directory for segmentation masks')
+    parser = argparse.ArgumentParser(
+        description='Full-volume evaluation with tiled inference and comprehensive metrics (SSIM, PSNR, Dice, HD95)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Using subject from pairs CSV (RECOMMENDED):
+  python scripts/evaluate_full_volume.py \\
+      --checkpoint output/checkpoint_75000.pt \\
+      --subject sub-01 \\
+      --pairs_csv pairs_new.csv \\
+      --data-root /path/to/data/ \\
+      --output_dir results/sub-01/
 
-    # Option A: direct paths (relative to data/masks root if provided)
-    parser.add_argument('--input', type=str, default=None, help='3T preprocessed NIfTI')
-    parser.add_argument('--target', type=str, default=None, help='7T ground truth NIfTI')
-    parser.add_argument('--mask', type=str, default=None, help='Explicitly point to mask file')
+  # Using direct file paths:
+  python scripts/evaluate_full_volume.py \\
+      --checkpoint output/checkpoint_75000.pt \\
+      --input /path/to/3T.nii.gz \\
+      --target /path/to/7T.nii.gz \\
+      --output_dir results/eval/
+        """
+    )
+    parser.add_argument('--checkpoint', type=str, required=True,
+                        help='Path to model checkpoint (.pt file)')
+    parser.add_argument('--config', type=str, default='configs/train_diffusion.yaml',
+                        help='Training config file (default: configs/train_diffusion.yaml)')
+    parser.add_argument('--overlap', type=int, default=32,
+                        help='Patch overlap for tiling in voxels (default: 32 = 50%% of 64³)')
+    parser.add_argument('--output_dir', type=str, default='results/full_volume_eval',
+                        help='Output directory for results')
 
-    # Option B: resolve from pairs CSV
+    # REQUIRED for CSV-based evaluation
+    parser.add_argument('--data-root', type=str, default=None,
+                        help='REQUIRED: Base directory containing your data (e.g., /eos/user/data/topobrain/)')
+    parser.add_argument('--masks-root', type=str, default=None,
+                        help='Base directory for segmentation masks (defaults to data-root if not provided)')
+
+    # Option A: Direct file paths
+    parser.add_argument('--input', type=str, default=None,
+                        help='Direct path to 3T input NIfTI (use with --target)')
+    parser.add_argument('--target', type=str, default=None,
+                        help='Direct path to 7T ground truth NIfTI')
+    parser.add_argument('--mask', type=str, default=None,
+                        help='Direct path to brain mask NIfTI')
+
+    # Option B: Load from pairs CSV (RECOMMENDED)
     parser.add_argument('--subject', type=str, default=None,
-                        help='Subject ID (e.g. sub-01).  Looks up paths from --pairs_csv.')
+                        help='Subject ID (e.g., sub-01). Looks up paths from pairs CSV.')
     parser.add_argument('--pairs_csv', type=str, default=None,
-                        help='Pairs CSV.  Defaults to dataset.pairs_csv from config.')
-    
-    # Advanced mask options
+                        help='Path to pairs CSV file (e.g., pairs_new.csv). Required with --subject.')
+
+    # Advanced options
     parser.add_argument('--fs-mask-root', type=str, default=None,
-                        help='Root with FreeSurfer masks (aparc+aseg/aseg). Requires --subject.')
+                        help='Root directory with FreeSurfer masks (aparc+aseg/aseg)')
     parser.add_argument('--session', type=str, default=None,
-                        help='Session ID (e.g. ses-1) when using --subject and --fs-mask-root.')
+                        help='Session ID (e.g., ses-1) for FreeSurfer masks')
     parser.add_argument('--mask-threshold', type=float, default=-0.95,
-                        help='Threshold for brain mask when --mask not provided (default -0.95).')
+                        help='Threshold for brain mask if no mask file provided (default: -0.95)')
     args = parser.parse_args()
 
     # ---- config ----
@@ -494,24 +525,56 @@ def main():
     # ---- resolve input / target / mask paths ----
     seg_csv_path = None
     if args.subject:
-        csv_path = args.pairs_csv or config['dataset']['pairs_csv']
+        csv_path = args.pairs_csv or config['dataset'].get('pairs_csv', 'pairs_new.csv')
+
+        # Check if CSV exists
+        if not Path(csv_path).exists():
+            print(f"\n❌ ERROR: Pairs CSV not found: {csv_path}")
+            print(f"\nPlease provide the correct path using --pairs_csv:")
+            print(f"  python scripts/evaluate_full_volume.py \\")
+            print(f"    --checkpoint your_checkpoint.pt \\")
+            print(f"    --subject {args.subject} \\")
+            print(f"    --pairs_csv path/to/pairs_new.csv \\")
+            print(f"    --data-root /path/to/data/")
+            sys.exit(1)
+
         input_path, target_path, seg_csv_path = resolve_paths_from_csv(csv_path, args.subject)
-        
+
+        print(f"\n📄 Resolved from CSV: {csv_path}")
+        print(f"   Subject: {args.subject}")
+
         # Prepend roots if provided
         if args.data_root:
             dr = Path(args.data_root)
             input_path = str(dr / input_path)
             if target_path:
                 target_path = str(dr / target_path)
-            
-        print(f"Resolved from CSV for {args.subject}:")
-        print(f"  input  = {input_path}")
-        print(f"  target = {target_path}")
-        
+            print(f"   Data root: {dr}")
+        else:
+            print(f"\n⚠️  WARNING: --data-root not provided. Using paths from CSV as-is.")
+            print(f"   If you get 'FileNotFoundError', provide --data-root with the base directory.")
+
+        print(f"\n📂 File paths:")
+        print(f"   Input:  {input_path}")
+        print(f"   Target: {target_path}")
+
+        # Validate files exist
+        if not Path(input_path).exists():
+            print(f"\n❌ ERROR: Input file not found: {input_path}")
+            print(f"\n💡 Fix: Provide the correct --data-root that contains the data:")
+            print(f"  --data-root /eos/home-i04/p/ppokhrel/path/to/data/")
+            print(f"\nOr update your CSV with absolute paths.")
+            sys.exit(1)
+
+        if target_path and not Path(target_path).exists():
+            print(f"\n❌ ERROR: Target file not found: {target_path}")
+            print(f"\n💡 Fix: Provide the correct --data-root or check CSV paths")
+            sys.exit(1)
+
         if not args.mask and seg_csv_path and args.masks_root:
             args.mask = str(Path(args.masks_root) / seg_csv_path)
-            print(f"  mask (from CSV) = {args.mask}")
-            
+            print(f"   Mask:   {args.mask}")
+
     elif args.input:
         input_path = args.input
         target_path = args.target
@@ -520,6 +583,11 @@ def main():
             input_path = str(dr / input_path)
             if target_path:
                 target_path = str(dr / target_path)
+
+        # Validate files exist
+        if not Path(input_path).exists():
+            print(f"\n❌ ERROR: Input file not found: {input_path}")
+            sys.exit(1)
     else:
         parser.error("Provide either --input or --subject")
 
