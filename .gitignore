@@ -29,7 +29,7 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb_checkpoints/
-*.ipynb
+# *.ipynb
 !kaggle_preprocessing_notebook.ipynb
 !docs/*.ipynb
 
