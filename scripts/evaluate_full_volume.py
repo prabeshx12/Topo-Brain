@@ -716,6 +716,28 @@ Examples:
             print(f"  HD95:      {m['hd95_mm']:.2f} mm")
             print()
 
+        # ---- save metrics.json for aggregation ----
+        import json
+        metrics_dict = {}
+        for m in metrics_all:
+            metrics_dict[m['label']] = {
+                'ssim': float(m['ssim_masked']),
+                'psnr': float(m['psnr_masked']),
+                'dice': float(m['dice']),
+                'hd95_mm': float(m['hd95_mm']),
+            }
+        # Also save flat (first region) for easy reading
+        if metrics_all:
+            first = metrics_all[0]
+            metrics_dict['ssim'] = float(first['ssim_masked'])
+            metrics_dict['psnr'] = float(first['psnr_masked'])
+            metrics_dict['dice'] = float(first['dice'])
+            metrics_dict['hd95_mm'] = float(first['hd95_mm'])
+        metrics_json_path = out_dir / 'metrics.json'
+        with open(metrics_json_path, 'w') as f:
+            json.dump(metrics_dict, f, indent=2)
+        print(f"Saved: {metrics_json_path}")
+
     # ---- visualizations ----
     print("\nSaving visualizations ...")
     save_multi_view(input_vol, pred_masked, target_vol, out_dir, tag="eval")

@@ -1,0 +1,18 @@
+# HTCondor job: evaluate sub-06 with checkpoint_110000
+# Submit from lxplus: condor_submit jobs/eval_sub06.sub
+
+universe                = vanilla
+executable              = jobs/eval_sub06.sh
+output                  = jobs/logs/eval_sub06.out
+error                   = jobs/logs/eval_sub06.err
+log                     = jobs/logs/eval_sub06.log
+
+request_GPUs            = 1
+request_CPUs            = 4
+request_memory          = 16000
+request_disk            = 20000
+
+# Use a GPU machine with CUDA
++JobFlavour             = "longlunch"
+
+queue

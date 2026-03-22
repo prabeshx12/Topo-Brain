@@ -1,0 +1,16 @@
+{
+    "_description": "Frozen held-out evaluation split for Topo-Brain 3T->7T MRI synthesis.",
+    "_frozen_date": "2026-03-22",
+    "_checkpoint_at_freeze": "checkpoint_110000",
+    "_how_determined": "create_synthesis_dataloaders passes test_fold=val_fold=0, so only fold 0 (sub-06) was held out during training. sub-07 through sub-10 were all in the training set.",
+    "train": ["sub-01", "sub-02", "sub-03", "sub-04", "sub-05", "sub-07", "sub-08", "sub-09", "sub-10"],
+    "val": ["sub-06"],
+    "test": ["sub-06"],
+    "_note": "val and test are the same subject because create_synthesis_dataloaders uses test_fold=val_fold. sub-06 is the ONLY subject the model never trained on.",
+    "fold_order_seed42": ["sub-06", "sub-07", "sub-01", "sub-08", "sub-04", "sub-03", "sub-05", "sub-10", "sub-02", "sub-09"],
+    "validation_protocol": {
+        "metrics": ["SSIM", "PSNR", "Dice", "HD95"],
+        "additional_steps": ["MRIQC", "hippocampal_segmentation", "regional_temporal_lobe", "blinded_reader_study"],
+        "pairs_csv": "pairs_new.csv"
+    }
+}
