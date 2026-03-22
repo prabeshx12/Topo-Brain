@@ -122,13 +122,28 @@ def create_bids_layout(volumes: dict, bids_dir: Path):
     print(f"  BIDS layout created at: {bids_dir}")
 
 
-def run_mriqc_on_bids(bids_dir: Path, output_dir: Path, n_procs: int = 2, use_docker: bool = False):
+def run_mriqc_on_bids(bids_dir: Path, output_dir: Path, n_procs: int = 2,
+                      use_docker: bool = False, use_singularity: bool = False,
+                      singularity_image: str = "mriqc.sif"):
     """Run MRIQC on a BIDS directory."""
     output_dir.mkdir(parents=True, exist_ok=True)
     work_dir = output_dir / "_work"
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    if use_docker:
+    if use_singularity:
+        cmd = [
+            "apptainer", "run", "--cleanenv",
+            "--bind", f"{bids_dir.resolve()}:/data:ro",
+            "--bind", f"{output_dir.resolve()}:/out",
+            "--bind", f"{work_dir.resolve()}:/work",
+            "--bind", "/dev/null:/proc/1/cgroup",
+            singularity_image,
+            "/data", "/out", "participant",
+            "--work-dir", "/work",
+            "--nprocs", str(n_procs),
+            "--no-sub",
+        ]
+    elif use_docker:
         cmd = [
             "docker", "run", "--rm",
             "-v", f"{bids_dir.resolve()}:/data:ro",
@@ -138,7 +153,7 @@ def run_mriqc_on_bids(bids_dir: Path, output_dir: Path, n_procs: int = 2, use_do
             "/data", "/out", "participant",
             "--work-dir", "/work",
             "--nprocs", str(n_procs),
-            "--no-sub",  # don't submit to MRIQC web
+            "--no-sub",
         ]
     else:
         cmd = [
@@ -309,6 +324,10 @@ Examples:
                         help="Number of parallel processes for MRIQC (default: 2)")
     parser.add_argument("--docker", action="store_true",
                         help="Use Docker instead of local mriqc installation")
+    parser.add_argument("--singularity", action="store_true",
+                        help="Use Singularity/Apptainer instead of local mriqc installation")
+    parser.add_argument("--singularity-image", type=str, default="mriqc.sif",
+                        help="Path to Singularity/Apptainer .sif image")
     args = parser.parse_args()
 
     if args.mode == "compare":
@@ -316,7 +335,11 @@ Examples:
         return
 
     # Check MRIQC availability
-    if args.docker:
+    if args.singularity:
+        if not Path(args.singularity_image).exists():
+            print(f"ERROR: Singularity image not found: {args.singularity_image}")
+            sys.exit(1)
+    elif args.docker:
         if not check_docker_available():
             print("ERROR: Docker not found. Install Docker or use local mriqc.")
             sys.exit(1)
@@ -324,9 +347,9 @@ Examples:
         if not check_mriqc_available():
             print("MRIQC not found. Install with:")
             print("  pip install mriqc")
-            print("Or use Docker:")
-            print("  docker pull nipreps/mriqc:latest")
-            print("  Then re-run with --docker")
+            print("Or use Apptainer (CERN):")
+            print("  apptainer pull mriqc.sif docker://nipreps/mriqc:latest")
+            print("  Then re-run with --singularity --singularity-image mriqc.sif")
             sys.exit(1)
 
     # Resolve output dir
@@ -371,7 +394,12 @@ Examples:
         print(f"Output: {output_dir}\n")
 
         create_bids_layout(volumes, bids_dir)
-        success = run_mriqc_on_bids(bids_dir, output_dir, n_procs=args.nprocs, use_docker=args.docker)
+        success = run_mriqc_on_bids(
+            bids_dir, output_dir, n_procs=args.nprocs,
+            use_docker=args.docker,
+            use_singularity=args.singularity,
+            singularity_image=args.singularity_image,
+        )
 
         if success:
             print(f"\nMRIQC complete. Results in: {output_dir}")
