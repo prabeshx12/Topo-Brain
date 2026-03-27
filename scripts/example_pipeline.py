@@ -10,7 +10,7 @@ This script demonstrates:
 6. Visualization
 
 Usage:
-    python example_pipeline.py [--preprocess] [--config {default,highres,fast}]
+    python example_pipeline.py [--preprocess] [--config {default,highres,fast}] [--legacy-preprocess]
 """
 import argparse
 import logging
@@ -26,6 +26,7 @@ from src.config import (
     MRIConfig,
 )
 from src.preprocessing import MRIPreprocessor
+from src.preprocess_pipeline import BIDSPreprocessingPipeline, PipelineConfig
 from src.dataset import (
     BrainMRIDataset,
     create_data_loaders,
@@ -48,7 +49,7 @@ from src.utils import (
 logger = logging.getLogger(__name__)
 
 
-def run_preprocessing_pipeline(config: MRIConfig, force_reprocess: bool = False):
+def run_preprocessing_pipeline(config: MRIConfig, force_reprocess: bool = False, use_legacy: bool = False):
     """
     Run the complete preprocessing pipeline.
     
@@ -67,28 +68,59 @@ def run_preprocessing_pipeline(config: MRIConfig, force_reprocess: bool = False)
         logger.error("No data found! Check your data_root path.")
         return []
     
-    # Initialize preprocessor
-    preprocessor = MRIPreprocessor(config.preprocessing)
-    
-    # Collect all image paths
-    image_paths = [item["image"] for item in data_list]
-    
-    # Preprocess all images
-    preprocessed_paths = preprocessor.preprocess_dataset(
-        image_paths,
-        config.data.output_root,
-        save_intermediate=False,  # Set to True to save intermediate steps
-    )
-    
-    logger.info(f"Preprocessed {len(preprocessed_paths)} volumes")
-    
-    # Update data_list with preprocessed paths
-    preprocessed_data_list = []
-    for original_item, preprocessed_path in zip(data_list, preprocessed_paths):
-        updated_item = original_item.copy()
-        updated_item["image"] = preprocessed_path
-        updated_item["original_image"] = original_item["image"]
-        preprocessed_data_list.append(updated_item)
+    if use_legacy:
+        # Initialize legacy preprocessor
+        preprocessor = MRIPreprocessor(config.preprocessing)
+        
+        # Collect all image paths
+        image_paths = [item["image"] for item in data_list]
+        
+        # Preprocess all images
+        preprocessed_paths = preprocessor.preprocess_dataset(
+            image_paths,
+            config.data.output_root,
+            save_intermediate=False,  # Set to True to save intermediate steps
+        )
+        
+        logger.info(f"Preprocessed {len(preprocessed_paths)} volumes (legacy pipeline)")
+        
+        # Update data_list with preprocessed paths
+        preprocessed_data_list = []
+        for original_item, preprocessed_path in zip(data_list, preprocessed_paths):
+            updated_item = original_item.copy()
+            updated_item["image"] = preprocessed_path
+            updated_item["original_image"] = original_item["image"]
+            preprocessed_data_list.append(updated_item)
+    else:
+        pipeline_config = PipelineConfig.from_dict(
+            {
+                "data_root": str(config.data.data_root),
+                "output_root": str(config.data.output_root),
+                "modalities": config.data.modalities,
+                "session_3t": config.data.session_3t,
+                "session_7t": config.data.session_7t,
+                "prefer_aligned": config.data.prefer_aligned,
+                "require_aligned": config.data.require_aligned,
+                "aligned_keywords": config.data.aligned_keywords,
+                "overwrite": force_reprocess,
+            }
+        )
+        pipeline = BIDSPreprocessingPipeline(pipeline_config)
+        manifest = pipeline.run()
+        preprocessed_data_list = []
+        for entry in manifest:
+            if entry.get("status") != "ok":
+                continue
+            preprocessed_data_list.append(
+                {
+                    "image": Path(entry["output_path"]),
+                    "subject": entry["subject"],
+                    "session": entry["session"],
+                    "modality": entry["modality"],
+                    "field_strength": entry.get("field_strength", "unknown"),
+                    "original_image": Path(entry["input_path"]),
+                }
+            )
     
     # Verify preprocessing on a sample
     if len(preprocessed_data_list) > 0 and config.logging.save_visualizations:
@@ -333,6 +365,11 @@ def main():
         choices=["cpu", "cuda"],
         help="Device for demo training iteration",
     )
+    parser.add_argument(
+        "--legacy-preprocess",
+        action="store_true",
+        help="Use the legacy preprocessing pipeline",
+    )
     
     args = parser.parse_args()
     
@@ -358,7 +395,11 @@ def main():
     try:
         # Step 1: Preprocessing (optional)
         if args.preprocess:
-            preprocessed_data_list = run_preprocessing_pipeline(config)
+            preprocessed_data_list = run_preprocessing_pipeline(
+                config,
+                force_reprocess=False,
+                use_legacy=args.legacy_preprocess,
+            )
             if len(preprocessed_data_list) == 0:
                 logger.error("Preprocessing failed. Exiting.")
                 sys.exit(1)

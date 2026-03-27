@@ -13,6 +13,12 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import nibabel as nib
 
+from .config import MRIConfig, DataConfig
+from .bids import discover_bids_files
+
+
+logger = logging.getLogger(__name__)
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_AVAILABLE = True
@@ -20,20 +26,15 @@ except ImportError:
     TENSORBOARD_AVAILABLE = False
     logger.warning("TensorBoard not available. Install with: pip install tensorboard")
 
-from .config import MRIConfig, DataConfig
 
-
-logger = logging.getLogger(__name__)
-
-
-def setup_logging(config: MRIConfig) -> None:
+def setup_logging(config) -> None:
     """
     Setup logging configuration.
     
     Args:
-        config: MRI configuration
+        config: MRIConfig or LoggingConfig
     """
-    log_config = config.logging
+    log_config = config.logging if hasattr(config, "logging") else config
     
     # Create log directory
     log_config.log_dir.mkdir(parents=True, exist_ok=True)
@@ -65,71 +66,28 @@ def discover_dataset(data_root: Path, data_config: DataConfig) -> List[Dict[str,
     logger.info(f"Discovering dataset in: {data_root}")
     
     data_list = []
-    
-    # Iterate through subjects
-    for subject_dir in sorted(data_root.glob("sub-*")):
-        if not subject_dir.is_dir():
-            continue
-        
-        subject_id = subject_dir.name
-        
-        # Iterate through sessions
-        for session_dir in sorted(subject_dir.glob("ses-*")):
-            if not session_dir.is_dir():
-                continue
-            
-            session_id = session_dir.name
-            
-            # Determine field strength based on session
-            if session_id == data_config.session_3t:
-                field_strength = "3T"
-            elif session_id == data_config.session_7t:
-                field_strength = "7T"
-            else:
-                field_strength = "unknown"
-            
-            # Look in anat folder
-            anat_dir = session_dir / "anat"
-            if not anat_dir.exists():
-                continue
-            
-            # Find NIfTI files
-            for nifti_file in sorted(anat_dir.glob(data_config.file_pattern)):
-                # Extract modality from filename
-                filename = nifti_file.name
-                
-                # Determine modality
-                modality = None
-                for mod in data_config.modalities:
-                    if mod in filename:
-                        modality = mod
-                        break
-                
-                if modality is None:
-                    logger.debug(f"Skipping file (unknown modality): {nifti_file}")
-                    continue
-                
-                # Check if corresponding JSON exists
-                json_file = nifti_file.parent / nifti_file.name.replace("_defaced.nii.gz", ".json")
-                metadata = {}
-                if json_file.exists():
-                    try:
-                        with open(json_file, 'r') as f:
-                            metadata = json.load(f)
-                    except Exception as e:
-                        logger.warning(f"Failed to load JSON metadata: {json_file}, {e}")
-                
-                # Create data entry
-                data_entry = {
-                    "image": nifti_file,
-                    "subject": subject_id,
-                    "session": session_id,
-                    "modality": modality,
-                    "field_strength": field_strength,
-                    "json_metadata": metadata,
-                }
-                
-                data_list.append(data_entry)
+
+    bids_files = discover_bids_files(
+        data_root=data_root,
+        modalities=data_config.modalities,
+        session_3t=data_config.session_3t,
+        session_7t=data_config.session_7t,
+        file_pattern=data_config.file_pattern,
+        prefer_aligned=data_config.prefer_aligned,
+        require_aligned=data_config.require_aligned,
+        aligned_keywords=data_config.aligned_keywords,
+    )
+
+    for entry in bids_files:
+        data_entry = {
+            "image": entry.path,
+            "subject": entry.subject,
+            "session": entry.session,
+            "modality": entry.modality,
+            "field_strength": entry.field_strength or "unknown",
+            "json_metadata": entry.metadata,
+        }
+        data_list.append(data_entry)
     
     logger.info(f"Discovered {len(data_list)} volumes")
     
@@ -415,7 +373,7 @@ def compute_and_save_statistics(
     Returns:
         Dictionary of statistics
     """
-    from dataset import compute_dataset_statistics
+    from .dataset import compute_dataset_statistics
     
     stats = compute_dataset_statistics(data_loader, max_samples)
     

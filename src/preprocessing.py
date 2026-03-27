@@ -1,8 +1,10 @@
 """
-Deterministic preprocessing pipeline for 3D brain MRI using MONAI.
-Implements reorientation, bias correction, skull stripping, and normalization.
+Legacy preprocessing pipeline for 3D brain MRI using MONAI.
+Use preprocess_pipeline.BIDSPreprocessingPipeline for the document-aligned workflow.
 """
 import logging
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional, Union, Tuple, Dict, Any
 import json
@@ -278,6 +280,23 @@ class IntensityNormalization:
             else:
                 logger.warning("Zero percentile range, skipping normalization")
         
+        elif self.method == "diffusion":
+            # Diffusion model normalization: outputs [-1, 1] range
+            # Uses robust percentile-based scaling
+            lower_val = np.percentile(roi, self.percentile_lower)
+            upper_val = np.percentile(roi, self.percentile_upper)
+            if upper_val > lower_val:
+                # Scale to [0, 1] first
+                normalized = (normalized - lower_val) / (upper_val - lower_val)
+                normalized = np.clip(normalized, 0, 1)
+                # Then scale to [-1, 1]
+                normalized = normalized * 2.0 - 1.0
+            else:
+                logger.warning("Zero percentile range, skipping normalization")
+            # Set background to -1 (minimum of diffusion range)
+            if mask is not None:
+                normalized[mask == 0] = -1.0
+        
         else:
             raise ValueError(f"Unknown normalization method: {self.method}")
         
@@ -397,19 +416,30 @@ class MRIPreprocessor:
         logger.debug("Applying spatial transforms...")
         
         # Save as temporary file for MONAI transforms
-        temp_path = Path(output_path).parent / f"temp_{image_path.name}"
-        temp_path.parent.mkdir(parents=True, exist_ok=True)
-        nib.save(nib.Nifti1Image(image_array, original_affine), str(temp_path))
+        temp_dir = None
+        created_temp_dir = False
+        if output_path is not None:
+            temp_dir = Path(output_path).parent
+        else:
+            temp_dir = Path(tempfile.mkdtemp(prefix="topobrain_"))
+            created_temp_dir = True
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / f"temp_{image_path.name}"
         
-        data_dict = {"image": str(temp_path)}
-        
-        # Apply MONAI transforms (reorientation, resampling)
-        transformed = self.transforms(data_dict)
-        processed_image = transformed["image"]
-        
-        # Clean up temp file
-        if temp_path.exists():
-            temp_path.unlink()
+        try:
+            nib.save(nib.Nifti1Image(image_array, original_affine), str(temp_path))
+            
+            data_dict = {"image": str(temp_path)}
+            
+            # Apply MONAI transforms (reorientation, resampling)
+            transformed = self.transforms(data_dict)
+            processed_image = transformed["image"]
+        finally:
+            # Clean up temp file
+            if temp_path.exists():
+                temp_path.unlink()
+            if created_temp_dir and temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
         
         # Step 4: Intensity normalization AFTER spatial transforms
         logger.debug(f"Applying {self.config.normalization_method} normalization...")
@@ -517,8 +547,8 @@ class MRIPreprocessor:
             input_path = Path(input_path)
             
             # Create output filename maintaining BIDS structure
-            relative_path = input_path.relative_to(input_path.parent.parent.parent.parent)
-            output_filename = input_path.name.replace("_defaced", "_preprocessed")
+            relative_path = self._infer_relative_path(input_path)
+            output_filename = self._build_output_filename(input_path.name)
             output_path = output_dir / relative_path.parent / output_filename
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
@@ -537,6 +567,38 @@ class MRIPreprocessor:
         logger.info(f"Preprocessed {len(output_paths)}/{len(input_paths)} volumes")
         
         return output_paths
+
+    def _infer_relative_path(self, input_path: Path) -> Path:
+        """Infer a BIDS-like relative path without assuming fixed depth."""
+        parts = input_path.parts
+        subject_idx = None
+        for i, part in enumerate(parts):
+            if part.startswith("sub-"):
+                subject_idx = i
+                break
+        if subject_idx is None:
+            logger.warning("Could not infer BIDS path for %s, using filename only", input_path)
+            return Path(input_path.name)
+        return Path(*parts[subject_idx:])
+
+    @staticmethod
+    def _build_output_filename(filename: str) -> str:
+        """Create a safe output filename for preprocessed data."""
+        if filename.endswith(".nii.gz"):
+            base = filename[:-7]
+            ext = ".nii.gz"
+        elif filename.endswith(".nii"):
+            base = filename[:-4]
+            ext = ".nii"
+        else:
+            base = Path(filename).stem
+            ext = Path(filename).suffix
+        
+        base = base.replace("_defaced", "")
+        if "_preprocessed" not in base:
+            base = f"{base}_preprocessed"
+        
+        return f"{base}{ext}"
 
 
 if __name__ == "__main__":

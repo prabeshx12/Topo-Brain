@@ -1,0 +1,83 @@
+# ADNI Preprocessing Configuration
+# Based on: configs/preprocess.yaml (training pipeline)
+# Adapted for: Alzheimer's Disease Neuroimaging Initiative (ADNI) dataset
+# 
+# Key Differences from Training Data:
+#   - Brain atrophy (requires lower skull strip threshold)
+#   - Older scanner protocols (requires stricter N4 convergence)
+#   - Variable voxel spacing (keep native, no resampling for inference compatibility)
+#
+# CRITICAL: Do NOT change normalization, resampling, or patch parameters
+#           to maintain compatibility with inference pipeline
+
+# Data paths
+data_root: data
+output_root: derivatives/topobrain-preproc-adni
+modalities:
+  - T1w
+session_3t: ses-1
+prefer_aligned: false  # ADNI is unpaired, so don't prefer aligned
+require_aligned: false
+include_derivatives: false
+output_suffix: desc-preproc
+overwrite: false
+resume: true
+seed: 42
+
+# ============================================================================
+# SKULL STRIPPING - ADNI SPECIFIC
+# ============================================================================
+skull_strip:
+  method: hd-bet
+  device: cuda
+  mode: accurate
+  # ADAPTED FOR ADNI: Lower threshold for atrophic brains
+  # Training (healthy): 0.5
+  # ADNI (AD patients): 0.4 (prevents over-stripping gray matter)
+  bet_threshold: 0.4
+  use_existing_masks: true
+  mask_globs:
+    - "{image_dir}/*brain_mask.nii.gz"
+    - "{image_dir}/*brainmask.nii.gz"
+    - "{image_dir}/*mask.nii.gz"
+    - "{data_root}/derivatives/**/{subject}/**/brainmask.nii*"
+    - "{data_root}/derivatives/**/{subject}/**/brainmask.mgz"
+
+# ============================================================================
+# N4 BIAS FIELD CORRECTION - ADNI SPECIFIC
+# ============================================================================
+bias_correction:
+  enabled: true
+  # ADAPTED FOR ADNI: Stricter convergence for old scanner artifacts
+  # Training: 0.001 (standard)
+  # ADNI: 0.0001 (stricter correction for field inhomogeneities from ADNI protocols)
+  n4_iterations: 50
+  n4_convergence_threshold: 0.0001
+
+# ============================================================================
+# NORMALIZATION - UNCHANGED FROM TRAINING
+# ============================================================================
+# DO NOT CHANGE: This must match training pipeline for inference compatibility
+normalization:
+  method: diffusion  # Outputs [-1, 1] range for diffusion model inference
+  percentile_lower: 0.5   # Use wider percentiles to preserve contrast
+  percentile_upper: 99.5
+  clip_lower_percentile: null
+  clip_upper_percentile: null
+
+# ============================================================================
+# RESAMPLING - UNCHANGED FROM TRAINING
+# ============================================================================
+# DO NOT CHANGE: Keeping null (native spacing) for inference patch compatibility
+# All 64³ patches extracted at native voxel spacing as in training
+resample:
+  target_spacing: null  # ← CRITICAL: No resampling for inference compatibility
+  interpolation: linear
+
+# ============================================================================
+# QUALITY CONTROL
+# ============================================================================
+qc:
+  enabled: true
+  max_samples: 10
+  output_dir: null

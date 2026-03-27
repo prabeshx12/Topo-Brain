@@ -156,6 +156,7 @@ class MultiModalBrainMRIDataset(Dataset):
         data_list: List[Dict[str, Dict[str, Path]]],
         modalities: List[str],
         transform: Optional[Callable] = None,
+        allow_missing: bool = False,
     ):
         """
         Initialize multi-modal dataset.
@@ -172,10 +173,12 @@ class MultiModalBrainMRIDataset(Dataset):
                 }
             modalities: List of modality names to load
             transform: Optional transform
+            allow_missing: If True, fill missing modalities with zeros
         """
         self.data_list = data_list
         self.modalities = modalities
         self.transform = transform
+        self.allow_missing = allow_missing
         
         logger.info(f"Initialized multi-modal dataset with {len(data_list)} samples, modalities: {modalities}")
     
@@ -204,9 +207,14 @@ class MultiModalBrainMRIDataset(Dataset):
                 
                 images[modality] = torch.from_numpy(image_array).float()
             else:
-                logger.warning(f"Modality {modality} not found for {data_info['subject']}/{data_info['session']}")
-                # Create empty placeholder
-                images[modality] = torch.zeros((1, 64, 64, 64))  # Dummy shape
+                message = (
+                    f"Modality {modality} not found for {data_info.get('subject')} "
+                    f"{data_info.get('session')}"
+                )
+                if not self.allow_missing:
+                    raise KeyError(message)
+                logger.warning("%s; filling with zeros", message)
+                images[modality] = torch.zeros((1, 64, 64, 64))  # Placeholder
         
         # Stack modalities along channel dimension
         image_stack = torch.cat([images[mod] for mod in self.modalities], dim=0)

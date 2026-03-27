@@ -31,6 +31,7 @@ ENV/
 *.ipynb_checkpoints/
 *.ipynb
 !kaggle_preprocessing_notebook.ipynb
+!docs/*.ipynb
 
 # IDE
 .vscode/
@@ -53,6 +54,17 @@ cache/
 *.dcm
 Nifti/
 new/
+MRI-AD-Part-2/ADNI/
+MRI-AD-Part-2/ADNI_BIDS/
+MRI-AD-Part-2/adni_inference_results/
+MRI-AD-Part-2/**/derivatives/
+MRI-AD-Part-2/
+latex/
+docs/
+checkpoint/
+*.md
+
+
 
 # HD-BET dependency (users should install separately)
 HD-BET/

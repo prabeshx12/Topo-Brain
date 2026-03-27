@@ -1,6 +1,6 @@
-# Topo-Brain: 3T→7T MRI Super-Resolution with GANs
+# Topo-Brain: 3T→7T MRI Super-Resolution with Diffusion Models
 
-A complete pipeline for MRI preprocessing and 3T-to-7T super-resolution using 3D U-Net GANs. Includes brain extraction, preprocessing, and GAN training for generating high-field MRI images from low-field scans.
+A complete pipeline for MRI preprocessing and 3T-to-7T super-resolution using anatomy-guided diffusion models. Includes brain extraction, preprocessing, and conditional diffusion training for generating high-field MRI images from low-field scans.
 
 ## 🎯 Features
 
@@ -11,19 +11,20 @@ A complete pipeline for MRI preprocessing and 3T-to-7T super-resolution using 3D
 - **Intensity Normalization**: Z-score, min-max, or percentile methods
 - **Quality Control**: Automated QC metrics and outlier detection
 
-### GAN Architecture (3T→7T Super-Resolution)
-- **3D U-Net Generator**: 5-level encoder-decoder with skip connections
-- **3D PatchGAN Discriminator**: Multi-scale adversarial training
+### Diffusion Model (3T→7T Super-Resolution)
+- **Anatomy-Guided U-Net**: 3D conditional U-Net with multi-task learning
+- **Gaussian Diffusion**: DDPM-based training with 1000 timesteps
+- **Multi-Task Learning**: Simultaneous denoising and segmentation
 - **Paired Dataset**: Aligned 3T-7T pairs for supervised learning
 - **Patient-Level Splits**: No data leakage between train/val/test
-- **Advanced Augmentation**: MRI-specific augmentations (rotation, intensity, Gibbs ringing)
+- **Advanced Augmentation**: MRI-specific augmentations (rotation, intensity)
 
 ### Production Features
 - **Deterministic & Reproducible**: Fixed random seeds, saved splits
 - **Config-Driven**: Flexible configuration with multiple presets
-- **TensorBoard Integration**: Real-time training monitoring
+- **TensorBoard/Weights & Biases**: Real-time training monitoring
 - **Mixed Precision Support**: AMP for faster training
-- **Kaggle/Colab Ready**: Cloud preprocessing notebook included
+- **EMA Model Tracking**: Exponential moving average for stable inference
 
 ## 📊 Dataset Structure
 
@@ -40,42 +41,49 @@ Your dataset follows the BIDS format:
 Topo-Brain/
 ├── README.md                              # This file
 ├── requirements.txt                       # Python dependencies
-├── kaggle_preprocessing_notebook.ipynb    # Cloud preprocessing
+├── pairs.csv                              # 3T-7T paired data manifest
+│
+├── configs/                               # 🔧 Configuration files
+│   ├── dataset.yaml                       # Dataset configuration
+│   ├── preprocess.yaml                    # Preprocessing config
+│   └── train_diffusion.yaml               # Training configuration
 │
 ├── docs/                                  # 📚 Documentation
 │   ├── ARCHITECTURE.md                    # System architecture
 │   ├── CHANGELOG.md                       # Version history
-│   ├── GAN_IMPLEMENTATION_SUMMARY.md      # GAN details
-│   ├── GAN_README.md                      # GAN documentation
-│   └── IMPROVEMENTS_IMPLEMENTED.md        # Enhancement log
+│   ├── IMPROVEMENTS_IMPLEMENTED.md        # Enhancement log
+│   └── RUN_PREPROCESSING.md               # Preprocessing guide
 │
 ├── src/                                   # 🐍 Core modules
 │   ├── __init__.py
 │   ├── config.py                          # Configuration management
 │   ├── preprocessing.py                   # Preprocessing pipeline
 │   ├── dataset.py                         # PyTorch Dataset classes
+│   ├── synthesis_dataset.py               # Diffusion dataset loader
+│   ├── model.py                           # Anatomy-Guided U-Net
+│   ├── diffusion.py                       # Gaussian Diffusion logic
 │   ├── utils.py                           # Utility functions
 │   ├── harmonization.py                   # Intensity harmonization
 │   └── quality_control.py                 # QC metrics & reports
 │
-├── models/                                # 🧠 GAN models
-│   ├── __init__.py
-│   ├── generator_unet3d.py                # 3D U-Net generator
-│   ├── discriminator_patchgan3d.py        # PatchGAN discriminator
-│   └── paired_dataset.py                  # 3T-7T paired dataset
+├── models/                                # 🧠 Model checkpoints (saved during training)
+│   └── __init__.py
 │
 ├── scripts/                               # 🔧 Executable scripts
 │   ├── generate_brain_masks.py            # HD-BET brain extraction
-│   ├── train_gan.py                       # GAN training script
-│   ├── eval_gan.py                        # GAN evaluation
-│   ├── test_gan.py                        # Model testing
+│   ├── preprocess_bids.py                 # BIDS preprocessing
+│   ├── regenerate_pairs.py                # Create pairs.csv
+│   ├── train_diffusion.py                 # Diffusion training script
+│   ├── sample_diffusion.py                # Generate samples
+│   ├── visualize_dataset.py               # Dataset visualization
 │   └── example_pipeline.py                # Pipeline demo
 │
 ├── notebooks/                             # 📓 Jupyter notebooks
-│   └── interactive_pipeline.ipynb         # Interactive demo
+│   └── visualization_demo.ipynb           # Interactive demo
 │
 └── tests/                                 # ✅ Unit tests
-    └── __init__.py
+    ├── test_diffusion_logic.py            # Diffusion tests
+    └── test_synthesis_dataset.py          # Dataset tests
 ```
 
 ## 🚀 Quick Start
@@ -99,6 +107,14 @@ pip install HD-BET
 ```
 
 ### 2. Preprocessing Pipeline
+
+#### BIDS Preprocessing CLI (recommended)
+```bash
+python -m scripts.preprocess_bids \
+    --config configs/preprocess.yaml \
+    --data-root /path/to/BIDS \
+    --output-root /path/to/BIDS/derivatives/topobrain-preproc
+```
 
 #### Generate Brain Masks
 ```bash
@@ -124,54 +140,49 @@ data_list = discover_dataset(config.data.data_root, config.data)
 # Preprocess
 preprocessor = MRIPreprocessor(config.preprocessing)
 for item in data_list:
-    preprocessor.preprocess_single(
-        item['path'],
-        output_dir=config.data.output_root
+preprocessor.preprocess_single(
+        item['image'],
+        output_path=config.data.output_root / f"{item['subject']}_{item['session']}_{item['modality']}_preprocessed.nii.gz"
     )
 ```
 
-### 3. GAN Training (3T→7T Super-Resolution)
+### 3. Diffusion Model Training (3T→7T Super-Resolution)
 
-#### Create Dataset Splits
-```python
-from src.utils import create_patient_level_split
-from models.paired_dataset import create_paired_data_list
-
-# Patient-level split (no data leakage!)
-train_data, val_data, test_data = create_patient_level_split(
-    data_list,
-    train_ratio=0.6,
-    val_ratio=0.2,
-    test_ratio=0.2,
-    random_seed=42,
-)
-
-# Create 3T→7T pairs
-train_pairs = create_paired_data_list(train_data, modality="T1w")
+#### Create Dataset Pairs
+```bash
+python scripts/regenerate_pairs.py \
+    --data-root preprocessed/ \
+    --output pairs.csv \
+    --modality T1w
 ```
 
-#### Train GAN
+#### Train Diffusion Model
 ```bash
-python scripts/train_gan.py \
-    --data-root preprocessed/ \
-    --output-dir checkpoints/baseline \
-    --num-epochs 100 \
-    --batch-size 2 \
-    --patch-size 64 64 64 \
-    --lambda-l1 100.0
+python scripts/train_diffusion.py \
+    --config configs/train_diffusion.yaml \
+    --data-root preprocessed/
+```
+
+#### With Weights & Biases Tracking
+```bash
+python scripts/train_diffusion.py \
+    --config configs/train_diffusion.yaml \
+    --use-wandb \
+    --wandb-project topobrain
 ```
 
 #### Monitor Training
 ```bash
-tensorboard --logdir checkpoints/baseline/logs
+tensorboard --logdir logs/
 ```
 
-### 4. Evaluation
+### 4. Sample Generation
 ```bash
-python scripts/eval_gan.py \
-    --checkpoint checkpoints/baseline/best_generator.pth \
-    --test-data preprocessed/ \
-    --output-dir results/
+python scripts/sample_diffusion.py \
+    --checkpoint models/best_model.pth \
+    --input-3t preprocessed/sub-01_ses-1_T1w.nii.gz \
+    --output generated_7t.nii.gz \
+    --timesteps 1000
 ```
 
 ## ⚙️ Configuration
@@ -202,11 +213,6 @@ config.preprocessing.target_spacing = (1.0, 1.0, 1.0)
 config.preprocessing.normalization_method = "zscore"
 config.preprocessing.use_bias_correction = False  # Preserves anatomical detail
 
-# Customize splits
-config.split.train_ratio = 0.7
-config.split.val_ratio = 0.15
-config.split.test_ratio = 0.15
-
 # Customize training
 config.training.batch_size = 4
 config.training.num_workers = 8
@@ -226,27 +232,29 @@ config.validate()
 1. **Brain Extraction**: HD-BET for accurate skull stripping
 2. **Bias Field Correction**: Optional N4ITK (disabled by default to preserve detail)
 3. **Spatial Transforms**: RAS+ reorientation, optional resampling
-4. **Intensity Normalization**: Z-score (recommended for GANs)
+4. **Intensity Normalization**: Z-score (recommended for diffusion models)
 
-### GAN Architecture
-- **Generator**: 3D U-Net with 5 levels, skip connections
-- **Discriminator**: 3D PatchGAN (70×70×70 receptive field)
-- **Loss**: L1 + Adversarial (λ_L1 = 100)
-- **Training**: Adam optimizer, β1=0.5, β2=0.999
-- **Input**: 64³ patches from 3T MRI
-- **Output**: 64³ synthetic 7T MRI
+### Diffusion Model Architecture
+- **Backbone**: 3D U-Net with anatomy-guided conditioning
+- **Conditioning**: 3T input concatenated with noisy 7T
+- **Multi-Task**: Simultaneous denoising and tissue segmentation
+- **Diffusion Process**: DDPM with 1000 timesteps
+- **Noise Schedule**: Linear or cosine beta schedule
+- **Loss**: L1 reconstruction + Perceptual loss + Segmentation loss
+- **Training**: AdamW optimizer with EMA model tracking
+- **Input**: 3D patches from paired 3T-7T MRI
+- **Output**: High-quality synthetic 7T MRI
 
 ## � Data Augmentation
 
-### Training Augmentation (GAN)
+### Training Augmentation (Diffusion Model)
 - Random 3D affine transforms (rotation, translation, scaling)
 - Random flipping (L-R, A-P, S-I)
 - Random intensity shifts and scaling
 - Random Gaussian noise
 - Random Gaussian blur
-- Optional: Gibbs ringing simulation
 
-All configurable in [`models/paired_dataset.py`](models/paired_dataset.py)
+All configurable in [`src/synthesis_dataset.py`](src/synthesis_dataset.py)
 
 ## 🎯 Patient-Level Splitting
 
@@ -342,24 +350,22 @@ preprocessed/                          # Preprocessed volumes
   ├── sub-01_ses-1_T1w_preprocessed_metadata.json
   └── ...
 
-checkpoints/                           # GAN training checkpoints
-  ├── baseline/
-  │   ├── generator_epoch_50.pth
-  │   ├── discriminator_epoch_50.pth
-  │   ├── best_generator.pth
-  │   └── logs/                        # TensorBoard logs
+pairs.csv                              # 3T-7T paired data manifest
+
+models/                                # Training checkpoints
+  ├── diffusion_model_iter_10000.pth
+  ├── diffusion_model_iter_20000.pth
+  ├── best_model.pth
+  └── ema_model.pth
+
+logs/                                  # Training logs
+  ├── tensorboard/                     # TensorBoard logs
+  ├── samples/                         # Generated samples during training
+  └── training.log
 
 results/                               # Evaluation outputs
   ├── generated_7T/
-  ├── metrics.json
-  └── visualizations/
-
-cache/
-  └── data_split.json                  # Reproducible splits
-
-logs/
-  ├── pipeline.log
-  └── qc_reports/
+  └── metrics.json
 ```
 
 ## ⚠️ Important Notes
@@ -374,16 +380,16 @@ pip install HD-BET
 
 ### N4 Bias Correction
 - **Disabled by default** to preserve anatomical detail
-- GANs can learn to handle bias fields
+- Diffusion models can learn to handle bias fields
 - Enable if needed: `config.preprocessing.use_bias_correction = True`
 
 ### Memory Requirements
-- **GPU**: 8GB+ VRAM recommended for training (batch_size=2, patch=64³)
+- **GPU**: 16GB+ VRAM recommended for training (batch_size=4, patch=64³)
 - **RAM**: 16GB+ for data loading
 - Adjust batch size and patch size based on available memory
 
-### Kaggle/Colab Usage
-Use [`kaggle_preprocessing_notebook.ipynb`](kaggle_preprocessing_notebook.ipynb) for cloud preprocessing with free GPU
+### Training Configuration
+For training configuration options, see [`configs/train_diffusion.yaml`](configs/train_diffusion.yaml)
 
 ### Determinism
 For full reproducibility:
@@ -395,22 +401,20 @@ set_random_seeds(42)  # Sets seeds for random, numpy, torch
 ## 🐛 Troubleshooting
 
 ### GPU Out of Memory
-```python
+```bash
 # Reduce batch size
-python scripts/train_gan.py --batch-size 1
+python scripts/train_diffusion.py --config configs/train_diffusion.yaml
+# Edit batch_size in config file
 
-# Reduce patch size
-python scripts/train_gan.py --patch-size 32 32 32
-
-# Use CPU (slow but works)
-python scripts/train_gan.py --device cpu
+# Use gradient accumulation for effective larger batch
+# Edit accumulation_steps in config file
 ```
 
-### Import Errors After Reorganization
+### Import Errors
 ```python
-# Use new import paths
-from src.config import get_default_config  # ✅
-from config import get_default_config       # ❌ Old path
+# Use correct import paths
+from src.model import AnatomyGuidedUNet  # ✅
+from src.diffusion import GaussianDiffusion  # ✅
 ```
 
 ### HD-BET Model Download Issues
@@ -422,15 +426,15 @@ python -c "from HD_BET.checkpoint_download import maybe_download_parameters; may
 ## 📚 Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - System architecture overview
-- [`docs/GAN_README.md`](docs/GAN_README.md) - GAN model details
-- [`docs/GAN_IMPLEMENTATION_SUMMARY.md`](docs/GAN_IMPLEMENTATION_SUMMARY.md) - Implementation notes
+- [`docs/RUN_PREPROCESSING.md`](docs/RUN_PREPROCESSING.md) - Preprocessing guide
 - [`docs/IMPROVEMENTS_IMPLEMENTED.md`](docs/IMPROVEMENTS_IMPLEMENTED.md) - Enhancement log
+- [`docs/CHANGELOG.md`](docs/CHANGELOG.md) - Version history
 
 ## 🔗 References
 
 - **MONAI**: https://monai.io/
 - **HD-BET**: https://github.com/MIC-DKFZ/HD-BET
-- **Pix2Pix**: Isola et al. (2017) - Image-to-Image Translation with Conditional Adversarial Networks
+- **DDPM**: Ho et al. (2020) - Denoising Diffusion Probabilistic Models
 - **3D U-Net**: Çiçek et al. (2016) - 3D U-Net: Learning Dense Volumetric Segmentation
 - **BIDS Format**: https://bids.neuroimaging.io/
 
@@ -442,10 +446,10 @@ MIT License - See LICENSE file for details
 
 If you use this code, please cite:
 ```bibtex
-@software{topo_brain_2025,
+@software{topo_brain_2026,
   author = {Your Name},
-  title = {Topo-Brain: 3T-to-7T MRI Super-Resolution with GANs},
-  year = {2025},
+  title = {Topo-Brain: 3T-to-7T MRI Super-Resolution with Diffusion Models},
+  year = {2026},
   url = {https://github.com/prabeshx12/Topo-Brain}
 }
 ```
@@ -453,5 +457,4 @@ If you use this code, please cite:
 ---
 
 **Dataset**: UNC Paired 3T-7T MRI Dataset  
-**Interactive Demo**: [`notebooks/interactive_pipeline.ipynb`](notebooks/interactive_pipeline.ipynb)  
-**Cloud Processing**: [`kaggle_preprocessing_notebook.ipynb`](kaggle_preprocessing_notebook.ipynb)
+**Interactive Demo**: [`notebooks/visualization_demo.ipynb`](notebooks/visualization_demo.ipynb)

@@ -1,0 +1,55 @@
+# Training Configuration for Topology-Preserving 3T-to-7T MRI Enhancement
+# Diffusion Model Training with Blueprint-aligned hyperparameters
+
+dataset:
+  pairs_csv: "/eos/home-i04/p/ppokhrel/Untitled Folder 1/tissue_masks/pairs_with_tissue_masks_v2.csv"
+  batch_size: 2  # Reduced for stability
+  patch_size: [64, 64, 64]
+  num_workers: 4
+  use_t2: false # Multi-modal input support (Section 6.3)
+
+model:
+  in_channels: 1
+  cond_channels: 1
+  out_channels: 1
+  num_classes: 4
+  features: [32, 64, 128, 256]
+  dropout: 0.1  # Added slight dropout for regularization in scratch run
+  use_attention: true  # State-of-the-art global context module enabled
+
+diffusion:
+  timesteps: 200  # Using 200 timesteps (last 15 excluded for stability)
+  # Note: Cosine schedule has numerical instability at final timesteps
+  # Training automatically excludes t > 185 to prevent loss spikes
+  beta_schedule: "cosine"  # Cosine is more stable for medical imaging
+  loss_type: "l1"
+
+training:
+  lr: 1e-4  # Standard starting LR for training from scratch
+  weight_decay: 1e-4
+  grad_clip: 1.0  # Gradient clipping for stability
+  n_iters: 200000
+  save_freq: 1000
+  val_freq: 1000
+  log_freq: 50
+  
+  # EMA settings
+  ema_decay: 0.9999
+  ema_start: 2000
+  
+stages:
+  # Blueprint-aligned curriculum learning stages (step-based)
+  stage1_end: 10000   # Diffusion + 50% pixel loss (warm-up)
+  stage2_end: 50000   # Diffusion + full pixel loss
+  stage3_end: 100000  # Add perceptual loss
+  # Stage 4 (100k+): Full multi-task with gradual topology warm-up
+
+# Blueprint-aligned loss weights (CRITICAL FOR CONVERGENCE)
+loss_weights:
+  lambda_pixel: 1.0     # PRIMARY reconstruction loss (blueprint requirement)
+  lambda_percep: 0.3    # Moderate perceptual guidance
+  lambda_topo: 0.2      # Anatomical structure preservation
+  
+  # Warm-up configuration
+  topo_warmup_steps: 25000
+  percep_warmup_steps: 10000  # Reduced to activate earlier 

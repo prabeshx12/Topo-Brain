@@ -1,4 +1,8 @@
-# Brain MRI Preprocessing Pipeline - Architecture Overview
+# Topo-Brain: Preprocessing & Diffusion Model Pipeline - Architecture Overview
+
+This document describes the complete architecture from preprocessing through diffusion model training.
+
+## Pipeline Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -93,15 +97,34 @@
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      PYTORCH DATASET & DATALOADER                        │
-│                            (dataset.py)                                  │
+│                      3T-7T PAIR GENERATION                               │
+│                     (regenerate_pairs.py)                                │
+│                                                                          │
+│  Input: Preprocessed 3T and 7T volumes                                 │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │ 1. Match 3T and 7T scans by subject/modality                  │     │
+│  │    ↓                                                           │     │
+│  │ 2. Create pairs.csv manifest                                  │     │
+│  │    └─ Columns: input_3t, target_7t, subject, modality        │     │
+│  │    ↓                                                           │     │
+│  │ 3. Patient-level train/val/test split                        │     │
+│  │    └─ No data leakage between splits                          │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                          │
+│  Output: pairs.csv                                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      SYNTHESIS DATASET LOADER                            │
+│                     (synthesis_dataset.py)                               │
 │                                                                          │
 │  ┌─────────────────────────────────────────────────────────────┐       │
-│  │  BrainMRIDataset                                             │       │
-│  │  ├─ Loads preprocessed volumes                              │       │
+│  │  SynthesisDataset                                            │       │
+│  │  ├─ Loads paired 3T-7T volumes from pairs.csv              │       │
+│  │  ├─ Random 3D patch extraction                              │       │
 │  │  ├─ Applies data augmentation (training only)               │       │
-│  │  ├─ Returns: {image: Tensor, subject: str, ...}            │       │
-│  │  └─ Optional: In-memory caching                             │       │
+│  │  └─ Returns: {x_3t, x_7t, mask, subject}                   │       │
 │  └─────────────────────────────────────────────────────────────┘       │
 │                          │                                              │
 │                          ▼                                              │
@@ -110,17 +133,7 @@
 │  │  ├─ Random Affine (rotation, translation, scaling)          │       │
 │  │  ├─ Random Flip (left-right)                                │       │
 │  │  ├─ Random Intensity Shift & Scale                          │       │
-│  │  ├─ Random Gaussian Noise                                   │       │
-│  │  └─ Random Gaussian Smoothing                               │       │
-│  └─────────────────────────────────────────────────────────────┘       │
-│                          │                                              │
-│                          ▼                                              │
-│  ┌─────────────────────────────────────────────────────────────┐       │
-│  │  PyTorch DataLoader                                          │       │
-│  │  ├─ Batch size: 2-4 (3D volumes are large)                 │       │
-│  │  ├─ Multi-worker loading (4-8 workers)                      │       │
-│  │  ├─ Pin memory for GPU transfer                             │       │
-│  │  └─ Prefetching for faster loading                          │       │
+│  │  └─ Random Gaussian Noise                                   │       │
 │  └─────────────────────────────────────────────────────────────┘       │
 │                                                                          │
 │  Output: train_loader, val_loader, test_loader                         │
@@ -128,33 +141,75 @@
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      MONITORING & VISUALIZATION                          │
-│                            (utils.py)                                    │
+│                      DIFFUSION MODEL ARCHITECTURE                        │
+│                     (model.py + diffusion.py)                            │
 │                                                                          │
-│  ┌────────────────────┐  ┌────────────────────┐  ┌─────────────────┐  │
-│  │  Statistics        │  │  Visualizations    │  │  Logging        │  │
-│  │  ├─ Mean/Std       │  │  ├─ Orthogonal    │  │  ├─ Pipeline    │  │
-│  │  ├─ Min/Max        │  │  │   slices        │  │  │   logs       │  │
-│  │  ├─ Percentiles    │  │  ├─ Intensity      │  │  ├─ Statistics │  │
-│  │  └─ Shape info     │  │  │   histograms    │  │  └─ Errors     │  │
-│  └────────────────────┘  │  └─ Before/After   │  └─────────────────┘  │
-│                          │    preprocessing     │                       │
-│                          └────────────────────┘                        │
-│                                                                          │
-│  Saved to: logs/ directory                                             │
+│  ┌─────────────────────────────────────────────────────────────┐       │
+│  │  AnatomyGuidedUNet (model.py)                               │       │
+│  │  ├─ Input: Concatenate(noisy_7t, clean_3t)                 │       │
+│  │  ├─ Encoder: [32, 64, 128, 256] features                   │       │
+│  │  ├─ Decoder (Denoising): Mirror encoder                     │       │
+│  │  ├─ Decoder (Segmentation): Tissue classification           │       │
+│  │  └─ Multi-Task: Denoise 7T + Predict tissue masks          │       │
+│  └─────────────────────────────────────────────────────────────┘       │
+│                          │                                              │
+│                          ▼                                              │
+│  ┌─────────────────────────────────────────────────────────────┐       │
+│  │  GaussianDiffusion (diffusion.py)                           │       │
+│  │  ├─ Forward: Add noise to 7T (q(x_t | x_0))               │       │
+│  │  ├─ Reverse: Denoise step-by-step (p(x_{t-1} | x_t))      │       │
+│  │  ├─ Loss: L1 + Perceptual + Segmentation                   │       │
+│  │  └─ Timesteps: 1000 (linear/cosine schedule)               │       │
+│  └─────────────────────────────────────────────────────────────┘       │
 └─────────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         YOUR MODEL TRAINING                              │
+│                      TRAINING LOOP                                       │
+│                     (train_diffusion.py)                                 │
 │                                                                          │
-│  for epoch in range(num_epochs):                                       │
-│      for batch in train_loader:                                        │
-│          images = batch['image']  # (B, 1, H, W, D)                    │
-│          # Your model forward pass                                      │
-│          outputs = model(images)                                        │
-│          # Compute loss, backprop, optimize                             │
-│          ...                                                             │
+│  for iteration in range(n_iters):                                      │
+│      batch = next(train_loader)                                        │
+│      x_3t, x_7t, mask = batch['x_3t'], batch['x_7t'], batch['mask']   │
+│                                                                          │
+│      # Sample random timestep                                           │
+│      t = random.randint(0, 1000)                                       │
+│                                                                          │
+│      # Compute loss (denoising + segmentation)                          │
+│      loss_dict = diffusion.compute_loss(x_3t, x_7t, mask, t)          │
+│                                                                          │
+│      # Backprop & optimize                                              │
+│      optimizer.zero_grad()                                              │
+│      loss_dict['total'].backward()                                      │
+│      optimizer.step()                                                   │
+│                                                                          │
+│      # Update EMA model                                                 │
+│      ema.step_ema(ema_model, model)                                    │
+│                                                                          │
+│      # Periodic saving & sampling                                       │
+│      if iteration % save_freq == 0:                                    │
+│          save_checkpoint(model, ema_model, optimizer)                  │
+│          generate_samples(ema_model, val_batch)                        │
+└─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      INFERENCE & SAMPLING                                │
+│                     (sample_diffusion.py)                                │
+│                                                                          │
+│  Input: 3T MRI volume + trained model                                  │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │ 1. Load trained EMA model                                     │     │
+│  │    ↓                                                           │     │
+│  │ 2. Start with random noise x_T ~ N(0, I)                     │     │
+│  │    ↓                                                           │     │
+│  │ 3. Iterative denoising (t = 1000 → 0)                        │     │
+│  │    └─ x_{t-1} = denoise(x_t, x_3t, t)                        │     │
+│  │    ↓                                                           │     │
+│  │ 4. Final output: x_0 (synthetic 7T)                          │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                          │
+│  Output: Synthetic 7T MRI volume                                        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -171,23 +226,37 @@
 - IntensityNormalization class (3 methods)
 - MRIPreprocessor (orchestrates all steps)
 
-### 3. dataset.py
-- BrainMRIDataset (single modality)
-- MultiModalBrainMRIDataset (T1w + T2w)
-- build_augmentation_transforms()
-- create_data_loaders()
+### 3. synthesis_dataset.py
+- SynthesisDataset (paired 3T-7T loading)
+- Random patch extraction
+- Conditional augmentation
+- Patient-level data splitting
 
-### 4. utils.py
-- discover_dataset() - BIDS parsing
-- create_patient_level_split() - No leakage!
-- create_kfold_splits() - Cross-validation
-- visualize_sample() - Visualization
-- compute_dataset_statistics() - Analytics
+### 4. model.py
+- AnatomyGuidedUNet (3D conditional U-Net)
+- Multi-task learning (denoising + segmentation)
+- Residual blocks for stable training
+- Dual decoder architecture
 
-### 5. example_pipeline.py
-- End-to-end demonstration
-- Command-line interface
-- Complete workflow
+### 5. diffusion.py
+- GaussianDiffusion (DDPM implementation)
+- Forward diffusion process (noise addition)
+- Reverse diffusion process (denoising)
+- Multi-component loss functions
+- Perceptual loss (VGG-based)
+
+### 6. train_diffusion.py
+- Main training loop
+- EMA model tracking
+- TensorBoard/W&B logging
+- Checkpoint management
+- Periodic sampling
+
+### 7. sample_diffusion.py
+- Inference pipeline
+- DDPM/DDIM sampling
+- Full volume reconstruction
+- Quality metrics computation
 
 ## Data Flow
 
@@ -196,15 +265,17 @@ Raw BIDS Data
     ↓
 Discover & Parse
     ↓
-Patient-Level Split (Train/Val/Test)
-    ↓
 Preprocessing (N4, Skull Strip, Normalize)
     ↓
-PyTorch Dataset
+Create 3T-7T Pairs (pairs.csv)
     ↓
-DataLoader (with Augmentation)
+SynthesisDataset (Patch Extraction + Augmentation)
     ↓
-Your Model
+Diffusion Training (Iterative Denoising)
+    ↓
+Trained Model
+    ↓
+Sampling (Generate 7T from 3T)
 ```
 
 ## File Locations
@@ -212,15 +283,17 @@ Your Model
 ```
 Input:  Nifti/**/*_defaced.nii.gz
 Output: preprocessed/**/*_preprocessed.nii.gz
-Cache:  cache/data_split.json
-Logs:   logs/pipeline.log, logs/statistics/, logs/visualizations/
+Pairs:  pairs.csv
+Models: models/*.pth
+Logs:   logs/**/* (TensorBoard, samples, training logs)
 ```
 
 ## Critical Features
 
 ✅ **Patient-Level Splitting** - Prevents data leakage
-✅ **Deterministic** - Fixed random seeds, reproducible
-✅ **Medical Imaging Best Practices** - RAS orientation, N4 correction
+✅ **Conditional Diffusion** - 3T guides 7T generation
+✅ **Multi-Task Learning** - Denoising + tissue segmentation
+✅ **EMA Tracking** - Stable inference model
 ✅ **Production-Ready** - Error handling, logging, validation
+✅ **Flexible Configuration** - YAML-based settings
 ✅ **Modular** - Easy to customize and extend
-✅ **Well-Documented** - Extensive docstrings and examples

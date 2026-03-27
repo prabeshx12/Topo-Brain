@@ -1,0 +1,51 @@
+data_root: data
+output_root: derivatives/topobrain-preproc
+modalities:
+  - T1w
+  - T2w
+session_3t: ses-1
+session_7t: ses-2
+prefer_aligned: true
+require_aligned: false
+aligned_keywords:
+  - aligned
+include_derivatives: false
+output_suffix: desc-preproc
+overwrite: false
+resume: true
+seed: 42
+
+skull_strip:
+  method: hd-bet
+  device: cuda
+  mode: accurate
+  bet_threshold: 0.5
+  use_existing_masks: true
+  mask_globs:
+    - "{image_dir}/*brain_mask.nii.gz"
+    - "{image_dir}/*brainmask.nii.gz"
+    - "{image_dir}/*mask.nii.gz"
+    - "{data_root}/derivatives/**/{subject}/**/brainmask.nii*"
+    - "{data_root}/derivatives/**/{subject}/**/brainmask.mgz"
+
+bias_correction:
+  enabled: true
+  n4_iterations: 50
+  n4_convergence_threshold: 0.001
+
+normalization:
+  method: diffusion  # Outputs [-1, 1] range for diffusion model training
+  # Blueprint specifies z-score, but diffusion method preserves contrast while
+  # providing stable [-1,1] range required by DDPM mathematics
+  percentile_lower: 0.5  # Use wider percentiles to preserve contrast
+  percentile_upper: 99.5
+  clip_lower_percentile: null  # Disable redundant pre-clipping
+  clip_upper_percentile: null
+
+resample:
+  target_spacing: null
+  interpolation: linear
+
+qc:
+  enabled: true
+  max_samples: 5

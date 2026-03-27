@@ -4,6 +4,8 @@ Core modules for MRI preprocessing and harmonization pipeline.
 
 from .config import get_default_config, get_highres_config, get_fast_config, MRIConfig
 from .preprocessing import MRIPreprocessor
+from .preprocess_pipeline import BIDSPreprocessingPipeline, PipelineConfig
+from .bids import BIDSFile, discover_bids_files, create_3t_7t_pairs
 from .dataset import (
     BrainMRIDataset,
     create_data_loaders,
@@ -22,7 +24,22 @@ from .utils import (
     set_random_seeds,
 )
 from .harmonization import HistogramMatcher, IntensityHarmonizer
-from .quality_control import QCMetrics, PreprocessingQC
+from .quality_control import (
+    QCMetrics,
+    PreprocessingQC,
+    AlignmentQC,
+    MaskQualityValidator,
+    MRIQCParser,
+)
+from .synthesis_dataset import (
+    PairedPatchDataset,
+    SubjectSplitter,
+    InferencePatchSampler,
+    PatchConfig,
+    SplitConfig,
+    load_pairs_manifest,
+    create_synthesis_dataloaders,
+)
 
 __all__ = [
     # Config
@@ -32,12 +49,22 @@ __all__ = [
     'MRIConfig',
     # Preprocessing
     'MRIPreprocessor',
+    'BIDSPreprocessingPipeline',
+    'PipelineConfig',
     # Dataset
     'BrainMRIDataset',
     'create_data_loaders',
     'save_data_split',
     'load_data_split',
     'compute_dataset_statistics',
+    # Synthesis Dataset
+    'PairedPatchDataset',
+    'SubjectSplitter',
+    'InferencePatchSampler',
+    'PatchConfig',
+    'SplitConfig',
+    'load_pairs_manifest',
+    'create_synthesis_dataloaders',
     # Utils
     'setup_logging',
     'discover_dataset',
@@ -47,10 +74,17 @@ __all__ = [
     'compute_and_save_statistics',
     'verify_preprocessing',
     'set_random_seeds',
+    # BIDS discovery
+    'BIDSFile',
+    'discover_bids_files',
+    'create_3t_7t_pairs',
     # Harmonization
     'HistogramMatcher',
     'IntensityHarmonizer',
     # Quality Control
     'QCMetrics',
     'PreprocessingQC',
+    'AlignmentQC',
+    'MaskQualityValidator',
+    'MRIQCParser',
 ]
