@@ -462,7 +462,7 @@ def main():
         lr_decay_step = config["training"].get("lr_decay_step", 0)
         if lr_decay_step > 0 and step == lr_decay_step:
             lr_decay_factor = config["training"].get("lr_decay_factor", 0.5)
-            new_lr = config["training"]["lr"] * lr_decay_factor
+            new_lr = float(config["training"]["lr"]) * float(lr_decay_factor)
             for param_group in optimizer.param_groups:
                 param_group['lr'] = new_lr
             logger.info(f"Step {step}: Learning rate decayed from {config['training']['lr']} to {new_lr}")

@@ -69,7 +69,7 @@ This is the "recipe" the dataloader uses to know which files to load together du
 10 paired 3T/7T subjects is extremely small for deep learning. We handle this through:
 - **Patch-based training**: Instead of training on whole brains (which would overfit immediately), we cut each brain into 64x64x64 voxel patches. With 32 patches per volume, 10 subjects gives ~320 patch pairs — still small but workable
 - **Data augmentation**: Random flips, rotations during training
-- **Leave-One-Out Cross-Validation (LOOCV)**: With 10 subjects we use LOOCV — train on 9, validate on 1, rotate
+- **Leave-One-Out Cross-Validation (LOOCV)**: With 10 subjects we use LOOCV — in a full run, train on 9, validate on 1, and rotate through all subjects. In practice, the current training run uses `val_fold=0` and `test_fold=1` (two different subjects held out), meaning **8 subjects train, 1 validates, 1 tests** — running all 10 folds would require 10 separate training runs
 - **EMA (Exponential Moving Average)**: Smooths weight updates to prevent overfitting to single batches
 
 ---
@@ -166,9 +166,18 @@ The model is called **AnatomyGuidedUNet**. It is a 3D UNet enhanced with time em
 ### 5.1 Overview
 
 ```
-Input: [noisy 7T patch, clean 3T patch] concatenated on channel dim → [B, 2, 64, 64, 64]
-Output: [predicted noise, tissue segmentation logits]
+TRAINING:
+  x_0       = real clean 7T patch          (ground truth — never fed to model directly)
+  noise     = random Gaussian noise
+  x_t       = q_sample(x_0, t, noise)      = noisy version of 7T at timestep t
+  Model in  = [x_t, clean_3T]  → [B, 2, 64, 64, 64]
+  Model out = [predicted noise ε, tissue segmentation logits]
+
+INFERENCE (no real 7T exists):
+  Model in  = [pure Gaussian noise, clean_3T]  → iteratively denoised → synthetic 7T
 ```
+
+**Key point**: During training the model never sees a clean 7T — only noise-corrupted versions of it. The 7T is the target we corrupt and ask the model to reconstruct by predicting the noise. During inference there is no real 7T at all; we start from pure random noise and denoise guided by the 3T.
 
 ### 5.2 Component 1: Sinusoidal Time Embedding
 
@@ -219,7 +228,7 @@ x → Conv3d(3x3x3) → GroupNorm → SiLU activation
   → Skip connection (1x1 conv if channels change) + residual add
 ```
 
-**GroupNorm instead of BatchNorm**: With batch size 2, BatchNorm is unreliable (the batch statistics are noisy). GroupNorm normalizes within a group of channels for each sample independently — stable at any batch size.
+**GroupNorm instead of InstanceNorm** (as stated in the code comment): GroupNorm divides the channels into groups and normalises within each group, per sample. InstanceNorm normalises across all spatial positions per channel per sample — it can be unstable when feature maps are small (e.g., the 8×8×8 bottleneck has only 512 positions). GroupNorm is more stable at small spatial sizes. It also has no dependency on batch size at all, making it the standard choice for 3D medical imaging where batch sizes are small and volumes are large.
 
 **SiLU (Swish) activation**: `x * sigmoid(x)` — smooth, non-monotonic, empirically better than ReLU for generative models.
 
@@ -269,9 +278,10 @@ Skip connections go from each encoder level to the corresponding decoder level. 
 
 ### 5.8 Parameter Count
 
-With features=[32, 64, 128, 256]:
-- Approximately 3–5 million parameters
-- Designed to fit in ~8GB GPU memory with batch size 2, patch size 64^3, AMP enabled
+With features=[32, 64, 128, 256] and a dual decoder:
+
+- Approximately **14–15 million parameters** (the 256-channel bottleneck with two ResBlocks alone accounts for ~7M; each decoder adds ~2M)
+- Designed to fit in ~24GB GPU memory (RTX 4090) with batch size 8, patch size 64³, AMP enabled
 
 ---
 
@@ -332,7 +342,7 @@ The cosine curve means:
 This gives more balanced training signal across all timesteps.
 
 **Critical fix — last 15 timesteps excluded:**
-At T=200, the cosine schedule produces extreme coefficient values near t=185-200 (the `sqrt(1/ᾱ_t)` term exceeds 4000x). This caused catastrophic loss spikes when these timesteps were sampled. We restrict training to timesteps 0-185 (`max_safe_timestep = len(betas) - 15`). Inference also uses the same range for consistency.
+At T=200, the cosine schedule produces extreme coefficient values near t=185-200 (the `sqrt(1/ᾱ_t)` term exceeds 4000x). This caused catastrophic loss spikes when these timesteps were sampled. We restrict training to timesteps 0–184 (`t = randint(0, 185)` gives integers 0 to 184 inclusive — 185 values, max is 184 not 185). Inference also uses the same range for consistency.
 
 ### 6.4 Forward Process (q_sample)
 
@@ -413,7 +423,7 @@ L_percep = MSE(VGG16_features(x_recon), VGG16_features(x_start))
 - VGG16 expects 2D RGB images. We handle 3D by sampling every 8th depth slice (stride=max(1, D//8)) and treating depth as a batch dimension
 - The 1-channel grayscale MRI is replicated to 3 channels
 - Input is mapped from [-1,1] to [0,1] then normalized to ImageNet statistics (mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
-- We use VGG16 layers 1-16 (first 4 blocks) for low-to-mid level features
+- We use VGG16 feature layers 0–15 (indices 0 to 15) — this covers the first two full convolutional blocks and the first two convolutions of the third block (not "4 blocks" — the 4th block is not included). These capture low-to-mid level texture and edge features
 - Loss is clamped to max=10.0
 
 **Why add this at all?** Pixel loss (L1) alone produces blurry images. The model minimizes the average error, which means averaging over the distribution of plausible images → blur. Perceptual loss penalizes incorrect textures and edge sharpness, pushing the model toward images that look structurally correct even at a feature level.
