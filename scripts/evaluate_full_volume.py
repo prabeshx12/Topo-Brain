@@ -340,11 +340,19 @@ def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32):
                 out_shape = inp.shape
 
                 with torch.no_grad():
-                    pred, seg = diffusion.p_sample_loop(
-                        conditioning=inp,
-                        shape=out_shape,
-                        return_all=True,
-                    )
+                    if args.sampler == 'ddim':
+                        pred, seg = diffusion.ddim_sample(
+                            conditioning=inp,
+                            shape=out_shape,
+                            ddim_steps=args.ddim_steps,
+                            eta=0.0,
+                        )
+                    else:
+                        pred, seg = diffusion.p_sample_loop(
+                            conditioning=inp,
+                            shape=out_shape,
+                            return_all=True,
+                        )
 
                 pred_np = pred.cpu().numpy().squeeze()
                 # Trim to actual shape
@@ -516,6 +524,10 @@ Examples:
                         help='Session ID (e.g., ses-1) for FreeSurfer masks')
     parser.add_argument('--mask-threshold', type=float, default=-0.95,
                         help='Threshold for brain mask if no mask file provided (default: -0.95)')
+    parser.add_argument('--sampler', type=str, default='ddpm', choices=['ddpm', 'ddim'],
+                        help='Sampling method: ddpm (stochastic, default) or ddim (deterministic, higher PSNR)')
+    parser.add_argument('--ddim-steps', type=int, default=50,
+                        help='Number of DDIM steps (default: 50, only used with --sampler ddim)')
     args = parser.parse_args()
 
     # ---- config ----

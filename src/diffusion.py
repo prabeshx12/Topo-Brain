@@ -270,10 +270,61 @@ class GaussianDiffusion(nn.Module):
         # training, but the final sample must respect the data range.
         # Without this, out-of-range voxels cause large MSE → low PSNR.
         img = torch.clamp(img, -1.0, 1.0)
-            
+
         if return_all:
             return img, final_seg
         return img
+
+    @torch.no_grad()
+    def ddim_sample(self, conditioning, shape, ddim_steps=50, eta=0.0):
+        """
+        DDIM sampling — deterministic (eta=0) or semi-stochastic (eta>0).
+        Faster and typically higher PSNR than full DDPM chain.
+        """
+        device = self.betas.device
+        b = shape[0]
+        max_safe = len(self.betas) - 15
+
+        # Uniform subsequence of timesteps
+        times = np.linspace(0, max_safe - 1, ddim_steps, dtype=int)
+        times = list(reversed(times))
+
+        img = torch.randn(shape, device=device)
+        final_seg = None
+
+        alphas_cumprod = self.alphas_cumprod
+
+        for i, t_cur in enumerate(times):
+            t = torch.full((b,), t_cur, device=device, dtype=torch.long)
+
+            out = self.model(img, t, conditioning)
+            model_out = out['prediction']
+            final_seg = out.get('segmentation')
+
+            alpha_t = extract(alphas_cumprod, t, img.shape)
+
+            # Recover x0 and eps depending on training objective
+            if self.objective == 'pred_noise':
+                eps_pred = model_out
+                x0_pred = (img - torch.sqrt(1 - alpha_t) * eps_pred) / torch.sqrt(alpha_t)
+            else:  # pred_x0
+                x0_pred = model_out
+                eps_pred = (img - torch.sqrt(alpha_t) * x0_pred) / torch.sqrt(1 - alpha_t)
+
+            x0_pred = torch.clamp(x0_pred, -1.0, 1.0)
+
+            if i < len(times) - 1:
+                t_next = times[i + 1]
+                alpha_next = alphas_cumprod[t_next]
+                sigma = eta * torch.sqrt((1 - alpha_next) / (1 - alpha_t) * (1 - alpha_t / alpha_next))
+                dir_xt = torch.sqrt(1 - alpha_next - sigma ** 2) * eps_pred
+                noise = torch.randn_like(img) if eta > 0 else 0
+                img = torch.sqrt(alpha_next) * x0_pred + dir_xt + sigma * noise
+            else:
+                img = x0_pred
+
+        img = torch.clamp(img, -1.0, 1.0)
+        return img, final_seg
         
     def forward(self, x_start, conditioning, seg_target=None, 
                 lambda_pixel=1.0, lambda_percep=0.1, lambda_topo=0.1):
