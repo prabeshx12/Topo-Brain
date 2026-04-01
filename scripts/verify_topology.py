@@ -88,14 +88,12 @@ def compute_betti_numbers(binary_vol):
     V = int(binary_vol.sum())
 
     # Count shared edges (6-connected neighbors)
-    edges = 0
-    for axis in range(3):
-        edges += int(np.sum(binary_vol[:-1 if axis == 0 else slice(None),
-                                        :-1 if axis == 1 else slice(None),
-                                        :-1 if axis == 2 else slice(None)] &
-                            binary_vol[1: if axis == 0 else slice(None),
-                                       1: if axis == 1 else slice(None),
-                                       1: if axis == 2 else slice(None)]))
+    # Along each axis, count adjacent voxel pairs that are both ON
+    edges = (
+        int(np.sum(binary_vol[:-1, :, :] & binary_vol[1:, :, :])) +
+        int(np.sum(binary_vol[:, :-1, :] & binary_vol[:, 1:, :])) +
+        int(np.sum(binary_vol[:, :, :-1] & binary_vol[:, :, 1:]))
+    )
 
     # Count shared faces (pairs of voxels sharing a face in 2D plane)
     faces = 0
