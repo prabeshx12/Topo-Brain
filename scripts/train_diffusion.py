@@ -535,6 +535,25 @@ def main():
             torch.save(ckpt_data, latest_path)
             logger.info(f"Saved latest checkpoint to {latest_path}")
 
+    # Save final checkpoint
+    output_root = Path(args.output) if args.output else Path(".")
+    final_step = n_iters
+    step_dir = output_root / f"checkpoint_{final_step}"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_data = {
+        'step': final_step,
+        'model': model.state_dict(),
+        'ema': ema_model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scaler': scaler.state_dict(),
+        'config': config,
+    }
+    save_path = step_dir / f"checkpoint_{final_step}.pt"
+    torch.save(ckpt_data, save_path)
+    latest_path = output_root / "checkpoint_latest.pt"
+    torch.save(ckpt_data, latest_path)
+    logger.info(f"Saved final checkpoint to {save_path}")
+
     final_skip_ratio = (skipped_steps / attempted_steps) if attempted_steps > 0 else 0.0
     logger.info(
         f"Training Complete. skipped_steps={skipped_steps}, "
