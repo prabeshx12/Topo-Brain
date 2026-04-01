@@ -276,7 +276,7 @@ def _tukey_window_1d(n, alpha=0.5):
     return w
 
 
-def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32):
+def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32, sampler='ddpm', ddim_steps=50):
     """
     Run diffusion inference on overlapping 64^3 tiles and stitch the result.
 
@@ -340,11 +340,11 @@ def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32):
                 out_shape = inp.shape
 
                 with torch.no_grad():
-                    if args.sampler == 'ddim':
+                    if sampler == 'ddim':
                         pred, seg = diffusion.ddim_sample(
                             conditioning=inp,
                             shape=out_shape,
-                            ddim_steps=args.ddim_steps,
+                            ddim_steps=ddim_steps,
                             eta=0.0,
                         )
                     else:
@@ -687,6 +687,8 @@ Examples:
         diffusion, input_vol, device,
         patch_size=patch_size,
         overlap=args.overlap,
+        sampler=args.sampler,
+        ddim_steps=args.ddim_steps,
     )
 
     # ---- brain mask: remove background noise from prediction ----
