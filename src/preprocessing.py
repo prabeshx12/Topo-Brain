@@ -341,7 +341,11 @@ class MRIPreprocessor:
         transforms_list = [
             LoadImaged(keys=["image"], image_only=False, ensure_channel_first=True),
             EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
-            Orientationd(keys=["image"], axcodes=self.config.target_orientation),
+            Orientationd(
+                keys=["image"],
+                axcodes=self.config.target_orientation,
+                labels=(("L", "R"), ("P", "A"), ("I", "S")),
+            ),
         ]
         
         # Add resampling if target spacing is specified
