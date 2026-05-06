@@ -1,0 +1,65 @@
+# ABLATION CONFIG: No topology loss (lambda_topo=0)
+# Purpose: Compare against full model to prove topology loss contribution
+# Train from scratch with same settings, only topology loss disabled
+
+dataset:
+  pairs_csv: "pairs_new.csv"
+  batch_size: 8  # RTX 4090 (24GB) baseline with AMP
+  patch_size: [64, 64, 64]
+  patches_per_volume: 32
+  min_brain_fraction: 0.1
+  num_workers: 6
+  use_t2: false # Multi-modal input support (Section 6.3)
+  seed: 42
+  n_folds: 10
+  val_fold: 0
+  test_fold: 1
+  use_loocv: true
+
+model:
+  in_channels: 1
+  cond_channels: 1
+  out_channels: 1
+  num_classes: 4
+  features: [32, 64, 128, 256]
+  dropout: 0.1  # Added slight dropout for regularization in scratch run
+  use_attention: true  # State-of-the-art global context module enabled
+
+diffusion:
+  timesteps: 200  # Using 200 timesteps (last 15 excluded for stability)
+  # Note: Cosine schedule has numerical instability at final timesteps
+  # Training automatically excludes t > 185 to prevent loss spikes
+  beta_schedule: "cosine"  # Cosine is more stable for medical imaging
+  loss_type: "l1"
+
+training:
+  lr: 1e-4  # Standard starting LR
+  lr_decay_step: 120000  # Start refinement at 80% of 150k steps
+  lr_decay_factor: 0.2  # Drops to 2e-5 for final precision
+  weight_decay: 1e-4
+  grad_clip: 1.0  # Gradient clipping for stability
+  n_iters: 150000
+  save_freq: 5000
+  val_freq: 5000
+  log_freq: 50
+  use_amp: true
+  
+  # EMA settings
+  ema_decay: 0.9999
+  ema_start: 2000
+  
+stages:
+  # Rapid Curriculum (BS=8): Prevents the "Late Introduction" hallucination bias
+  stage1_end: 3000    # Diffusion + low pixel only
+  stage2_end: 12000   # Full pixel loss
+  stage3_end: 30000   # Perceptual warmup active
+  # Steps 30k -> 150k: full anatomy-guided refinement
+
+# ABLATION: topology loss disabled
+loss_weights:
+  lambda_pixel: 1.0     # same as full model
+  lambda_percep: 0.25   # same as full model
+  lambda_topo: 0.0      # DISABLED — this is the ablation
+
+  topo_warmup_steps: 25000    # irrelevant since lambda_topo=0, kept for code compatibility
+  percep_warmup_steps: 8000   # same as full model

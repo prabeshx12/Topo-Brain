@@ -106,3 +106,8 @@ dmypy.json
 .env
 docs/
 .claude/
+
+# ADNI cohort data (patient data, license-restricted — never commit)
+adni_dataset/
+adni_nifti/
+adni_preprocessed/
