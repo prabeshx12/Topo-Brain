@@ -276,7 +276,7 @@ def _tukey_window_1d(n, alpha=0.5):
     return w
 
 
-def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32, sampler='ddpm', ddim_steps=50):
+def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32, sampler='ddpm', ddim_steps=50, n_samples=1):
     """
     Run diffusion inference on overlapping 64^3 tiles and stitch the result.
 
@@ -294,7 +294,9 @@ def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32, sam
     D, H, W = input_vol.shape
     stride = patch_size - overlap
 
-    # Accumulators
+    # Accumulators — when n_samples > 1 we run inference multiple times
+    # and average. The mean of N samples approximates E[7T|3T], which
+    # maximises PSNR (perception-distortion tradeoff, Blau & Michaeli 2018).
     output_acc = np.zeros((D, H, W), dtype=np.float64)
     seg_acc = np.zeros((4, D, H, W), dtype=np.float64)  # num_classes=4
     weight_acc = np.zeros((D, H, W), dtype=np.float64)
@@ -340,19 +342,28 @@ def tiled_inference(diffusion, input_vol, device, patch_size=64, overlap=32, sam
                 out_shape = inp.shape
 
                 with torch.no_grad():
-                    if sampler == 'ddim':
-                        pred, seg = diffusion.ddim_sample(
-                            conditioning=inp,
-                            shape=out_shape,
-                            ddim_steps=ddim_steps,
-                            eta=0.0,
-                        )
-                    else:
-                        pred, seg = diffusion.p_sample_loop(
-                            conditioning=inp,
-                            shape=out_shape,
-                            return_all=True,
-                        )
+                    # Accumulate n_samples predictions and average them
+                    pred_samples = []
+                    seg_latest = None
+                    for _ in range(n_samples):
+                        if sampler == 'ddim':
+                            p, s = diffusion.ddim_sample(
+                                conditioning=inp,
+                                shape=out_shape,
+                                ddim_steps=ddim_steps,
+                                eta=0.0,
+                            )
+                        else:
+                            p, s = diffusion.p_sample_loop(
+                                conditioning=inp,
+                                shape=out_shape,
+                                return_all=True,
+                            )
+                        pred_samples.append(p.cpu().numpy())
+                        seg_latest = s
+                    pred_avg = np.mean(pred_samples, axis=0)
+                    pred = torch.from_numpy(pred_avg).to(device)
+                    seg = seg_latest
 
                 pred_np = pred.cpu().numpy().squeeze()
                 # Trim to actual shape
@@ -528,6 +539,10 @@ Examples:
                         help='Sampling method: ddpm (stochastic, default) or ddim (deterministic, higher PSNR)')
     parser.add_argument('--ddim-steps', type=int, default=50,
                         help='Number of DDIM steps (default: 50, only used with --sampler ddim)')
+    parser.add_argument('--n-samples', type=int, default=1,
+                        help='Number of samples to average per patch (default: 1). '
+                             'Higher values improve PSNR by approximating the conditional mean. '
+                             'Recommended: 5-10. Runtime scales linearly.')
     args = parser.parse_args()
 
     # ---- config ----
@@ -689,6 +704,7 @@ Examples:
         overlap=args.overlap,
         sampler=args.sampler,
         ddim_steps=args.ddim_steps,
+        n_samples=args.n_samples,
     )
 
     # ---- brain mask: remove background noise from prediction ----
