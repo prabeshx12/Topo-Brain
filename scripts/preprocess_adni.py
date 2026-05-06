@@ -3,13 +3,20 @@ Preprocess ADNI 3T MPRAGE volumes for the topobrain diffusion model.
 
 Two-stage per subject:
     1) HD-BET -> brain mask saved next to the input NIfTI
-    2) MRIPreprocessor -> N4 bias correction + skull strip (using the mask)
-       + diffusion normalization to [-1, 1]
+    2) Inline pipeline (nibabel + SimpleITK):
+         - reorient to RAS via nibabel.as_closest_canonical
+         - N4 bias correction (SimpleITK)
+         - apply HD-BET brain mask
+         - diffusion normalization to [-1, 1] (0.5/99.5 percentiles, bg = -1)
 
-The normalization config matches configs/preprocess.yaml (the same config the
-sub-06 model was trained with): bias correction ON, target_spacing=None,
-normalization=diffusion, percentiles 0.5 / 99.5. If you change those, you'll
-break the model's input distribution.
+Matches configs/preprocess.yaml (the config the sub-06 model was trained
+with): bias correction ON, no resampling, diffusion normalization. If you
+change those, you'll break the model's input distribution.
+
+We bypass the MRIPreprocessor MONAI pipeline used during training because
+newer MONAI's Orientationd default `labels=None` requires meta-tensor
+space info that doesn't survive the temp-file roundtrip. The math is
+identical; only the orientation backend differs.
 
 Input cohort CSV: rows from build_adni_cohort.py with `nifti_path` populated.
 Output: preprocessed NIfTIs + an updated cohort CSV with `preprocessed_path`.
@@ -33,11 +40,10 @@ from typing import Optional
 import nibabel as nib
 import numpy as np
 import pandas as pd
+import SimpleITK as sitk
 
 # Repo imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.config import PreprocessingConfig
-from src.preprocessing import MRIPreprocessor
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -47,22 +53,30 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
-def _build_config() -> PreprocessingConfig:
-    """Match configs/preprocess.yaml so model sees the same normalization as training."""
-    return PreprocessingConfig(
-        target_orientation="RAS",
-        target_spacing=None,            # preserve native voxel grid
-        use_bias_correction=True,
-        n4_iterations=50,
-        n4_convergence_threshold=0.001,
-        use_skull_stripping=True,
-        brain_mask_pattern="*brain_mask.nii.gz",
-        normalization_method="diffusion",
-        percentile_lower=0.5,
-        percentile_upper=99.5,
-        clip_lower_percentile=None,     # avoid double-clipping
-        clip_upper_percentile=None,
-    )
+def _n4_correct(arr: np.ndarray, spacing_xyz) -> np.ndarray:
+    """N4 bias correction via SimpleITK on a numpy array (XYZ order)."""
+    sitk_img = sitk.GetImageFromArray(arr.transpose(2, 1, 0))   # XYZ -> ZYX for sitk
+    sitk_img.SetSpacing([float(s) for s in spacing_xyz[::-1]])
+    sitk_img = sitk.Cast(sitk_img, sitk.sitkFloat32)
+    otsu = sitk.OtsuThreshold(sitk_img, 0, 1, 200)
+    corr = sitk.N4BiasFieldCorrectionImageFilter()
+    corr.SetMaximumNumberOfIterations([50, 50, 50, 50])
+    out = corr.Execute(sitk_img, otsu)
+    return sitk.GetArrayFromImage(out).transpose(2, 1, 0)
+
+
+def _diffusion_normalize(arr: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Match configs/preprocess.yaml: clip at 0.5/99.5 percentiles within
+    brain, scale to [-1, 1], set background to -1."""
+    fg = arr[mask > 0]
+    if fg.size == 0:
+        raise ValueError("empty brain mask — diffusion normalization undefined")
+    lo = float(np.percentile(fg, 0.5))
+    hi = float(np.percentile(fg, 99.5))
+    out = np.clip(arr, lo, hi)
+    out = (out - lo) / max(hi - lo, 1e-8) * 2.0 - 1.0
+    out[mask == 0] = -1.0
+    return out.astype(np.float32)
 
 
 def run_hdbet(image_path: Path, mask_path: Path, device: str) -> Path:
@@ -151,30 +165,31 @@ def preprocess_one(
         return {"ptid": ptid, "status": "mask_unreadable", "message": str(e)[:300],
                 "preprocessed_path": "", "elapsed_s": time.time() - t0}
 
-    # 2) MRIPreprocessor: bias correction + apply mask + diffusion normalize
-    config = _build_config()
-    preprocessor = MRIPreprocessor(config)
+    # 2) Inline preprocessing: reorient (nibabel) -> N4 (SimpleITK) ->
+    # apply HD-BET mask -> diffusion-normalize -> save.
+    # We bypass the MRIPreprocessor MONAI pipeline because newer MONAI's
+    # Orientationd default `labels=None` requires meta-tensor space info
+    # that doesn't survive the temp-file roundtrip MRIPreprocessor uses.
     output_nifti.parent.mkdir(parents=True, exist_ok=True)
     try:
-        preprocessor.preprocess_single(
-            image_path=input_nifti,
-            output_path=output_nifti,
-            save_intermediate=False,
-        )
+        img_nib = nib.as_closest_canonical(nib.load(str(input_nifti)))
+        mask_nib = nib.as_closest_canonical(nib.load(str(mask_path)))
+        img = img_nib.get_fdata().astype(np.float32)
+        mask = (mask_nib.get_fdata() > 0).astype(np.uint8)
+        if img.shape != mask.shape:
+            raise ValueError(f"image shape {img.shape} != mask shape {mask.shape}")
+
+        spacing = img_nib.header.get_zooms()[:3]
+        img_corrected = _n4_correct(img, spacing)
+        normalized = _diffusion_normalize(img_corrected * mask, mask)
+
+        nib.save(nib.Nifti1Image(normalized, img_nib.affine, img_nib.header),
+                 str(output_nifti))
+        rmin, rmax = float(normalized.min()), float(normalized.max())
+        msg = f"range=[{rmin:.2f},{rmax:.2f}] voxels={mask_voxels}"
     except Exception as e:
         return {"ptid": ptid, "status": "preprocess_failed", "message": str(e)[:300],
                 "preprocessed_path": "", "elapsed_s": time.time() - t0}
-
-    # Verify the output range looks like diffusion-normalized [-1, 1].
-    try:
-        out_arr = nib.load(str(output_nifti)).get_fdata()
-        rmin, rmax = float(out_arr.min()), float(out_arr.max())
-        if rmin < -1.5 or rmax > 1.5:
-            logging.warning("[%s] preprocessed range out of expected [-1,1]: [%.2f, %.2f]",
-                            ptid, rmin, rmax)
-        msg = f"range=[{rmin:.2f},{rmax:.2f}] voxels={mask_voxels}"
-    except Exception:
-        msg = ""
 
     return {"ptid": ptid, "status": "ok", "message": msg,
             "preprocessed_path": str(output_nifti),
