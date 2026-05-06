@@ -10,13 +10,31 @@ import numpy as np
 from typing import Optional, Tuple
 
 
-def compute_ssim_psnr(pred_np: np.ndarray, target_np: np.ndarray) -> Tuple[float, float]:
+def compute_ssim_psnr(
+    pred_np: np.ndarray,
+    target_np: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+) -> Tuple[float, float]:
     """
     Compute SSIM and PSNR. Both arrays expected in [-1, 1].
 
+    When `mask` is provided (HD-BET brain mask, bool or 0/1 array of the
+    same shape as pred/target), reported metrics are restricted to the brain:
+
+      - PSNR: prediction outside the mask is replaced with the target's
+        background. This zeros the error contribution from background voxels
+        so PSNR reflects only the brain region. (Same convention used in
+        scripts/evaluate_full_volume.py for the headline "masked" metric.)
+      - SSIM: computed on the brain bounding box of both volumes — the
+        global SSIM is dominated by huge identical-background regions and
+        masks out genuine brain detail otherwise.
+
+    Without a mask, both metrics are whole-volume.
+
     Args:
-        pred_np: Predicted volume
-        target_np: Ground truth volume
+        pred_np:   Predicted volume in [-1, 1]
+        target_np: Ground truth volume in [-1, 1]
+        mask:      Optional bool/0-1 brain mask of the same shape
 
     Returns:
         (ssim, psnr) tuple
@@ -24,14 +42,34 @@ def compute_ssim_psnr(pred_np: np.ndarray, target_np: np.ndarray) -> Tuple[float
     from skimage.metrics import structural_similarity as ssim
     from skimage.metrics import peak_signal_noise_ratio as psnr
 
-    # Clamp to [-1, 1] and rescale to [0, 1]
     pred_np = np.clip(pred_np, -1.0, 1.0)
     target_np = np.clip(target_np, -1.0, 1.0)
     pred_01 = (pred_np + 1.0) / 2.0
     tgt_01 = (target_np + 1.0) / 2.0
 
-    ssim_val = ssim(tgt_01, pred_01, data_range=1.0)
-    psnr_val = psnr(tgt_01, pred_01, data_range=1.0)
+    if mask is None:
+        ssim_val = ssim(tgt_01, pred_01, data_range=1.0)
+        psnr_val = psnr(tgt_01, pred_01, data_range=1.0)
+        return float(ssim_val), float(psnr_val)
+
+    m = np.asarray(mask).astype(bool)
+    if m.shape != pred_np.shape:
+        raise ValueError(f"mask shape {m.shape} != pred/target shape {pred_np.shape}")
+    if not m.any():
+        return float("nan"), float("nan")
+
+    # PSNR: replace background with target so background error is 0.
+    pred_for_psnr = pred_01.copy()
+    pred_for_psnr[~m] = tgt_01[~m]
+    psnr_val = psnr(tgt_01, pred_for_psnr, data_range=1.0)
+
+    # SSIM: crop to brain bounding box so window stats reflect tissue.
+    coords = np.argwhere(m)
+    lo = coords.min(axis=0)
+    hi = coords.max(axis=0) + 1
+    crop = tuple(slice(int(lo[i]), int(hi[i])) for i in range(m.ndim))
+    ssim_val = ssim(tgt_01[crop], pred_01[crop], data_range=1.0)
+
     return float(ssim_val), float(psnr_val)
 
 
@@ -169,7 +207,7 @@ def compute_all_metrics(pred_np: np.ndarray, target_np: np.ndarray,
     Returns:
         Dictionary with all metrics
     """
-    ssim_val, psnr_val = compute_ssim_psnr(pred_np, target_np)
+    ssim_val, psnr_val = compute_ssim_psnr(pred_np, target_np, mask=mask)
     dice_val = compute_dice(pred_np, target_np, mask=mask)
     hd95_val = compute_hd95(pred_np, target_np, mask=mask, voxel_spacing=voxel_spacing)
 
@@ -208,19 +246,30 @@ def print_metrics(metrics: dict, label: str = "Metrics"):
 
 
 if __name__ == "__main__":
-    # Test the metrics module
     print("Testing Topo-Brain Metrics Module\n")
+    rng = np.random.default_rng(0)
 
-    # Create synthetic test data
-    pred = np.random.randn(64, 64, 64) * 0.5
-    target = pred + np.random.randn(64, 64, 64) * 0.1  # Similar with some noise
-    mask = np.ones((64, 64, 64), dtype=bool)
-    mask[:10] = False  # Remove some background
+    # Volume in [-1, 1] with a brain region in the center and noisy background.
+    target = np.full((64, 64, 64), -1.0, dtype=np.float32)
+    target[16:48, 16:48, 16:48] = rng.normal(0.0, 0.3, (32, 32, 32)).clip(-1, 1)
 
-    # Compute metrics
-    metrics = compute_all_metrics(pred, target, mask=mask, voxel_spacing=(1.0, 1.0, 1.0))
+    # Prediction = target with brain noise + heavy background noise (sim of model
+    # mispredicting outside the brain). Brain-masking should boost PSNR.
+    brain_noise = rng.normal(0.0, 0.05, target.shape)
+    bg_noise = rng.normal(0.0, 0.4, target.shape)  # large bg mismatch
+    mask = np.zeros_like(target, dtype=bool)
+    mask[16:48, 16:48, 16:48] = True
+    pred = target + np.where(mask, brain_noise, bg_noise)
+    pred = np.clip(pred, -1, 1)
 
-    # Print results
-    print_metrics(metrics, label="Test Metrics (Synthetic Data)")
+    whole = compute_all_metrics(pred, target, mask=None)
+    masked = compute_all_metrics(pred, target, mask=mask)
 
-    print("✓ All metrics computed successfully!")
+    print_metrics(whole,  label="Whole-volume (no mask)")
+    print_metrics(masked, label="Brain-masked (HD-BET style)")
+
+    assert masked["psnr"] > whole["psnr"], (
+        f"masked PSNR {masked['psnr']:.2f} should exceed whole {whole['psnr']:.2f} "
+        "when prediction has heavy background mismatch"
+    )
+    print("✓ Brain-masked PSNR is higher than whole-volume — fix verified.")
