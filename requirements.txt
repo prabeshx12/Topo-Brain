@@ -33,6 +33,11 @@ tensorboard>=2.13.0
 # Image Quality Metrics
 scikit-image>=0.21.0
 
+# Topology metrics — Betti numbers for predicted_seg via persistent homology
+# (real β₀, β₁, β₂; replaces scipy.ndimage.label in scripts/verify_topology.py
+# which only counted β₀). Used by scripts/compute_betti.py.
+gudhi>=3.8.0
+
 # Optional: For Jupyter notebook usage
 jupyter>=1.0.0
 ipywidgets>=8.0.0
