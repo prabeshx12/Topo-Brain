@@ -627,7 +627,7 @@ if __name__ == "__main__":
     
     # Create data loaders
     train_loader, val_loader, test_loader = create_data_loaders(
-        config, train_data, val_data, test_data
+        config, train_data, val_data, test_data, use_memory_cache=True
     )
     
     # Test loading a batch

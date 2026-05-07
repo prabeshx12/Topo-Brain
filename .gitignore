@@ -48,6 +48,8 @@ logs/
 
 # Data (large files - do not commit)
 preprocessed/
+MRI-AD-Part-2/
+latex/
 cache/
 *.nii
 *.nii.gz
