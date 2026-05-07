@@ -58,7 +58,7 @@ stages:
 loss_weights:
   lambda_pixel: 1.0     # PRIMARY reconstruction loss (blueprint requirement)
   lambda_percep: 0.25   # Moderate perceptual guidance
-  lambda_topo: 0.2      # Anatomical structure preservation
+  lambda_topo: 0.0      # Anatomical structure preservation
   
   # Warm-up configuration (Synchronized with BS=8 velocity)
   topo_warmup_steps: 25000    # Gradual topology ramp (30k -> 55k)
