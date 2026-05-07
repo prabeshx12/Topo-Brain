@@ -111,3 +111,5 @@ docs/
 adni_dataset/
 adni_nifti/
 adni_preprocessed/
+adni_smoke_results/
+adni_smoke_analysis/
