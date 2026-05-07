@@ -14,6 +14,21 @@
 | Dice   | 0.761 | >0.85  |
 | HD95   | 3.31  | <5 mm  |
 
+### Topology Results (sub-06, predicted_seg vs ground truth seg)
+
+| Tissue | Dice  | Vol Diff | CC Predicted | CC Ground Truth |
+|--------|-------|----------|-------------|----------------|
+| WM     | 0.896 | +4.2%    | 1038        | 34             |
+| GM     | 0.850 | +12.7%   | 1658        | 13             |
+| CSF    | 0.762 | +36.5%   | 126         | 5              |
+| Brain  | 0.944 | —        | —           | —              |
+| HD95   | 2.05 mm | —     | —           | —              |
+
+**Key finding:** Dice is high (0.85-0.89) but model over-fragments tissue —
+predicts 1658 GM components vs 13 in ground truth. This fragmentation is the
+core problem topology loss addresses. Ablation (without topo loss) should show
+WORSE fragmentation — that is the paper's central proof.
+
 ---
 
 ## TIER 1 — Must Do (non-negotiable for any venue)
