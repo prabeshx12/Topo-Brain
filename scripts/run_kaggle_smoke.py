@@ -98,6 +98,76 @@ def _run_preprocess(repo_dir: Path, cohort_csv: Path, pre_dir: Path,
     subprocess.check_call(cmd, cwd=str(repo_dir))
 
 
+def _resolve_skip_preprocess_inputs(work: Path, adni_dir: Path) -> Path:
+    """Set up `--skip-preprocess` mode regardless of how the user staged things.
+
+    Handles every variation we've actually hit:
+      - Bundle uploaded as a Kaggle Dataset and Kaggle stripped the `.gz` from
+        every `*.nii.gz` on auto-extract (now `.nii`).
+      - User attached the bundle but never copied it to /kaggle/working/.
+      - User copied to /kaggle/working/ but the CSV still references paths
+        from a previous session that no longer exist.
+
+    Strategy: locate the preprocessed CSV anywhere under work or adni_dir,
+    then for each ptid in the CSV, pick the best matching NIfTI file by
+    (a) the recorded path if it still exists, else (b) globbing for
+    `<ptid>_T1w_preprocessed.nii*` under work / adni_dir. Stage everything
+    into work/ and rewrite the CSV with actual paths. Returns the final
+    CSV path under work/.
+    """
+    import pandas as pd
+
+    target_csv = work / "pairs_adni_smoke_preprocessed.csv"
+
+    # ---- 1) locate the source CSV ----
+    csv_candidates = [
+        target_csv,
+        adni_dir / "pairs_adni_smoke_preprocessed.csv",
+    ] + sorted(adni_dir.rglob("pairs_adni_smoke_preprocessed.csv"))
+    src_csv = next((c for c in csv_candidates if c.exists()), None)
+    if src_csv is None:
+        raise FileNotFoundError(
+            f"--skip-preprocess: no pairs_adni_smoke_preprocessed.csv found under "
+            f"{work} or {adni_dir}. Make sure the preprocessed bundle is attached."
+        )
+    if src_csv != target_csv:
+        target_csv.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(str(src_csv), str(target_csv))
+        logging.info("Staged CSV %s -> %s", src_csv, target_csv)
+
+    # ---- 2) build a ptid -> actual file index across both locations ----
+    by_ptid: dict = {}
+    for root in (work, adni_dir):
+        if not root.exists():
+            continue
+        for f in root.rglob("*_T1w_preprocessed.nii*"):
+            ptid = f.name.split("_T1w_preprocessed")[0]
+            # Prefer files actually under work/ (writable) when both exist.
+            if ptid not in by_ptid or root == work:
+                by_ptid[ptid] = f.resolve()
+
+    if not by_ptid:
+        raise FileNotFoundError(
+            f"--skip-preprocess: no *_T1w_preprocessed.nii* files found under "
+            f"{work} or {adni_dir}. Did the preprocessed bundle ingest correctly?"
+        )
+    logging.info("Found %d preprocessed files (across .nii and .nii.gz)", len(by_ptid))
+
+    # ---- 3) rewrite CSV with real paths ----
+    df = pd.read_csv(target_csv)
+    df["preprocessed_path"] = df["ptid"].astype(str).map(
+        lambda p: str(by_ptid[p]) if p in by_ptid else "")
+    missing = df[df["preprocessed_path"] == ""]
+    if len(missing):
+        raise RuntimeError(
+            f"--skip-preprocess: missing files for ptids: {missing['ptid'].tolist()}. "
+            f"Found {len(by_ptid)} files in total but none matching these subjects."
+        )
+    df.to_csv(target_csv, index=False)
+    logging.info("Rewrote %d preprocessed_path entries to actual file locations", len(df))
+    return target_csv
+
+
 def _zip_bundle(label: str, src_dirs_or_files: list, zip_path: Path) -> None:
     """Bundle a set of dirs/files into a zip with clean POSIX paths."""
     stage = Path(tempfile.mkdtemp(prefix=f"{label}_"))
@@ -162,7 +232,10 @@ def main() -> int:
     parser.add_argument("--checkpoint", required=True,
                         help="Path to the trained checkpoint .pt")
     parser.add_argument("--adni-dir", required=True,
-                        help="Kaggle Dataset path containing adni_nifti/{AD,CN}/")
+                        help="Kaggle Dataset path. In default mode: contains "
+                             "adni_nifti/{AD,CN}/ raw inputs. With --skip-preprocess: "
+                             "may contain the preprocessed bundle (adni_preprocessed/ + "
+                             "pairs_adni_smoke_preprocessed.csv) — script auto-stages.")
     parser.add_argument("--work-dir", default="/kaggle/working",
                         help="Writable workspace (default: /kaggle/working)")
     parser.add_argument("--repo-dir", default=None,
@@ -203,10 +276,14 @@ def main() -> int:
 
     # ---- Preprocessing stage ----
     if args.skip_preprocess:
-        if not pre_csv.exists():
-            logging.error("--skip-preprocess set but %s does not exist", pre_csv)
+        # Stage CSV + index actual NIfTI files across /kaggle/input and /kaggle/working,
+        # tolerating .nii vs .nii.gz and rewriting the CSV with real paths.
+        try:
+            pre_csv = _resolve_skip_preprocess_inputs(work, adni_dir)
+        except (FileNotFoundError, RuntimeError) as e:
+            logging.error("%s", e)
             return 2
-        logging.info("Skipping preprocessing — using existing %s", pre_csv)
+        logging.info("Skipping preprocessing — using %s", pre_csv)
     else:
         adni_src = _find_adni_root(adni_dir)
         adni_local = _stage_inputs(adni_src, work)
