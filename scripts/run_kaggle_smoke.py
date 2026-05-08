@@ -191,26 +191,42 @@ def _zip_bundle(label: str, src_dirs_or_files: list, zip_path: Path) -> None:
 
 def _run_synthesis(repo_dir: Path, checkpoint: Path, pre_csv: Path,
                    results_dir: Path, sampler: str, ddim_steps: int,
-                   n_samples: int) -> None:
+                   n_samples: int, start_index: int = 1,
+                   end_index: int | None = None) -> None:
     import pandas as pd
 
     df = pd.read_csv(pre_csv)
     ok = df[df["preprocess_status"].isin(["ok", "skipped_exists"])].reset_index(drop=True)
     if ok.empty:
         raise RuntimeError("No subjects with preprocess_status ok in {pre_csv}")
-    logging.info("Synthesizing %d subjects with %s (%d steps, n_samples=%d)",
-                 len(ok), sampler, ddim_steps, n_samples)
+
+    total_ok = len(ok)
+    if start_index < 1:
+        raise ValueError("--start-index must be 1 or greater")
+    if start_index > total_ok:
+        raise ValueError(f"--start-index {start_index} is beyond the {total_ok} synthesizable subjects")
+    if end_index is not None and end_index < start_index:
+        raise ValueError("--end-index must be greater than or equal to --start-index")
+
+    start_pos = start_index - 1
+    end_pos = min(end_index, total_ok) if end_index is not None else total_ok
+    selected = ok.iloc[start_pos:end_pos].reset_index(drop=True)
+
+    logging.info("Synthesizing rows %d-%d of %d with %s (%d steps, n_samples=%d)",
+                 start_index, end_pos, total_ok, sampler, ddim_steps, n_samples)
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    for i, sub in ok.iterrows():
+    for local_i, sub in selected.iterrows():
+        global_i = start_pos + local_i
         ptid = sub["ptid"]
         out_subj = results_dir / ptid
         out_subj.mkdir(parents=True, exist_ok=True)
         if (out_subj / "predicted_7T.nii.gz").exists():
             logging.info("[%d/%d] %s -- already synthesized, skipping",
-                         i + 1, len(ok), ptid)
+                         global_i + 1, total_ok, ptid)
             continue
-        logging.info("[%d/%d] %s (%s) synthesizing", i + 1, len(ok), ptid, sub["group"])
+        logging.info("[%d/%d] %s (%s) synthesizing",
+                     global_i + 1, total_ok, ptid, sub["group"])
         t0 = time.time()
         subprocess.check_call([
             sys.executable, "scripts/evaluate_full_volume.py",
@@ -250,6 +266,13 @@ def main() -> int:
     parser.add_argument("--ddim-steps", type=int, default=50)
     parser.add_argument("--n-samples", type=int, default=1,
                         help="Per-tile sample averaging for synthesis (1 = no averaging)")
+    parser.add_argument("--start-index", type=int, default=1,
+                        help="1-based subject row to start synthesis from after filtering "
+                             "preprocess_status to ok/skipped_exists. Use 18 to resume "
+                             "after rows 1-17 completed.")
+    parser.add_argument("--end-index", type=int, default=None,
+                        help="Optional 1-based inclusive subject row to stop at after "
+                             "filtering preprocess_status to ok/skipped_exists.")
     args = parser.parse_args()
 
     _setup_logging()
@@ -301,7 +324,8 @@ def main() -> int:
 
     # ---- Synthesis stage ----
     _run_synthesis(repo, checkpoint, pre_csv, results,
-                   args.sampler, args.ddim_steps, args.n_samples)
+                   args.sampler, args.ddim_steps, args.n_samples,
+                   args.start_index, args.end_index)
     _zip_bundle("results", [results], results_zip)
 
     # ---- Summary ----
