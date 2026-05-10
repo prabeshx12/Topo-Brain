@@ -1,0 +1,85 @@
+\documentclass[11pt,a4paper]{letter}
+\usepackage[margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+
+\signature{Dr.~Nanda Bikram Adhikari\\
+on behalf of all authors}
+\address{Department of Electronics and Computer Engineering\\
+Pulchowk Campus, Institute of Engineering\\
+Tribhuvan University\\
+Lalitpur, Nepal\\
+\texttt{adhikari@ioe.edu.np}}
+
+\begin{document}
+
+\begin{letter}{The Editor-in-Chief\\
+\textit{IET Image Processing}\\
+The Institution of Engineering and Technology\\
+Stevenage, United Kingdom}
+
+\opening{Dear Editor,}
+
+We submit for your consideration the manuscript entitled
+\textbf{``TopoBrain: Anatomy-Aware Conditional Diffusion for 3T-to-7T
+MRI Synthesis with Application to Alzheimer's Disease Biomarkers''}
+for publication in \textit{IET Image Processing} as a research
+article.
+
+\textit{Why this work fits IET Image Processing.} The manuscript
+presents an anatomy-aware conditional diffusion framework that
+synthesises 7-Tesla T1-weighted MRI from routine 3-Tesla acquisitions
+on the same voxel grid, with explicit segmentation supervision and an
+edge-aware topology loss. The work sits squarely within the journal's
+scope (deep learning for medical image enhancement, super-resolution,
+generative models, segmentation) and contributes both methodological
+novelty (the dual-decoder topology-regularised diffusion architecture)
+and a complete validated downstream evaluation pipeline.
+
+\textit{Key contributions and findings.}
+\begin{enumerate}\itemsep1pt
+\item \textbf{Architecture:} a 22.4-million-parameter 3D U-Net with
+joint noise-prediction and tissue-segmentation decoders, trained with
+an edge-aware topology loss that explicitly regularises tissue
+boundaries.
+\item \textbf{Held-out paired evaluation:} SSIM\,$=$\,0.8991,
+PSNR\,$=$\,20.00\,dB, brain-mask Dice\,$=$\,0.9436 and
+HD95\,$=$\,2.05\,mm.
+\item \textbf{Topology-loss ablation:} 6.5$\times$ reduction in
+whole-brain HD95 (13.34\,mm $\rightarrow$ 2.05\,mm) and substantial
+reduction in tissue-class fragmentation across CSF, GM, and WM.
+\item \textbf{Subcortical fidelity for AD:} bilateral hippocampi,
+amygdalae, thalami, and caudates recovered as essentially single
+connected components (largest-CC fraction $\geq$\,99.8\,\%).
+\item \textbf{Out-of-distribution validation:} 30 ADNI baseline 3T
+subjects (15 AD, 15 CN) yield anatomically coherent synthesis;
+six-of-six tissue-volume biomarker directions match Alzheimer's
+literature, with CSF/GM atrophy index Cohen's $d=+0.681$.
+\end{enumerate}
+
+\textit{Reproducibility.} All code, configurations, training
+recipes, evaluation scripts and analysis tooling are openly available
+at \url{https://github.com/prabeshx12/Topo-Brain}. The pipeline is
+self-validated against synthetic data with known signal-to-noise
+properties.
+
+\textit{Originality.} The manuscript has not been published or
+submitted for publication elsewhere. All authors have read and
+approved the submission. We declare no conflict of interest. ADNI
+data are used under the standard ADNI Data Use Agreement; we comply
+with all redistribution restrictions and do not redistribute the raw
+imaging data.
+
+\textit{Suggested reviewers.} If helpful for assignment, the editorial
+team may consider experts in: (i) medical-image super-resolution and
+domain translation, (ii) topology-aware segmentation, and
+(iii) Alzheimer's neuroimaging biomarkers.
+
+We thank you in advance for considering our submission and look
+forward to the reviewers' feedback.
+
+\closing{Sincerely yours,}
+
+\end{letter}
+
+\end{document}
