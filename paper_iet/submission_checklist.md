@@ -83,9 +83,30 @@ portal — confirm on the journal's author-guidelines page).
 - [ ] `paper.tex` — source LaTeX file.
 - [ ] `references.bib` — bibliography source.
 - [ ] All `figures/*.png` — separate file uploads, NOT zipped.
+      **NOTE:** the `paper_iet/figures/` folder is gitignored on the public
+      Topo-Brain repository (the global `.gitignore` excludes `*.png`
+      because the figures are derived from ADNI imaging covered by the
+      ADNI Data Use Agreement, which prohibits public redistribution).
+      The figures live ONLY on your local machine — verify before
+      submission that you have the following files locally before you
+      open the journal portal:
+      ```text
+      paper_iet/figures/graphical_abstract.png
+      paper_iet/figures/cohort_overview.png
+      paper_iet/figures/AD_compare.png            (renamed from 006_S_4153_compare.png)
+      paper_iet/figures/CN_compare.png            (renamed from 002_S_4213_compare.png)
+      paper_iet/figures/ad_risk_distribution.png
+      paper_iet/figures/roc_with_bootstrap_ci.png    (supplementary)
+      paper_iet/figures/feature_boxplots.png         (supplementary)
+      paper_iet/figures/cohen_d_bar.png              (supplementary)
+      paper_iet/figures/ranking_compare.png          (supplementary)
+      ```
 - [ ] `cover_letter.pdf` (compiled from `cover_letter.tex`).
-- [ ] **Highlights / graphical abstract** (if requested by journal):
-      one-paragraph plain-language summary $\leq$ 85 words.
+- [ ] `supplementary.pdf` (compiled from `supplementary.tex`).
+- [ ] **Highlights** (paste content of `highlights.txt` into the portal
+      form; do NOT upload the file).
+- [ ] **Graphical abstract** (`figures/graphical_abstract.png` —
+      uploaded to its own portal slot, NOT inline in the manuscript).
 
 ## Suggested reviewers (optional but recommended)
 
