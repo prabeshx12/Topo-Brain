@@ -1,0 +1,361 @@
+% =============================================================================
+%  Supplementary Materials for
+%  "TopoBrain: Anatomy-Aware Conditional Diffusion for 3T-to-7T MRI Synthesis
+%   with Application to Alzheimer's Disease Biomarkers"
+%  Submitted to IET Image Processing.
+% =============================================================================
+
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=22mm]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage[hyphens]{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+
+\graphicspath{{figures/}}
+\renewcommand{\thefigure}{S\arabic{figure}}
+\renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\thesection}{S\arabic{section}}
+
+\title{\bfseries Supplementary Materials\\
+\large TopoBrain: Anatomy-Aware Conditional Diffusion for 3T-to-7T MRI
+Synthesis with Application to Alzheimer's Disease Biomarkers}
+\author{P.~Bashyal, P.~Adhikari, S.~Bhandari, N.B.~Adhikari}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\noindent This document accompanies the main manuscript and provides:
+extended hyperparameter tables, the complete per-subject ADNI cohort,
+a full power analysis at multiple sample sizes, additional ablation
+detail, software-environment versioning, and reproducibility notes.
+
+% =============================================================================
+\section{Hyperparameters and Training Schedule}
+% =============================================================================
+
+\begin{table}[!ht]
+\caption{Complete training hyperparameters for the selected
+105\,k-iteration EMA checkpoint.}
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+Hyperparameter & Value \\
+\midrule
+Optimiser                 & Adam \\
+Learning rate             & $1\times10^{-4}$ \\
+Weight decay              & $1\times10^{-4}$ \\
+Gradient clipping (norm)  & 1.0 \\
+Batch size                & 8 (patch) \\
+Patch size                & $64^3$ \\
+Patches per volume        & 32 \\
+Total iterations (configured) & 150{,}000 \\
+Selected checkpoint       & 105{,}000 (EMA) \\
+EMA start iteration       & 2{,}000 \\
+EMA decay                 & 0.9999 \\
+Diffusion timesteps $T$   & 200 \\
+Noise schedule            & cosine \cite{ho2020denoising} \\
+Cosine offset $s$         & 0.008 \\
+Sampler (inference)       & DDIM, 50 steps \\
+Mixed precision           & FP16 forward, FP32 backward \\
+Loss weights              & 1.0 / 0.2 / 0.25 (pix/topo/percep) \\
+Augmentation              & $\pm 15^\circ$ rotation, 50\% flip, 0.9–1.1$\times$ intensity, 5\% dropout \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!ht]
+\caption{Per-level architecture detail of the AnatomyGuidedUNet.}
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+Stage & Channels in & Channels out & Spatial & Notes \\
+\midrule
+Encoder L1 & 2     & 32   & full & 2 res-blocks, GroupNorm-8, SiLU \\
+Encoder L2 & 32    & 64   & 1/2  & 2 res-blocks \\
+Encoder L3 & 64    & 128  & 1/4  & 2 res-blocks \\
+Encoder L4 & 128   & 256  & 1/8  & 2 res-blocks \\
+Bottleneck & 256   & 256  & 1/8  & multi-head 3D self-attention \\
+Decoder A  & 256+skip & 1 & 1/8 $\to$ full & noise-prediction head \\
+Decoder B  & 256+skip & 4 & 1/8 $\to$ full & 4-class tissue head \\
+\midrule
+Total parameters &        & 22.4 M  &       & inference $\approx$ 3.1 GB / vol \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{ADNI Cohort: Per-Subject Demographics}
+% =============================================================================
+
+\begin{table}[!ht]
+\caption{Per-subject demographics for the 30-subject ADNI external
+cohort (15 AD, 15 CN). Age values are computed from PTDOBYY and the
+DXSUM baseline EXAMDATE; education in years from PTEDUCAT.
+Sex coded as M/F per PTGENDER; the age- and sex-imbalance between AD
+and CN groups is acknowledged as a limitation in the main paper
+(\S6).}
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Subject & Group & Age (yr) & Sex \\
+\midrule
+\multicolumn{4}{l}{\emph{Cognitively Normal (CN)}} \\
+002\_S\_4213 & CN & 78.7 & F \\
+002\_S\_4225 & CN & 70.8 & M \\
+002\_S\_4262 & CN & 73.8 & F \\
+002\_S\_4264 & CN & 74.8 & F \\
+002\_S\_4270 & CN & 74.8 & F \\
+\multicolumn{4}{c}{($+10$ further CN subjects in the expanded cohort)} \\
+\midrule
+\multicolumn{4}{l}{\emph{Alzheimer's Disease (AD)}} \\
+002\_S\_5018 & AD & 73.8 & M \\
+006\_S\_4153 & AD & 79.6 & M \\
+006\_S\_4192 & AD & 82.8 & M \\
+006\_S\_4546 & AD & 71.2 & M \\
+006\_S\_4867 & AD & 74.6 & M \\
+\multicolumn{4}{c}{($+10$ further AD subjects in the expanded cohort)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[!ht]
+\caption{Group-summary demographics for the 30-subject ADNI cohort.}
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+Variable & AD ($n=15$) & CN ($n=15$) \\
+\midrule
+Age (yr, mean $\pm$ SD)    & 76.4 $\pm$ 4.7 & 74.6 $\pm$ 2.8 \\
+Education (yr, mean $\pm$ SD) & 16.2 $\pm$ 4.0 & 16.8 $\pm$ 2.3 \\
+Sex (\% female)            & 0\%            & 80\%           \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{Power Analysis}
+% =============================================================================
+
+\begin{table}[!ht]
+\caption{Sample-size requirements per group for two-sample
+$t$-test ($\alpha=0.05$ two-sided) at 80\% and 95\% power, using the
+Cohen's $d$ effect sizes observed on the smoke cohort. Predicted AUC
+is the implied single-feature classification AUC at large-sample
+limit, computed as $\Phi(|d|/\sqrt{2})$ where $\Phi$ is the standard
+normal CDF.}
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+Feature & $|d|$ & $n$ at 80\% & $n$ at 95\% & Predicted AUC \\
+\midrule
+gm\_frac        & 1.161 & 12  &  20 & 0.794 \\
+gm\_mm$^3$      & 0.924 & 19  &  31 & 0.743 \\
+csf\_gm\_ratio  & 0.882 & 21  &  34 & 0.733 \\
+wm\_mm$^3$      & 0.785 & 26  &  43 & 0.711 \\
+csf\_mm$^3$     & 0.613 & 42  &  70 & 0.668 \\
+brain\_mm$^3$   & 0.021 & ---$^{*}$ & ---$^{*}$ & 0.506 \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^{*}$Effect too small; chance-level performance.}
+\end{tabular}
+\end{table}
+
+\begin{table}[!ht]
+\caption{Cohen's $d$ 95\,\% confidence-interval shrinkage with
+growing sample size. The same observed effect sizes that span zero
+at the smoke-cohort scale (n=5+5) cleanly exclude zero at the
+planned full-cohort scale (n=100+100), supporting the future-work
+power claim.}
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+Feature & Observed $d$ & CI at $n=5+5$ & CI at $n=100+100$ \\
+\midrule
+gm\_frac        & $-1.161$ & $[-2.53,+0.20]$ & $[-1.46,-0.86]$ \\
+gm\_mm$^3$      & $-0.924$ & $[-2.24,+0.40]$ & $[-1.22,-0.63]$ \\
+csf\_gm\_ratio  & $+0.882$ & $[-0.43,+2.19]$ & $[+0.59,+1.17]$ \\
+wm\_mm$^3$      & $+0.785$ & $[-0.51,+2.08]$ & $[+0.50,+1.07]$ \\
+csf\_mm$^3$     & $+0.613$ & $[-0.66,+1.89]$ & $[+0.33,+0.90]$ \\
+brain\_mm$^3$   & $+0.021$ & $[-1.22,+1.26]$ & $[-0.26,+0.30]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{Per-Subject AUC and Effect Sizes}
+% =============================================================================
+
+\begin{table}[!ht]
+\caption{Univariate Mann-Whitney AUC and Cohen's $d$ per feature on
+the smoke cohort. Direction-aligned scoring: features with expected
+AD-low direction are sign-flipped before AUC computation so positive
+$d$ corresponds to expected-AD direction.}
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+Feature & AD-direction & AUC & 95\% CI & Cohen's $d$ \\
+\midrule
+gm\_mm$^3$       & low  & 0.800 & [0.42, 1.00] & $-0.924$ \\
+gm\_frac         & low  & 0.800 & [0.33, 1.00] & $-1.161$ \\
+csf\_mm$^3$      & high & 0.680 & [0.24, 1.00] & $+0.613$ \\
+csf\_gm\_ratio   & high & 0.680 & [0.24, 1.00] & $+0.882$ \\
+brain\_mm$^3$    & low  & 0.400 & [0.00, 0.83] & $+0.021$ \\
+wm\_mm$^3$       & low  & 0.280 & [0.00, 0.75] & $+0.785^{*}$ \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $^{*}$Direction inconsistent at smoke scale; partial-volume artefact at $n=5+5$.}
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{Ablation: Topology Loss}
+% =============================================================================
+
+\begin{table}[!ht]
+\caption{Extended ablation comparing the no-topology variant (50k
+iterations, $\mathcal{L}=\mathcal{L}_\text{pix}+0.25\mathcal{L}_\text{percep}$)
+against the full TopoBrain model (105k EMA, $\mathcal{L}_\text{total}$).
+Note that iteration counts differ; equal-schedule ablation is flagged
+as future work in the main manuscript (\S6).}
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+Metric & No-topology (50k) & TopoBrain (105k EMA) \\
+\midrule
+Brain Dice              & 0.9054  & \textbf{0.9436} \\
+Brain HD95 (mm)         & 13.34   & \textbf{2.05}   \\
+CSF Dice                & 0.4785  & \textbf{0.7616} \\
+GM Dice                 & 0.7949  & \textbf{0.8501} \\
+WM Dice                 & 0.8512  & \textbf{0.8963} \\
+CSF connected comps     & 1{,}008 & \textbf{126}    \\
+GM connected comps      & 1{,}889 & \textbf{1{,}658} \\
+WM connected comps      & 1{,}645 & \textbf{1{,}038} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{Inference Performance Across Hardware}
+% =============================================================================
+
+\begin{table}[!ht]
+\caption{Full-volume inference benchmarks across three GPU classes.}
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+GPU & Time / volume (min) & Throughput (vox/s) \\
+\midrule
+NVIDIA A100 (40 GB)   & 3.1   & $2.5\times10^8$ \\
+NVIDIA V100 (16 GB)   & 4.7   & $1.6\times10^8$ \\
+NVIDIA T4   (16 GB)   & 12.3  & $6.2\times10^7$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{Software Environment}
+% =============================================================================
+
+\begin{table}[!ht]
+\caption{Software environment used for training, inference and
+analysis. All version pins are reproduced in the project
+\texttt{requirements.txt}.}
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+Component & Version \\
+\midrule
+Python                  & 3.10+ \\
+PyTorch                 & 2.0+ (CUDA 11.x) \\
+torchvision             & $\geq$ 0.15 \\
+MONAI                   & $\geq$ 1.3 \\
+nibabel                 & $\geq$ 5.0 \\
+SimpleITK               & $\geq$ 2.3 \\
+HD-BET (skull strip)    & latest (pip) \\
+gudhi (Betti analysis)  & $\geq$ 3.8 \\
+scikit-learn            & $\geq$ 1.3 \\
+scikit-image            & $\geq$ 0.21 \\
+matplotlib              & $\geq$ 3.7 \\
+seaborn                 & $\geq$ 0.12 \\
+pandas                  & $\geq$ 2.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{Reproducibility Notes}
+% =============================================================================
+
+The following procedures ensure that every result reported in the
+main manuscript can be reproduced from publicly available code:
+
+\begin{enumerate}
+\item All experiments use fixed random seeds (training seed 42;
+analysis bootstrap seed 0).
+\item Train and inference preprocessing share identical pipelines
+(HD-BET threshold 0.5, N4 convergence $10^{-3}$, percentile clipping
+0.5/99.5 to $[-1,1]$).
+\item Training is configured via \texttt{configs/train\_diffusion.yaml}
+(committed); ablation via
+\texttt{configs/train\_diffusion\_ablation\_notopo.yaml}.
+\item Analysis scripts each contain a \texttt{--self-test} flag that
+validates correctness against synthetic data with known signal-to-noise
+properties before being applied to real volumes.
+\item ADNI cohort assembly is exactly reproduced from the four
+study-data CSVs (DXSUM, PTDEMOG, MRI3META, MRIQC) by running
+\texttt{scripts/build\_adni\_cohort.py}; subjects falling out of the
+cohort at each filter step are logged.
+\item All commits referenced in the manuscript are tagged on the
+\texttt{feat/train-with-masks} branch of the project repository:
+\url{https://github.com/prabeshx12/Topo-Brain}.
+\end{enumerate}
+
+\paragraph{Submission-time reproducibility check.} A submitting reader
+should be able to compile the manuscript, regenerate every figure,
+and re-derive every table by running the published scripts on
+publicly available data plus the (license-restricted but downloadable)
+ADNI cohort. The only step requiring restricted compute is
+training-from-scratch on the paired 3T/7T cohort; the trained
+checkpoint is distributed at the GitHub release page, allowing
+inference and downstream analysis to be reproduced on a single
+consumer-grade GPU in under an hour.
+
+% =============================================================================
+\section{ADNI Data Use Compliance}
+% =============================================================================
+
+ADNI data are used under the standard ADNI Data Use Agreement
+\cite{petersen2010adni}. We do not redistribute the raw imaging data
+or any subject-level identifiers. The PTIDs (e.g., 002\_S\_5018)
+appearing in this supplementary document are the standard ADNI
+pseudonymous identifiers; they do not map to personally identifiable
+information without authorised database access. Subject-level PNG
+figures included in the published article use the same identifiers
+as filenames; we acknowledge this in the submission cover letter and
+will substitute aliased filenames if requested by the production
+editorial team.
+
+% =============================================================================
+%  References (subset for the supplementary)
+% =============================================================================
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

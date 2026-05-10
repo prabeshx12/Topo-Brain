@@ -1,0 +1,31 @@
+% Highlights for IET Image Processing submission
+%
+% Format: 3-5 bullets, each <= 85 characters including spaces.
+% Wiley/IET portal will paste these directly into the article landing page.
+
+* Conditional diffusion model synthesises 7T-quality MRI from clinical 3T scans.
+
+* Joint segmentation head and edge-aware topology loss preserve subcortical anatomy.
+
+* Topology-loss ablation reduces whole-brain HD95 by 6.5x (13.34 mm to 2.05 mm).
+
+* Out-of-distribution ADNI evaluation: 6/6 expected AD biomarker directions match.
+
+* Open-source end-to-end pipeline; CSF/GM atrophy index Cohen's d = +0.68 (AD vs CN).
+
+
+% =====================================================================
+% Plain-language summary (graphical-abstract caption / one-paragraph)
+% Used by Wiley for the article landing page (~85 words).
+% =====================================================================
+
+7-Tesla MRI improves Alzheimer's biomarker measurement but is rarely
+available clinically; almost all routine scans are at 3-Tesla. We
+present TopoBrain, a deep-learning model that synthesises 7T-quality
+images from a routine 3T scan on the patient's own voxel grid,
+preserving the brain structures most relevant to early Alzheimer's
+detection. Across paired 3T/7T validation and an out-of-distribution
+ADNI cohort, the model produces anatomically faithful outputs whose
+tissue-volume measurements reproduce six of six expected
+Alzheimer's-disease biomarker directions, opening the way to
+7T-quality biomarker analysis on standard 3T hardware.

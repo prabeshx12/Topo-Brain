@@ -7,28 +7,32 @@ report (`../report/latex__3_/`) and the analysis pipeline at
 
 ## File map
 
-```
+```text
 paper_iet/
-├── paper.tex            ← main manuscript (10–12 page two-column research article)
-├── references.bib       ← Vancouver-style numeric bibliography (32 entries)
-├── cover_letter.tex     ← submission cover letter (compiles standalone)
-├── README.md            ← this file
-├── submission_checklist.md
-└── figures/             ← all 8 figures referenced in paper.tex
-    ├── cohort_overview.png
-    ├── 006_S_4153_compare.png
-    ├── 002_S_4213_compare.png
-    ├── ad_risk_distribution.png
-    ├── roc_with_bootstrap_ci.png
-    ├── feature_boxplots.png
-    ├── cohen_d_bar.png
-    └── ranking_compare.png
+├── paper.tex                       ← main manuscript (two-column research article)
+├── supplementary.tex               ← supplementary materials (extended tables)
+├── references.bib                  ← Vancouver numeric bibliography (34 entries)
+├── highlights.txt                  ← 5 bullets ≤85 chars + 85-word plain summary
+├── cover_letter.tex                ← submission cover letter
+├── generate_graphical_abstract.py  ← reproducible graphical-abstract builder
+├── README.md                       ← this file
+├── submission_checklist.md         ← pre-submission checklist + Wiley specifics
+└── figures/
+    ├── graphical_abstract.png      ← 4-panel infographic (300 dpi, 1.8M)
+    ├── cohort_overview.png         ← all 30 ADNI synth outputs
+    ├── 006_S_4153_compare.png      ← AD subject input vs synth, 3 planes
+    ├── 002_S_4213_compare.png      ← CN subject input vs synth, 3 planes
+    ├── ad_risk_distribution.png    ← composite AD-risk score scatter
+    ├── roc_with_bootstrap_ci.png   ← ROC + 95% bootstrap CI (supplementary)
+    ├── feature_boxplots.png        ← per-feature AD vs CN (supplementary)
+    ├── cohen_d_bar.png             ← effect-size magnitudes (supplementary)
+    └── ranking_compare.png         ← C1 vs C2 ranking visualisation (supplementary)
 ```
 
 ## How to compile
 
 `paper.tex` uses the standard `article` class with `twocolumn` so it
-compiles offline (e.g., on the Overleaf "free" tier) for review:
+compiles offline (e.g., on the Overleaf "free" tier):
 
 ```bash
 pdflatex paper
@@ -37,10 +41,20 @@ pdflatex paper
 pdflatex paper
 ```
 
-The `cover_letter.tex` is independent:
+`supplementary.tex` and `cover_letter.tex` are independent:
 
 ```bash
+pdflatex supplementary
+bibtex   supplementary
+pdflatex supplementary
+pdflatex supplementary
 pdflatex cover_letter
+```
+
+To regenerate the graphical abstract from the analysis NIfTIs:
+
+```bash
+python generate_graphical_abstract.py
 ```
 
 ## How to convert to the actual Wiley/IET template
@@ -72,7 +86,7 @@ These numbers must match between the thesis report (`../report/`),
 the manuscript (`paper.tex`), and the analysis outputs (`../adni_smoke_analysis/`):
 
 | Result | Value | Source |
-|---|---|---|
+| --- | --- | --- |
 | SSIM (held-out paired) | 0.8991 | report 06-results.tex; paper §4.1 |
 | PSNR (held-out paired, dB) | 20.00 | report 06-results.tex; paper §4.1 |
 | Brain-mask Dice | 0.9436 | report 06-results.tex; paper §4.1 |
