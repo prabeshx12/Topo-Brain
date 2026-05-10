@@ -33,6 +33,9 @@
 \usepackage{authblk}
 \usepackage{xcolor}
 \usepackage{abstract}
+\usepackage{orcidlink}     % \orcidlink{0000-0000-0000-0000} renders the iD glyph
+\usepackage{lineno}        % line numbers for reviewer convenience
+% \linenumbers              % uncomment for review submission; comment for camera-ready
 
 \graphicspath{{figures/}}
 \setlength{\columnsep}{6mm}
@@ -52,13 +55,13 @@
 
 \title{\bfseries TopoBrain: Anatomy-Aware Conditional Diffusion for 3T-to-7T MRI Synthesis with Application to Alzheimer's Disease Biomarkers}
 
-\author[1]{Prabesh Bashyal}
-\author[1]{Pratik Adhikari}
-\author[1]{Spandan Bhandari}
-\author[1,*]{Nanda Bikram Adhikari}
+\author[1]{Prabesh Bashyal\,\orcidlink{0000-0000-0000-0000}}
+\author[1]{Pratik Adhikari\,\orcidlink{0000-0000-0000-0000}}
+\author[1]{Spandan Bhandari\,\orcidlink{0000-0000-0000-0000}}
+\author[1,*]{Nanda Bikram Adhikari\,\orcidlink{0000-0000-0000-0000}}
 
 \affil[1]{Department of Electronics and Computer Engineering, Pulchowk Campus, Institute of Engineering, Tribhuvan University, Lalitpur, Nepal}
-\affil[*]{Corresponding author: \texttt{adhikari@ioe.edu.np}}
+\affil[*]{Corresponding author: \texttt{adhikari@ioe.edu.np}. Replace the four 0000-0000-0000-0000 placeholders with each author's ORCID iD before submission.}
 \date{}
 
 \begin{document}
@@ -90,8 +93,9 @@ $\geq$\,99.8\,\%, GM coverage $\geq$\,81.8\,\%). Out-of-distribution
 deployment on 30 ADNI baseline 3T scans (15 AD, 15 CN) produces
 anatomically coherent outputs, recovers six of six expected tissue-volume
 biomarker directions, and yields a CSF/GM atrophy index with Cohen's
-$d=+0.681$. We present an end-to-end pipeline (synthesis, parcellation,
-classifier-comparison, volumetry-agreement) that is fully implemented and
+$d=+0.68$ (medium effect). We present an end-to-end pipeline
+(synthesis, parcellation, classifier comparison, volumetry agreement)
+that is fully implemented and
 validated against synthetic data; full-cohort empirical AD classification is
 identified as the immediate next study, requiring large-scale
 FastSurfer-based parcellation compute beyond the present scope.
@@ -163,7 +167,7 @@ thalami and caudates --- the structures most affected in early AD.
 \item An out-of-distribution deployment on 30 ADNI baseline 3T scans
 (15 AD, 15 CN), producing anatomically coherent outputs whose tissue
 volumes recover six of six expected AD biomarker directions and a
-CSF/GM atrophy index with Cohen's $d=+0.681$.
+CSF/GM atrophy index with Cohen's $d=+0.68$.
 \item A complete, self-validated downstream pipeline (cohort assembly,
 synthesis, parcellation, classifier comparison, volumetry agreement)
 whose full-cohort empirical evaluation is left as the natural follow-up
@@ -485,7 +489,7 @@ biomarker directions match the AD literature
 \cite{frisoni2010clinical,jack2018niaaa}: AD shows lower brain, GM, WM,
 and GM fraction; AD shows higher CSF and CSF/GM atrophy index. The
 strongest single signal is the CSF/GM atrophy index with Cohen's
-$d=+0.681$ (medium effect), followed by CSF volume ($d=+0.561$) and
+$d=+0.68$ (medium effect), followed by CSF volume ($d=+0.561$) and
 GM volume ($d=-0.507$).
 
 \begin{table}[!t]
@@ -515,7 +519,7 @@ A NIA-AA-style composite z-score \cite{jack2018niaaa} on the four-
 biomarker panel \{GM fraction, GM volume, CSF/GM ratio, CSF volume\}
 yields exploratory area-under-curve $=$\,0.653 with sensitivity
 0.400 and specificity 0.933 at the Youden-J operating point
-(Fig.~\ref{fig:roc}). This is below the 3T-baseline composite (AUC
+(Fig.~\ref{fig:adrisk}). This is below the 3T-baseline composite (AUC
 $=$\,0.818) computed from naive K-means tissue thresholding of the
 input 3T volume on the same cohort, indicating that at the four-class
 tissue granularity the AD signal is already captured by simple
@@ -535,7 +539,7 @@ study (\S\ref{sec:future}).
 features) on the 30-subject ADNI cohort. Positive values indicate
 greater AD-likelihood. Group means are shown as solid horizontal lines
 and the Youden-J optimal threshold as a dashed line.}
-\label{fig:roc}
+\label{fig:adrisk}
 \end{figure}
 
 % =============================================================================
@@ -558,16 +562,16 @@ structural features that survive smoothing.
 
 \begin{figure}[!t]
 \centering
-\includegraphics[width=\columnwidth]{006_S_4153_compare.png}\par
+\includegraphics[width=\columnwidth]{AD_compare.png}\par
 \vspace{2pt}
-\includegraphics[width=\columnwidth]{002_S_4213_compare.png}
-\caption{Three-orthogonal-plane comparisons for one AD subject (top:
-006\_S\_4153, age 79.6) and one CN subject (bottom: 002\_S\_4213,
+\includegraphics[width=\columnwidth]{CN_compare.png}
+\caption{Three-orthogonal-plane comparisons for one representative AD
+subject (top, age 79.6) and one representative CN subject (bottom,
 age 78.7). Top row in each panel: preprocessed 3T input; bottom row:
 synthesised 7T output. Cortical-ribbon texture is reduced (perception-
 distortion trade-off) but subcortical anatomy --- hippocampus,
 amygdala, thalamus, caudate --- and ventricular morphology are
-preserved.}
+preserved. Subject identifiers withheld per ADNI Data Use Agreement.}
 \label{fig:compare}
 \end{figure}
 
@@ -662,7 +666,7 @@ largest-component fraction $\geq$\,0.998. Out-of-distribution
 deployment on 30 ADNI baseline 3T subjects (15\,AD, 15\,CN) produces
 anatomically coherent outputs whose tissue-volume biomarkers recover
 six-of-six expected AD directions with a CSF/GM atrophy-index Cohen's
-$d=+0.681$. We have implemented and self-validated an end-to-end
+$d=+0.68$. We have implemented and self-validated an end-to-end
 downstream pipeline; full empirical AD-classification on the matched
 200-subject ADNI cohort is the immediate next study, requiring
 large-scale FastSurfer-based parcellation compute beyond the present
@@ -674,11 +678,55 @@ available\footnote{\url{https://github.com/prabeshx12/Topo-Brain}}.
 % =============================================================================
 
 The authors thank the Department of Electronics and Computer
-Engineering, Pulchowk Campus, Tribhuvan University, and Dr.\ Nanda
-Bikram Adhikari for academic supervision; E.K.\ Solutions for
-providing access to NVIDIA A100 GPU resources; and the Alzheimer's
-Disease Neuroimaging Initiative for distributing the 3T MPRAGE data
-used in the external-cohort evaluation.
+Engineering, Pulchowk Campus, Tribhuvan University for institutional
+support; and E.K.\ Solutions for providing access to NVIDIA A100 GPU
+resources without which this work would not have been possible.
+
+\smallskip
+\noindent\textbf{ADNI acknowledgement.} Data used in the preparation
+of this article were obtained from the Alzheimer's Disease
+Neuroimaging Initiative (ADNI) database
+(\url{https://adni.loni.usc.edu}). As such, the investigators within
+the ADNI contributed to the design and implementation of ADNI and/or
+provided data but did not participate in analysis or writing of this
+report. A complete listing of ADNI investigators can be found at
+\url{https://adni.loni.usc.edu/wp-content/uploads/how_to_apply/ADNI_Acknowledgement_List.pdf}.
+
+% =============================================================================
+\section*{Funding}
+% =============================================================================
+
+This work received no direct external funding. Computational
+resources (NVIDIA A100 GPU access) were provided in-kind by E.K.\
+Solutions. Data collection and sharing for the Alzheimer's Disease
+Neuroimaging Initiative (ADNI) is funded by the National Institute
+on Aging (Grant U01 AG024904) and DOD ADNI (Department of Defense
+award number W81XWH-12-2-0012); ADNI is funded by the National
+Institutes of Health (NIH) and through generous contributions from
+the private sector and not-for-profit organisations as detailed at
+\url{https://adni.loni.usc.edu/about/}.
+
+% =============================================================================
+\section*{Ethics approval}
+% =============================================================================
+
+This study reuses de-identified imaging data made publicly available
+under the ADNI Data Use Agreement; primary data collection was
+approved by the institutional review boards of all participating
+ADNI sites. No new human-subject data were collected for the present
+work; institutional review board review at the authors' home
+institution was therefore not required for this secondary analysis.
+
+% =============================================================================
+\section*{Patient consent statement}
+% =============================================================================
+
+Written informed consent was obtained from all participants and/or
+their legally authorised representatives at the time of original ADNI
+enrolment, in accordance with the institutional review boards of all
+participating ADNI sites and consistent with the Declaration of
+Helsinki. No additional consent was required for the present
+secondary analysis of de-identified data.
 
 % =============================================================================
 \section*{Conflict of interest}
@@ -690,24 +738,29 @@ The authors declare no conflict of interest.
 \section*{Data availability statement}
 % =============================================================================
 
-ADNI data used in this study were obtained from the public Alzheimer's
-Disease Neuroimaging Initiative archive
+ADNI data were obtained from the public Alzheimer's Disease
+Neuroimaging Initiative archive
 (\url{https://adni.loni.usc.edu}) under the standard ADNI Data Use
-Agreement. The paired 3T/7T training cohort
-\cite{chen2023unc} is distributed by its original maintainers; we do
-not redistribute. All analysis code, including cohort-assembly
+Agreement; we do not redistribute the raw imaging data. The paired
+3T/7T training cohort \cite{chen2023unc} is distributed by its
+original maintainers. All analysis code, including cohort-assembly
 tooling, synthesis scripts, parcellation and classifier-comparison
-pipelines, and self-tests, is available at
-\url{https://github.com/prabeshx12/Topo-Brain}.
+pipelines, and self-tests, is openly available at
+\url{https://github.com/prabeshx12/Topo-Brain}. The trained model
+checkpoint used for all reported results is available on request from
+the corresponding author.
 
 % =============================================================================
 \section*{Author contributions}
 % =============================================================================
 
 \textbf{P.B.}, \textbf{P.A.}, and \textbf{S.B.} jointly designed the
-study, developed the pipeline, and analysed the results.
+study, developed the pipeline, and analysed the results, with
+contributions distributed across software development (P.B., P.A.),
+experimental design (P.A., S.B.), and validation (P.B., S.B.).
 \textbf{N.B.A.} supervised the project and provided methodological
-guidance. All authors wrote and reviewed the manuscript.
+guidance. All authors contributed to writing and review of the
+manuscript and approved the final version.
 
 % =============================================================================
 %  References
