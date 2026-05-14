@@ -56,6 +56,7 @@ cache/
 *.dcm
 Nifti/
 new/
+webUI-TopoBrain/
 
 # HD-BET dependency (users should install separately)
 HD-BET/
