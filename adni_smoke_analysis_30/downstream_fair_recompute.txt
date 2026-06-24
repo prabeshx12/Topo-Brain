@@ -1,0 +1,25 @@
+Fair recomputation: C1 (native-3T) vs C2 (synthetic-7T)
+==========================================================================
+  Cohort: 15 AD + 15 CN (ADNI smoke); panel: gm_frac, gm_mm3, csf_gm_ratio, csf_mm3
+
+  Method                      AUC in-sample    AUC LOSO         LOSO 95% CI
+  -----------------------------------------------------------------------
+  C1 (native-3T K-means)              0.818       0.809      [0.640, 0.938]
+  C2 (synthetic-7T seg)               0.658       0.653      [0.444, 0.844]
+
+  In-sample optimism (AUC_in - AUC_LOSO):
+      C1: +0.009    C2: +0.004
+
+  DeLong test, C1 vs C2 (leave-one-subject-out scores, paired):
+      AUC C1 = 0.809   AUC C2 = 0.653   z = 1.795   p = 0.073
+      Difference is NOT significant at alpha=0.05.
+
+Interpretation:
+  - The two 95% CIs OVERLAP.
+  - C1 is an unsupervised K-means on 3T intensities; C2 is a 7T-supervised
+    segmentation head applied to 3T. Both operate at coarse 4-class tissue
+    granularity, where AD atrophy is already largely separable, so neither
+    tests the synthesis hypothesis (finer parcellation) directly.
+  - With n=30 and these CIs, the headline 0.818-vs-0.658 gap is not
+    statistically reliable; it should be reported with CIs and the DeLong p,
+    not as evidence that synthesis loses diagnostic signal.
