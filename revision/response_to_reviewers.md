@@ -62,9 +62,13 @@ queued pending the trained checkpoint. **[PENDING-CKPT]**
 ## Reviewer 2
 
 ### R2.1 / R2.2 — Missing recent SOTA comparison and citations
-**[DONE, writing] + [PENDING-GPU].** We expand the related-work coverage with recent 3T→7T and
-diffusion-synthesis literature and tie it to the new baseline experiments (R1.2). Quantitative
-SOTA comparison is queued with the baselines.
+**[DONE, writing] + [PENDING-GPU].** We expand the related-work coverage with recent,
+directly-relevant literature (§2): Cui et al. (MICCAI 2024) V-Net 3T→7T synthesis surpassing
+WATNet; Acs & Zhuang (PLOS One 2025) semi-supervised 3T→7T FR-U-Net with anatomical-segmentation
+consistency — the closest prior method, which we explicitly differentiate (it checks consistency
+post hoc, whereas we supervise a joint tissue head and report topological fidelity); and Stucki
+et al. (2024) efficient persistent-homology Betti matching for 3D segmentation. Quantitative SOTA
+comparison against trained baselines is queued (R1.2).
 
 ### R2.3 — Demonstrate topology preservation with true topological metrics, not HD95
 **[DONE, writing] + [PENDING-CKPT].** We now report true topological descriptors — per-class
