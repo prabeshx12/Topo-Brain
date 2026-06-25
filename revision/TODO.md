@@ -30,10 +30,22 @@ Branch: `revision/iet-round2`. Living tracker. ✅ done · 🟡 needs GPU/checkp
 - [ ] 🟡 **S5** Baselines: deterministic 3D regression U-Net + 3D GAN; attempt WATNet/VCT (R1.2/R2.1)
 - [ ] 🟡 **S6** Medical-pretrained perceptual-loss option (MedicalNet/RadImageNet) — 1 retrain (R1.1 robustness)
 
-## D. Data acquisition (parallel, no compute)
-- [ ] Download Figshare+ **20-subject** paired 3T/7T + hippocampal-subfield labels (free)
-- [ ] Email Chu et al. re: **279-pair** 3T/7T T1w access (coc61@pitt.edu)
+## D. Data acquisition (parallel, no compute) — VERIFIED
+- [ ] **Download the 20-subject paired 3T/7T set** ✅ PUBLIC (Scientific Data descriptor,
+      Nature s41597-025-04586-9; Figshare 25634115 + IEEE DataPort). Gives 3T T1/T2, 7T T1/T2 +
+      **manual hippocampal-subfield labels**. Use as external test cohort (R2.5/R1.4) AND
+      subfield-level downstream ground truth (R1.5/R2.4). HIGH VALUE, free.
+- [ ] Email Chu et al. re: **279/351-pair** 3T/7T T1w (coc61@pitt.edu) — ⚠️ likely PRIVATE
+      (study cohort, no repository; HBM 10.1002/hbm.70195). Ask, but do NOT plan on it.
+      This is the gate for Q1-at-scale.
 - [ ] Research public code for WATNet / VCT (feasibility for S5)
+
+## Strategy: SEQUENCED (IET now -> NeuroImage later)
+- **IET resubmission (now):** current flaw fixes + 1-2 baselines + LOSO + true-topo metrics +
+  the free 20-subject external/subfield validation. Q2, invited, bankable.
+- **NeuroImage follow-up (later, contingent):** add the Chu cohort IF it lands + full
+  topology-loss benchmark (edge vs clDice vs PH vs Euler) + downstream as the "so what".
+  Q1 is data-gated; do not abandon the IET invitation for it.
 
 ## E. Logistics
 - [x] Draft supervisor email (lab GPU + ~$100 cloud credit ask)

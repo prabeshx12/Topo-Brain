@@ -79,6 +79,22 @@ single-holdout was intentional for the first version and LOSO is now run.
 
 ---
 
+## D7 — Training-data citation had wrong author + was unfindable ✅ FIXED **Low–Med**
+**Old bib ([paper_iet/references.bib:318](../paper_iet/references.bib#L318)):**
+`@misc{chen2023unc, author={Chen, Yangming and others}, title={UNC paired 3T--7T MRI dataset},
+howpublished={...maintainers}, year=2023}` — wrong first author and no locatable reference.
+**Verified reality (team-confirmed source: figshare 23706033):** the training cohort IS the
+**UNC dataset** — **Chen X., Qu L., Xie Y., Ahmad S., Yap P.-T., 2023, "A paired dataset of T1-
+and T2-weighted MRI at 3T and 7T," *Scientific Data*** (DOI 10.1038/s41597-023-02400-y),
+UNC Chapel Hill (BRIC/Yap group), 10 subjects, **3T Prisma + 7T Terra**. So **"UNC" is CORRECT**
+in the paper and internal docs — no Beijing relabel needed.
+**Fix:** ✅ bib entry replaced with the correct authors/journal/DOI. Verify the in-text §3.1
+description matches (10 subjects, 3T/7T, T1w used).
+**Related (not a discrepancy):** the free 20-subject set (Li et al. 2025, *Sci Data*
+s41597-025-04586-9, Beijing BMCBR, age 18–25, 7T MAGNETOM) is an **independent** dataset
+(different site/scanner/subjects) — so it IS valid external/multi-scanner validation (R2.5) and
+adds hippocampal-subfield labels. No subject overlap with the UNC cohort.
+
 ## Non-discrepancies (confirmed consistent)
 - VGG perceptual-loss weight **0.25** matches code ([diffusion.py:374-375](../src/diffusion.py#L374), config `lambda_percep: 0.25`). R1.1 is a real *argument* to make, not a code mismatch.
 - λ_topo = 0.2, λ_pixel = 1.0 match config.
