@@ -1,0 +1,21 @@
+{
+  "id": "pratikadhikari9/topobrain-eval-110k",
+  "title": "topobrain-eval-110k",
+  "code_file": "topobrain_eval_110k.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "pratikadhikari9/preprocessed-mri-aligned",
+    "pratikadhikari9/seg-masks",
+    "pratikadhikari9/topobrain-code-rev"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": [
+    "pratikadhikari9/mri-ckpt-110000/pytorch/default/1"
+  ]
+}
