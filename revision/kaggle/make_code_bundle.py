@@ -14,6 +14,7 @@ FILES = {
     "src/model.py": REPO / "src/model.py",
     "src/diffusion.py": REPO / "src/diffusion.py",
     "src/topology_loss.py": REPO / "src/topology_loss.py",
+    "src/synthesis_dataset.py": REPO / "src/synthesis_dataset.py",
     "scripts/evaluate_full_volume.py": REPO / "scripts/evaluate_full_volume.py",
     "scripts/compute_betti.py": REPO / "scripts/compute_betti.py",
     "configs/train_diffusion.yaml": REPO / "configs/train_diffusion.yaml",
