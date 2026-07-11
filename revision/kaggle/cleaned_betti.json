@@ -1,0 +1,137 @@
+[
+  {
+    "tissue": "CSF",
+    "variant": "GT",
+    "ncc": 5,
+    "largest_cc": 0.8442,
+    "b0": 5,
+    "b1": 2,
+    "b2": 0
+  },
+  {
+    "tissue": "CSF",
+    "variant": "pred(raw)",
+    "ncc": 1082,
+    "largest_cc": 0.6504,
+    "b0": 753,
+    "b1": 222,
+    "b2": 31
+  },
+  {
+    "tissue": "CSF",
+    "variant": "pred>=20v",
+    "ncc": 91,
+    "largest_cc": 0.6788,
+    "b0": 78,
+    "b1": 194,
+    "b2": 31
+  },
+  {
+    "tissue": "CSF",
+    "variant": "pred>=50v",
+    "ncc": 60,
+    "largest_cc": 0.6902,
+    "b0": 54,
+    "b1": 183,
+    "b2": 31
+  },
+  {
+    "tissue": "CSF",
+    "variant": "pred>=100v",
+    "ncc": 40,
+    "largest_cc": 0.7064,
+    "b0": 36,
+    "b1": 168,
+    "b2": 31
+  },
+  {
+    "tissue": "GM",
+    "variant": "GT",
+    "ncc": 13,
+    "largest_cc": 1.0,
+    "b0": 1,
+    "b1": 939,
+    "b2": 2115
+  },
+  {
+    "tissue": "GM",
+    "variant": "pred(raw)",
+    "ncc": 10638,
+    "largest_cc": 0.9368,
+    "b0": 5213,
+    "b1": 5991,
+    "b2": 3169
+  },
+  {
+    "tissue": "GM",
+    "variant": "pred>=20v",
+    "ncc": 315,
+    "largest_cc": 0.9448,
+    "b0": 297,
+    "b1": 4738,
+    "b2": 3154
+  },
+  {
+    "tissue": "GM",
+    "variant": "pred>=50v",
+    "ncc": 233,
+    "largest_cc": 0.9459,
+    "b0": 225,
+    "b1": 4679,
+    "b2": 3152
+  },
+  {
+    "tissue": "GM",
+    "variant": "pred>=100v",
+    "ncc": 180,
+    "largest_cc": 0.9475,
+    "b0": 175,
+    "b1": 4593,
+    "b2": 3146
+  },
+  {
+    "tissue": "WM",
+    "variant": "GT",
+    "ncc": 34,
+    "largest_cc": 0.9999,
+    "b0": 15,
+    "b1": 25,
+    "b2": 101
+  },
+  {
+    "tissue": "WM",
+    "variant": "pred(raw)",
+    "ncc": 3415,
+    "largest_cc": 0.9781,
+    "b0": 1393,
+    "b1": 1585,
+    "b2": 1411
+  },
+  {
+    "tissue": "WM",
+    "variant": "pred>=20v",
+    "ncc": 50,
+    "largest_cc": 0.9824,
+    "b0": 34,
+    "b1": 1150,
+    "b2": 1406
+  },
+  {
+    "tissue": "WM",
+    "variant": "pred>=50v",
+    "ncc": 28,
+    "largest_cc": 0.9828,
+    "b0": 21,
+    "b1": 1130,
+    "b2": 1406
+  },
+  {
+    "tissue": "WM",
+    "variant": "pred>=100v",
+    "ncc": 17,
+    "largest_cc": 0.9832,
+    "b0": 13,
+    "b1": 1116,
+    "b2": 1405
+  }
+]

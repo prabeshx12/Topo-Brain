@@ -21,10 +21,25 @@ class EdgeAwareTopologyLoss(nn.Module):
     - Multi-scale consistency for structural preservation
     """
     
-    def __init__(self, num_classes=4, edge_weight=2.0):
+    def __init__(self, num_classes=4, edge_weight=2.0,
+                 use_edge_weighting=True, use_boundary_dice=True,
+                 boundary_weight=0.5):
+        """
+        Args:
+            use_edge_weighting: if False, the cross-entropy is NOT up-weighted on
+                boundary voxels (isolates the Sobel edge-weighting term). R1.3.
+            use_boundary_dice: if False, the Sobel soft-edge Dice term is dropped
+                (isolates the boundary-Dice term). R1.3.
+            boundary_weight: coefficient on the boundary-Dice term (was hard-coded 0.5).
+
+        Defaults reproduce the original published behaviour exactly.
+        """
         super().__init__()
         self.num_classes = num_classes
         self.edge_weight = edge_weight
+        self.use_edge_weighting = use_edge_weighting
+        self.use_boundary_dice = use_boundary_dice
+        self.boundary_weight = boundary_weight
 
         # Dynamic class weights based on num_classes
         # Prioritize smaller classes (CSF, GM) over dominant ones (BG, WM)
@@ -120,7 +135,12 @@ class EdgeAwareTopologyLoss(nn.Module):
         edge_map = edge_map.squeeze(1)
         
         # 3. Weight loss by edges and mask by timestep gating
-        edge_weights = 1.0 + (self.edge_weight - 1.0) * edge_map
+        # R1.3 ablation: with use_edge_weighting=False this reduces to a plain
+        # class-weighted CE (no Sobel boundary up-weighting).
+        if self.use_edge_weighting:
+            edge_weights = 1.0 + (self.edge_weight - 1.0) * edge_map
+        else:
+            edge_weights = torch.ones_like(edge_map)
         loss_weighted = (loss_ce.float() * edge_weights.float())
         
         if mask is not None:
@@ -130,6 +150,14 @@ class EdgeAwareTopologyLoss(nn.Module):
         # Force float32 for mean to prevent 65k overflow on 262k voxels
         loss_weighted_val = loss_weighted.float().mean()
         
+        # R1.3 ablation: drop the Sobel soft-edge Dice term entirely.
+        if not self.use_boundary_dice:
+            return {
+                'loss': loss_weighted_val,
+                'loss_ce': loss_ce.float().mean(),
+                'loss_boundary': torch.zeros((), device=pred_logits.device),
+            }
+
         # Dice-like component on predicted edges (gated)
         if mask is not None:
             # Only compute for gated samples to save time
@@ -172,7 +200,7 @@ class EdgeAwareTopologyLoss(nn.Module):
         smooth = 1.0  # Laplace smoothing to prevent gradient spikes when union is small
         loss_boundary = 1.0 - (2.0 * intersection + smooth) / (union + smooth)
         
-        loss_total = loss_weighted_val + 0.5 * loss_boundary
+        loss_total = loss_weighted_val + self.boundary_weight * loss_boundary
         
         return {
             'loss': loss_total,
@@ -189,11 +217,14 @@ class MultiScaleTopologyLoss(nn.Module):
     both fine-grained and coarse anatomical structures are preserved.
     """
     
-    def __init__(self, num_classes=2, scales=[1.0, 0.5, 0.25]):
+    def __init__(self, num_classes=2, scales=[1.0, 0.5, 0.25], **kwargs):
+        """kwargs are forwarded to EdgeAwareTopologyLoss (R1.3 ablation flags:
+        use_edge_weighting, use_boundary_dice, boundary_weight, edge_weight).
+        Pass scales=[1.0] to isolate the multi-scale wrapper."""
         super().__init__()
         self.num_classes = num_classes
         self.scales = scales
-        self.edge_aware_loss = EdgeAwareTopologyLoss(num_classes)
+        self.edge_aware_loss = EdgeAwareTopologyLoss(num_classes, **kwargs)
     
     def forward(self, pred_logits, target_mask, mask=None):
         """
@@ -248,21 +279,32 @@ class MultiScaleTopologyLoss(nn.Module):
         }
 
 
-def create_topology_loss(num_classes=2, use_multiscale=True):
+def create_topology_loss(num_classes=2, use_multiscale=True, **kwargs):
     """
     Factory function to create the appropriate topology loss.
-    
+
     Args:
         num_classes: Number of segmentation classes
         use_multiscale: Whether to use multi-scale loss
-        
+        **kwargs: R1.3 ablation flags forwarded to EdgeAwareTopologyLoss --
+            use_edge_weighting (bool), use_boundary_dice (bool),
+            boundary_weight (float), edge_weight (float); and `scales` for
+            MultiScaleTopologyLoss.
+
+    Ablation variants for reviewer R1.3 (isolate the Sobel and Dice terms):
+        full        : create_topology_loss(4, True)                                  # published
+        no-edge-wt  : create_topology_loss(4, True, use_edge_weighting=False)        # isolates Sobel edge weighting
+        no-bnd-dice : create_topology_loss(4, True, use_boundary_dice=False)         # isolates boundary Dice
+        single-scale: create_topology_loss(4, True, scales=[1.0])                    # isolates multi-scale
+        none        : lambda_topo = 0.0                                              # existing ablation
+
     Returns:
         Topology loss module
     """
     if use_multiscale:
-        return MultiScaleTopologyLoss(num_classes=num_classes)
-    else:
-        return EdgeAwareTopologyLoss(num_classes=num_classes)
+        return MultiScaleTopologyLoss(num_classes=num_classes, **kwargs)
+    kwargs.pop("scales", None)  # only meaningful for the multi-scale wrapper
+    return EdgeAwareTopologyLoss(num_classes=num_classes, **kwargs)
 
 
 if __name__ == "__main__":

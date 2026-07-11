@@ -112,11 +112,16 @@ class GaussianDiffusion(nn.Module):
         beta_schedule="linear",
         loss_type="l1",
         objective="pred_noise", # or pred_x0
+        topo_kwargs=None,       # R1.3: component flags for the topology loss
     ):
         super().__init__()
         self.model = model
         self.loss_type = loss_type
         self.objective = objective
+        # Empty/None == published behaviour. See topology_loss.create_topology_loss
+        # for the R1.3 ablation variants (no-edge-weighting / no-boundary-dice /
+        # single-scale).
+        self.topo_kwargs = topo_kwargs or {}
         
         if beta_schedule == "linear":
             betas = linear_beta_schedule(timesteps)
@@ -162,16 +167,24 @@ class GaussianDiffusion(nn.Module):
         return self.perceptual_loss
 
     def _compute_topology_loss(self, seg_pred, seg_target, mask=None):
-        """Compute topology loss with advanced edge-aware features."""
+        """Compute topology loss with advanced edge-aware features.
+
+        Component flags (reviewer R1.3 -- isolate the Sobel and Dice terms) are
+        read from self.topo_kwargs, set at construction. Empty dict == published
+        behaviour (edge-weighted CE + 0.5*boundary-Dice, multi-scale).
+        """
         if self._topology_loss_module is None:
             if HAS_TOPOLOGY_LOSS:
                 try:
                     from .topology_loss import create_topology_loss
+                    tk = dict(getattr(self, "topo_kwargs", {}) or {})
+                    use_ms = tk.pop("use_multiscale", True)
                     self._topology_loss_module = create_topology_loss(
                         num_classes=seg_pred.shape[1],
-                        use_multiscale=True
+                        use_multiscale=use_ms,
+                        **tk,
                     ).to(seg_pred.device)
-                    print("✓ Activated Advanced Multi-Scale Topology Loss")
+                    print(f"✓ Activated Topology Loss (multiscale={use_ms}, flags={tk})")
                 except Exception as e:
                     print(f"Warning: Could not init advanced topology loss: {e}")
                     self._topology_loss_module = "standard"
