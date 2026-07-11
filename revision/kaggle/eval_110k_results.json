@@ -1,0 +1,99 @@
+{
+  "checkpoint_step": 110000,
+  "params": 13978821,
+  "paper_table1": {
+    "ssim": 0.8991,
+    "psnr": 20.0,
+    "dice_fg": 0.7682,
+    "hd95_fg": 3.31,
+    "dice_brain": 0.9436,
+    "hd95_brain": 2.05
+  },
+  "runs": {
+    "ddim": {
+      "image_metrics": {
+        "Threshold(-0.95)": {
+          "ssim": 0.8709,
+          "psnr": 19.38,
+          "dice": 0.7401,
+          "hd95_mm": 3.31
+        },
+        "SegMaskGT(seg>0)": {
+          "ssim": 0.8998,
+          "psnr": 20.85,
+          "dice": 0.7831,
+          "hd95_mm": 2.68
+        },
+        "BrainMaskNII": {
+          "ssim": 0.8618,
+          "psnr": 18.99,
+          "dice": 0.7322,
+          "hd95_mm": 3.5
+        }
+      },
+      "tissue_dice": {
+        "CSF": 0.6811,
+        "GM": 0.7823,
+        "WM": 0.8821
+      },
+      "topology_pred": {
+        "CSF": {
+          "voxels": 64515,
+          "cc": 1082,
+          "largest_cc_frac": 0.6504,
+          "betti0": 753,
+          "betti1": 222,
+          "betti2": 31,
+          "euler_chi": 562
+        },
+        "GM": {
+          "voxels": 2270235,
+          "cc": 10638,
+          "largest_cc_frac": 0.9368,
+          "betti0": 5213,
+          "betti1": 5991,
+          "betti2": 3169,
+          "euler_chi": 2391
+        },
+        "WM": {
+          "voxels": 1753244,
+          "cc": 3415,
+          "largest_cc_frac": 0.9781,
+          "betti0": 1393,
+          "betti1": 1585,
+          "betti2": 1411,
+          "euler_chi": 1219
+        }
+      },
+      "topology_gt": {
+        "CSF": {
+          "voxels": 41070,
+          "cc": 5,
+          "largest_cc_frac": 0.8442,
+          "betti0": 5,
+          "betti1": 2,
+          "betti2": 0,
+          "euler_chi": 3
+        },
+        "GM": {
+          "voxels": 1946824,
+          "cc": 13,
+          "largest_cc_frac": 1.0,
+          "betti0": 1,
+          "betti1": 939,
+          "betti2": 2115,
+          "euler_chi": 1177
+        },
+        "WM": {
+          "voxels": 1624469,
+          "cc": 34,
+          "largest_cc_frac": 0.9999,
+          "betti0": 15,
+          "betti1": 25,
+          "betti2": 101,
+          "euler_chi": 91
+        }
+      }
+    }
+  }
+}

@@ -24,12 +24,45 @@ import zipfile
 # --------------------------------------------------------------------------
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "gudhi"], check=False)
 
-CODE_ZIP = "/kaggle/input/topobrain-code-rev/topobrain_code.zip"
-REPO = "/kaggle/working/repo"
-os.makedirs(REPO, exist_ok=True)
-with zipfile.ZipFile(CODE_ZIP) as z:
-    z.extractall(REPO)
-sys.path.insert(0, REPO)
+# --- GPU compatibility: Kaggle may assign a Pascal P100 (sm_60), which the
+# preinstalled torch (sm_70+) cannot run. If so, install a cu121 torch that
+# includes sm_60 and re-exec once. torchvision is not needed for inference,
+# so we drop it to avoid an ABI mismatch.
+import torch as _torch  # noqa: E402
+_cap = _torch.cuda.get_device_capability(0) if _torch.cuda.is_available() else None
+print(f"torch {_torch.__version__} | cuda={_torch.cuda.is_available()} | cap={_cap}")
+if _torch.cuda.is_available() and _cap is not None and _cap[0] < 7 and not os.environ.get("TORCH_FIXED"):
+    print(f"GPU capability {_cap} unsupported by torch {_torch.__version__}; installing cu121 build and re-exec...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-cache-dir",
+                    "torch==2.5.1", "--index-url", "https://download.pytorch.org/whl/cu121"], check=False)
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", "torchvision"], check=False)
+    os.environ["TORCH_FIXED"] = "1"
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+# --- Diagnostics: what is actually mounted? -------------------------------
+print("=== /kaggle/input contents ===")
+for root in sorted(glob.glob("/kaggle/input/*")):
+    print(" ", root)
+    for sub in sorted(glob.glob(root + "/*"))[:12]:
+        print("     ", sub)
+
+# --- Robustly locate the code bundle anywhere under /kaggle/input ---------
+CODE_ROOT = None
+hits = glob.glob("/kaggle/input/**/src/model.py", recursive=True)
+if hits:
+    CODE_ROOT = os.path.dirname(os.path.dirname(hits[0]))  # .../<root>
+else:
+    zips = glob.glob("/kaggle/input/**/*.zip", recursive=True)
+    if zips:
+        REPO = "/kaggle/working/repo"
+        os.makedirs(REPO, exist_ok=True)
+        with zipfile.ZipFile(zips[0]) as z:
+            z.extractall(REPO)
+        CODE_ROOT = REPO
+assert CODE_ROOT and os.path.isfile(os.path.join(CODE_ROOT, "src", "model.py")), \
+    f"could not locate code bundle (CODE_ROOT={CODE_ROOT})"
+sys.path.insert(0, CODE_ROOT)
+print("code root:", CODE_ROOT)
 
 import numpy as np  # noqa: E402
 import nibabel as nib  # noqa: E402
@@ -54,20 +87,27 @@ print("device:", DEV, "| gpu:", torch.cuda.get_device_name(0) if torch.cuda.is_a
 # --------------------------------------------------------------------------
 # 1. Paths
 # --------------------------------------------------------------------------
-PRE = "/kaggle/input/preprocessed-mri-aligned/sub-06"
-IN_3T = f"{PRE}/ses-1/anat/sub-06_ses-1_desc-preproc_T1w_registered.nii"
-TGT_7T = f"{PRE}/ses-2/anat/sub-06_ses-2_desc-preproc_T1w.nii"
-BMASK = f"{PRE}/ses-2/anat/sub-06_ses-2_desc-brainmask_T1w.nii"
-GT_SEG = "/kaggle/input/seg-masks/sub-06/ses-2/anat/sub-06_ses-2_desc-preproc_T1w_seg.nii"
+def find_one(pattern):
+    hits = sorted(glob.glob(f"/kaggle/input/**/{pattern}", recursive=True))
+    return hits[0] if hits else None
 
-ckpts = glob.glob("/kaggle/input/mri-ckpt-110000/**/*.pt", recursive=True)
-assert ckpts, "checkpoint .pt not found under /kaggle/input/mri-ckpt-110000"
+
+IN_3T = find_one("sub-06_ses-1_desc-preproc_T1w_registered.nii*")
+TGT_7T = find_one("sub-06_ses-2_desc-preproc_T1w.nii*")     # 7T target (not *_seg, not *_registered)
+BMASK = find_one("sub-06_ses-2_desc-brainmask_T1w.nii*")
+GT_SEG = find_one("sub-06_ses-2_desc-preproc_T1w_seg.nii*")
+for nm, pth in [("IN_3T", IN_3T), ("TGT_7T", TGT_7T), ("GT_SEG", GT_SEG)]:
+    assert pth, f"could not locate {nm} under /kaggle/input"
+
+all_pt = glob.glob("/kaggle/input/**/*.pt", recursive=True)
+ckpts = [p for p in all_pt if ("ckpt" in p.lower() or "checkpoint" in p.lower())] or all_pt
+assert ckpts, f"no .pt checkpoint found under /kaggle/input (searched {len(all_pt)})"
 CKPT = ckpts[0]
 print("checkpoint:", CKPT)
 for p in (IN_3T, TGT_7T, GT_SEG):
     print(f"  exists {os.path.exists(p)} : {p}")
 
-CFG = yaml.safe_load(open(f"{REPO}/configs/train_diffusion.yaml"))
+CFG = yaml.safe_load(open(f"{CODE_ROOT}/configs/train_diffusion.yaml"))
 
 # --------------------------------------------------------------------------
 # 2. Model + EMA weights
@@ -103,15 +143,45 @@ affine = inp_nii.affine
 target_vol = nib.load(TGT_7T).get_fdata().astype(np.float32)
 gt_seg = np.rint(nib.load(GT_SEG).get_fdata()).astype(np.int32)
 
+
+def diffusion_normalize(vol, mask, p_lo=1.0, p_hi=99.0, clip_lo=0.5, clip_hi=99.5):
+    """Exact replica of src/preprocessing.py method='diffusion': clip to
+    [p0.5,p99.5], percentile-scale [p1,p99] -> [0,1] -> [-1,1], background -> -1.
+    The model REQUIRES inputs in [-1,1] (synthesis_dataset._robust_normalize)."""
+    roi = vol[mask > 0] if mask is not None and mask.any() else vol[vol > vol.min()]
+    lo_c, hi_c = np.percentile(roi, clip_lo), np.percentile(roi, clip_hi)
+    v = np.clip(vol, lo_c, hi_c)
+    roi = v[mask > 0] if mask is not None and mask.any() else v
+    lo, hi = np.percentile(roi, p_lo), np.percentile(roi, p_hi)
+    if hi > lo:
+        v = np.clip((v - lo) / (hi - lo), 0, 1) * 2.0 - 1.0
+    if mask is not None and mask.any():
+        v[mask == 0] = -1.0
+    return v.astype(np.float32)
+
+
+# Brain mask for normalization ROI (prefer the provided brainmask NII).
+_norm_mask = None
+if BMASK and os.path.exists(BMASK):
+    _bm = nib.load(BMASK).get_fdata() > 0.5
+    if _bm.shape == input_vol.shape:
+        _norm_mask = _bm
+print("input range (raw):", float(input_vol.min()), float(input_vol.max()))
+print("target range (raw):", float(target_vol.min()), float(target_vol.max()))
+if input_vol.min() < -1.1 or input_vol.max() > 1.1:
+    print(">>> input not in [-1,1]; applying diffusion normalization (model requirement)")
+    input_vol = diffusion_normalize(input_vol, _norm_mask)
+    target_vol = diffusion_normalize(target_vol, _norm_mask)
+
 spacing = tuple(np.abs(np.diag(affine)[:3]))
 print("shape:", input_vol.shape, "| spacing:", spacing)
-print("input range:", float(input_vol.min()), float(input_vol.max()))
-print("target range:", float(target_vol.min()), float(target_vol.max()))
+print("input range (norm):", float(input_vol.min()), float(input_vol.max()))
+print("target range (norm):", float(target_vol.min()), float(target_vol.max()))
 print("gt seg labels:", np.unique(gt_seg))
 
 masks = [("Threshold(-0.95)", ev.make_brain_mask(input_vol, -0.95))]
 masks.append(("SegMaskGT(seg>0)", gt_seg > 0))
-if os.path.exists(BMASK):
+if BMASK and os.path.exists(BMASK):
     bm = nib.load(BMASK).get_fdata() > 0.5
     if bm.shape == input_vol.shape:
         masks.append(("BrainMaskNII", bm))
@@ -167,7 +237,7 @@ PAPER = {"ssim": 0.8991, "psnr": 20.00, "dice_fg": 0.7682, "hd95_fg": 3.31,
 results = {"checkpoint_step": int(ck.get("step", -1)), "params": int(n_par),
            "paper_table1": PAPER, "runs": {}}
 
-for sampler, steps in [("ddim", 50), ("ddpm", None)]:
+for sampler, steps in [("ddim", 50)]:  # DDIM-50 = the paper's inference sampler
     print("\n" + "=" * 78)
     print(f"TILED INFERENCE — sampler={sampler}" + (f" (ddim_steps={steps})" if steps else " (185 steps)"))
     print("=" * 78, flush=True)

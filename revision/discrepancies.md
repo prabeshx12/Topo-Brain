@@ -95,6 +95,47 @@ s41597-025-04586-9, Beijing BMCBR, age 18–25, 7T MAGNETOM) is an **independent
 (different site/scanner/subjects) — so it IS valid external/multi-scanner validation (R2.5) and
 adds hippocampal-subfield labels. No subject overlap with the UNC cohort.
 
+## D8 — Reported checkpoint is "105k EMA"; the only surviving checkpoint is step 110,000 ⚠️ **High (reproducibility)**
+**Paper:** "The 105\,k-iteration EMA checkpoint was selected by candidate screening…" (§4.1), and
+Table 1 results are attributed to "the selected 105\,k EMA checkpoint."
+**Artifact (Kaggle model `pratikadhikari9/mri-ckpt-110000`, downloaded to
+`checkpoints/checkpoint_110000/checkpoint_110000.pt`):** `step = 110000`. The only other Kaggle
+model is `diffusion-mri-ckpt-5000` (step 5k). **No 105k checkpoint exists.**
+**Consequences:**
+- Any results we regenerate (Betti/Euler, external cohort) will come from the **110k** checkpoint.
+- If Table 1's numbers were produced at 105k, they are **not reproducible** from surviving
+  artifacts — a serious problem given the paper offers the checkpoint "on request."
+**RESOLVED ✅ (re-eval on Kaggle P100, DDIM-50, correct [-1,1] normalization):** the 110k
+checkpoint **reproduces Table 1** — SSIM 0.8998 (paper 0.8991), PSNR 20.85 (20.00), foreground
+HD95 3.31 mm (3.31). So "105k" is a **labelling error for 110k**; the reported numbers came from
+this checkpoint. See [kaggle/results_110k_sub06.md](kaggle/results_110k_sub06.md).
+**Fix:** WRITING — change every "105\,k" → "110\,k" in the manuscript (§4.1 and Table captions).
+No results need regenerating.
+**Caveat still worth noting:** the exact [-1,1] `.nii.gz` inputs (per `pairs_new.csv`) are not
+persisted (only a z-score `.nii` copy is on Kaggle); the resubmission should release the
+normalized inputs or a one-command preprocessing script for end-to-end reproducibility.
+
+## D9 — True topology metrics reveal fragmentation that HD95/largest-CC hid ⚠️ **High (claim-qualifying)**
+**Finding (R2.3/R2.8, from the same 110k re-eval):** Betti β0 of the predicted seg vastly exceeds
+GT — GM 5213 vs 1, WM 1393 vs 15, CSF 753 vs 5 (β1/β2 similarly inflated). The *largest-CC
+fraction* stays high (0.94-0.98), so the dominant structure is preserved, but strict topology
+shows the predicted maps carry thousands of small components/handles/voids the paper's metrics
+masked. **This qualifies the central "topology preservation" claim.**
+**Fix:** WRITING — report Betti/Euler honestly with the largest-CC-fraction caveat; frame the
+edge-aware loss as preserving gross anatomy but not achieving GT-level topology (consistent with
+the §3.3/§5 "approximation, not persistent-homology" framing); position PH-loss as the follow-up.
+This is the honest answer R2.3 asked for; do not overclaim topology preservation.
+
+## Verified by the checkpoint (independent confirmations)
+- **Param count:** `model` and `ema` state_dicts each contain exactly **13,978,821** parameters —
+  confirming D2 from the trained weights themselves (three independent methods now agree).
+- **Loss weights:** embedded `config.loss_weights = {lambda_pixel: 1.0, lambda_percep: 0.25,
+  lambda_topo: 0.2}` — matches the paper and the corrected §3.3. No weight discrepancy.
+- **Architecture:** `features [32,64,128,256]`, `use_attention: true`, `num_classes: 4`,
+  `inc.weight` shape `(32,2,3,3,3)` → 2-channel concat conditioning. All as described.
+- **Split config:** `val_fold: 0, test_fold: 1, use_loocv: true` — confirming D6 (the code ignores
+  `test_fold`, so only sub-06 was ever held out despite the config).
+
 ## Non-discrepancies (confirmed consistent)
 - VGG perceptual-loss weight **0.25** matches code ([diffusion.py:374-375](../src/diffusion.py#L374), config `lambda_percep: 0.25`). R1.1 is a real *argument* to make, not a code mismatch.
 - λ_topo = 0.2, λ_pixel = 1.0 match config.
