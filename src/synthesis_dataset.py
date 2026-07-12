@@ -830,7 +830,14 @@ def create_synthesis_dataloaders(
         cache_volumes=True
     )
     
-    # Create dataloaders
+    # PERF FIX (B6): without persistent_workers the workers are re-forked at the end of every
+    # epoch -- and an "epoch" here is only n_train*patches_per_volume/batch_size batches
+    # (e.g. 9*32/8 = 36!). Each re-fork throws away BOTH caches and re-runs
+    # _get_valid_centers, a 10,000-candidate x 64^3 mask search (~2.6e9 voxel ops per volume)
+    # in every worker. The GPU starves: measured 2.24 s/it on a P100, ~2-3x slower than it
+    # should be. persistent_workers keeps the workers -- and therefore the volume cache and
+    # the valid-centre cache -- alive across epochs.
+    _pw = num_workers > 0
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -838,14 +845,17 @@ def create_synthesis_dataloaders(
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
+        persistent_workers=_pw,
+        prefetch_factor=4 if _pw else None,
     )
-    
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=_pw,
     )
     
     test_loader = DataLoader(
