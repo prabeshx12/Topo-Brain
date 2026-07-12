@@ -1,5 +1,5 @@
-"""
-PHASE 3 — train the rebuilt model on the FIXED pipeline.
+﻿"""
+PHASE 3 â€” train the rebuilt model on the FIXED pipeline.
 
   Architecture : regression U-Net + CASCADED seg head (seg computed FROM the synth image,
                  so anatomy/topology gradient reaches the generator -- the old parallel
@@ -8,14 +8,23 @@ PHASE 3 — train the rebuilt model on the FIXED pipeline.
                  -> only 288 unique patches ever, 0.3% of the brain).
   Split        : val = fold 0 (sub-06), test = fold 1 (sub-07) -- DISTINCT, so checkpoints
                  can no longer be selected on the test subject.
-  Loss         : L1 + SSIM + (CE + Dice) on the cascaded seg.  NO topology term yet --
-                 this run is the honest baseline that Phase 4 must beat.
+  Loss         : L1 (unmasked) + BRAIN-MASKED SSIM + (CE + Dice) on the cascaded seg.
+                 NO topology term yet -- this run is the honest baseline Phase 4 must beat.
+                 SSIM is brain-masked because the volumes are skull-stripped: an average
+                 accepted patch is only ~50% brain (measured), and SSIM saturates to 1.0 on
+                 the flat background, diluting the term ~2x.
   Metrics      : honest (brain-only SSIM/PSNR; segmentation Dice; surface-to-surface HD95).
 
-Reference point: the OLD B1 baseline (288 patches, 17k steps) scored, under the field's
-whole-volume convention, SSIM 0.884 / PSNR 20.24 dB -- already above the published
-FS-RWKV (0.726) and LiteMamba-Synth (0.711) on this dataset. With 147x more unique
-patches this should improve.
+WHERE WE ACTUALLY STAND (revision/BENCHMARK_REALITY.md): we are BEHIND the published
+methods, not ahead. Inverting FS-RWKV's own RMSE column puts us at RMSE 0.0973 vs their
+0.0898 and LiteMamba's 0.0920. The closest competitor -- Acs & Zhuang (PLOS ONE 2025), same
+dataset, same 10-fold LOOCV -- reports PSNR 23.25 / SSIM 0.737, roughly 3 dB above us.
+Their SSIM is also not comparable to ours (they do not skull-strip; the UNC release is only
+defaced + FLIRT-registered, and they score 2D central slices in [0,1]).
+
+The prior B1 baseline reached PSNR 20.24 dB while trained on only 288 unique patches for
+17k steps. This run has ~147x more unique patches plus a cascaded seg head whose gradient
+actually reaches the generator. That is where the headroom must come from.
 """
 import glob
 import os
@@ -121,6 +130,7 @@ sys.argv = [
     "--lam-ssim", "0.5",
     "--lam-seg", "1.0",
     "--lam-topo", "0.0",        # Phase 3: NO topology term -- this is the honest baseline
+    "--mask-ssim", "1",         # brain-only SSIM: unmasked is ~2x diluted by flat background
     "--val-fold", "0",          # sub-06
     "--test-fold", "1",         # sub-07  (DISTINCT -- no selection on the test subject)
     "--save-freq", "5000",
@@ -135,3 +145,4 @@ if resume:
 runpy_path = f"{CODE}/scripts/train_cascaded.py"
 log(f"\nrunning {runpy_path}\n" + "=" * 70)
 exec(compile(open(runpy_path).read(), runpy_path, "exec"), {"__name__": "__main__", "__file__": runpy_path})
+

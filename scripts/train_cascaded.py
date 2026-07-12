@@ -54,8 +54,30 @@ def _gaussian_kernel3d(ws: int, sigma: float, device) -> torch.Tensor:
 
 
 def ssim3d(x: torch.Tensor, y: torch.Tensor, data_range: float = 2.0,
-           ws: int = 7, sigma: float = 1.5) -> torch.Tensor:
-    """Differentiable 3D SSIM (mean over the volume). x, y: [B,1,D,H,W] in [-1,1]."""
+           ws: int = 7, sigma: float = 1.5,
+           mask: torch.Tensor = None) -> torch.Tensor:
+    """Differentiable 3D SSIM. x, y: [B,1,D,H,W] in [-1,1].
+
+    `mask` ([B,1,D,H,W] or [B,D,H,W], bool/float): if given, the SSIM map is averaged ONLY
+    over the masked (brain) voxels.
+
+    WHY THE MASK MATTERS. The volumes are skull-stripped, so ~85% of each volume is a
+    constant -1 background, and the patch sampler only requires >=10% brain. Measured over
+    the real valid centres:
+
+        brain fraction of accepted patches: median 0.475, mean 0.499
+        52.7% of accepted patches are >50% background
+
+    SSIM SATURATES to ~1.0 wherever prediction and target are both flat and equal, so that
+    background contributes a perfect score and ZERO gradient. An unmasked SSIM term is
+    therefore diluted ~2x -- the loss added specifically to sharpen anatomy was running at
+    half strength. Unlike L1 (which self-corrects once the model learns to emit -1), SSIM's
+    saturation does not wash out.
+
+    We mask it so the TRAINING objective mirrors the EVALUATION metric (which is brain-only,
+    see src/metrics_honest.masked_ssim). L1 is deliberately left unmasked so the background
+    stays supervised for the whole-volume reporting convention.
+    """
     k = _gaussian_kernel3d(ws, sigma, x.device).to(x.dtype)
     pad = ws // 2
     mu_x = F.conv3d(x, k, padding=pad)
@@ -67,7 +89,15 @@ def ssim3d(x: torch.Tensor, y: torch.Tensor, data_range: float = 2.0,
     c1 = (0.01 * data_range) ** 2
     c2 = (0.03 * data_range) ** 2
     s = ((2 * mu_xy + c1) * (2 * sxy + c2)) / ((mu_x2 + mu_y2 + c1) * (sx + sy + c2))
-    return s.mean()
+
+    if mask is None:
+        return s.mean()
+
+    m = mask.to(s.dtype)
+    if m.dim() == 4:
+        m = m.unsqueeze(1)
+    denom = m.sum().clamp(min=1.0)
+    return (s * m).sum() / denom
 
 
 def dice_loss(logits: torch.Tensor, target: torch.Tensor, num_classes: int,
@@ -109,6 +139,10 @@ def main():
     ap.add_argument("--resume", type=str, default=None)
     ap.add_argument("--detach-seg", action="store_true",
                     help="ABLATION: sever the cascade (reproduces the old broken design)")
+    ap.add_argument("--mask-ssim", type=int, default=1,
+                    help="1 = average the SSIM term over brain voxels only (default). The "
+                         "volumes are skull-stripped, so an unmasked SSIM is ~2x diluted by "
+                         "flat background where it saturates to 1.0. Set 0 to ablate.")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -227,8 +261,17 @@ def main():
         img = out["image"].float()
         seg_logits = out["seg"].float().clamp(-50, 50)
 
-        l_l1 = F.l1_loss(img, x7.float())
-        l_ssim = 1.0 - ssim3d(img, x7.float())
+        # Brain mask from the ground-truth tissue labels (class 0 = background).
+        # Used to mask the SSIM term (see ssim3d docstring): the volumes are skull-stripped,
+        # so ~50% of an average accepted patch is flat background where SSIM saturates to 1.0
+        # and yields no gradient -- diluting the term ~2x.
+        brain = (seg > 0)
+
+        l_l1 = F.l1_loss(img, x7.float())                       # unmasked: keep bg supervised
+        if args.mask_ssim and brain.any():
+            l_ssim = 1.0 - ssim3d(img, x7.float(), mask=brain)  # brain-only, mirrors the metric
+        else:
+            l_ssim = 1.0 - ssim3d(img, x7.float())
         l_ce = F.cross_entropy(seg_logits, seg, weight=CLS_W)
         l_dice = dice_loss(seg_logits, seg, nc)
         loss = l_l1 + args.lam_ssim * l_ssim + args.lam_seg * (l_ce + l_dice)
