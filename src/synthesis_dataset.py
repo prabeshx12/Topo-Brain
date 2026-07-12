@@ -72,12 +72,23 @@ class SubjectSplitter:
     def create_folds(self, subjects: List[str]) -> List[List[str]]:
         """
         Create cross-validation folds from subject list.
-        
+
         For N subjects and N folds (LOOCV), each fold contains 1 subject.
+
+        BUGFIX (A5): this previously shuffled with the SHARED, STATEFUL `self._rng`,
+        so every call to create_folds() advanced the generator and produced a DIFFERENT
+        fold assignment. Since get_split() and get_cv_splits() both call it, the folds
+        used for a split were not the folds returned by get_cv_splits(). Measured effect
+        on 10-subject LOOCV: sub-01/02/04/07 were NEVER validated while sub-03 was
+        validated three times -- i.e. any cross-validation run through this class was
+        invalid.
+
+        Now: shuffle with a FRESH generator seeded from config.seed, so fold assignment
+        is a deterministic, idempotent function of (seed, subjects).
         """
         subjects = list(subjects)
-        self._rng.shuffle(subjects)
-        
+        np.random.default_rng(self.config.seed).shuffle(subjects)
+
         n_folds = min(self.config.n_folds, len(subjects))
         
         if self.config.use_loocv:
@@ -470,19 +481,33 @@ class PairedPatchDataset(Dataset):
         
         # Get valid patch centers
         valid_centers = self._get_valid_centers(mask, pair_idx)
-        
-        # Select a center (deterministic based on patch_idx for reproducibility)
-        center_idx = (patch_idx * 7919) % len(valid_centers)  # Prime for good distribution
-        center = valid_centers[center_idx]
-        
-        # Add random jitter during training
+
+        # BUGFIX (A1): the previous code selected the center as a pure function of
+        # the index:
+        #     center_idx = (patch_idx * 7919) % len(valid_centers)
+        # With patches_per_volume=32 this yields only 32 distinct centers per volume
+        # -- i.e. 9 subjects x 32 = 288 unique patches EVER, ~0.3% of the ~9.7k valid
+        # centers. Every epoch replayed the identical 288 crops (the +/-5 voxel jitter
+        # leaves 78% overlap, so it does not create new patches). The model was fit to
+        # 288 fixed crops repeated thousands of times.
+        #
+        # Now: sample a fresh center at random on every __getitem__ during training, so
+        # `patches_per_volume` controls epoch LENGTH only, not patch identity. This
+        # exposes the full ~9.7k centers per volume (~34x more unique data).
+        # Validation/inference keeps the deterministic stride for reproducibility.
         if self.augment:
+            center = valid_centers[self._rng.integers(len(valid_centers))]
+            # Sub-voxel jitter still helps decorrelate repeated draws of the same center.
             jitter = self._rng.integers(-5, 6, size=3)
             center = np.clip(
                 center + jitter,
                 self.config.patch_size[0] // 2,
                 np.array(input_vol.shape) - np.array(self.config.patch_size) // 2 - 1
             )
+        else:
+            # Deterministic, evenly-strided coverage for val/test (reproducible).
+            stride = max(1, len(valid_centers) // max(1, self.config.patches_per_volume))
+            center = valid_centers[(patch_idx * stride) % len(valid_centers)]
         
         # Extract patches
         input_patch = self._extract_patch(input_vol, center)
@@ -738,10 +763,11 @@ def create_synthesis_dataloaders(
     batch_size: int = 4,
     num_workers: int = 4,
     val_fold: int = 0,
+    test_fold: Optional[int] = None,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     Create train/val/test dataloaders for 3T-7T synthesis.
-    
+
     Args:
         pairs: List of pair dictionaries from preprocessing
         config: Patch configuration
@@ -749,18 +775,40 @@ def create_synthesis_dataloaders(
         batch_size: Batch size for training
         num_workers: Number of data loading workers
         val_fold: Which fold to use for validation
-        
+        test_fold: Which fold to use for test. Defaults to split_config.test_fold.
+            Pass test_fold=val_fold explicitly if you deliberately want val==test.
+
     Returns:
         Tuple of (train_loader, val_loader, test_loader)
     """
     config = config or PatchConfig()
     split_config = split_config or SplitConfig()
-    
+
+    # BUGFIX (A4): this previously hard-coded `test_fold=val_fold`, silently discarding
+    # split_config.test_fold. Result: val == test == the SAME single subject (sub-06).
+    # scripts/evaluate_all_checkpoints.py then selected the "best" checkpoint by max SSIM
+    # on that loader -- i.e. MODEL SELECTION ON THE TEST SUBJECT. Combined with the old
+    # deterministic patch bug and patches_per_volume=1, the selection was made on ONE
+    # 64^3 patch at one fixed location of one subject. Every reported test number was
+    # therefore selection-biased upward.
+    #
+    # Now the test fold is honoured, so val and test are DISTINCT subjects by default.
+    if test_fold is None:
+        test_fold = split_config.test_fold
+
     # Create subject-level split
     splitter = SubjectSplitter(split_config)
     train_pairs, val_pairs, test_pairs = splitter.get_split(
-        pairs, val_fold=val_fold, test_fold=val_fold
+        pairs, val_fold=val_fold, test_fold=test_fold
     )
+    _val_subj = sorted({p.get("subject") for p in val_pairs})
+    _test_subj = sorted({p.get("subject") for p in test_pairs})
+    logger.info(f"Split: val={_val_subj} test={_test_subj} (val_fold={val_fold}, test_fold={test_fold})")
+    if _val_subj == _test_subj:
+        logger.warning(
+            "val and test are the SAME subject(s) -- checkpoint selection on this val set "
+            "is model selection on the test subject. Pass a distinct test_fold."
+        )
     
     # Create datasets
     train_dataset = PairedPatchDataset(

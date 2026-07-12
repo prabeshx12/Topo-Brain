@@ -113,11 +113,17 @@ class GaussianDiffusion(nn.Module):
         loss_type="l1",
         objective="pred_noise", # or pred_x0
         topo_kwargs=None,       # R1.3: component flags for the topology loss
+        seg_at_t0=True,         # A3: compute seg/topo loss on a t=0 forward (matches inference)
+        normalize_pixel_loss=True,  # A2: divide out sqrt_recipm1(t) so the pixel term is SNR-flat
     ):
         super().__init__()
         self.model = model
         self.loss_type = loss_type
         self.objective = objective
+        # Audit fixes (see revision/AUDIT.md). Both default ON; set False to reproduce the
+        # original (buggy) published behaviour for the ablation table.
+        self.seg_at_t0 = seg_at_t0
+        self.normalize_pixel_loss = normalize_pixel_loss
         # Empty/None == published behaviour. See topology_loss.create_topology_loss
         # for the R1.3 ablation variants (no-edge-weighting / no-boundary-dice /
         # single-scale).
@@ -219,21 +225,40 @@ class GaussianDiffusion(nn.Module):
             extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise
         )
 
-    def predict_start_from_noise(self, x_t, t, noise):
+    def predict_start_from_noise(self, x_t, t, noise, clip_denoised: bool = False):
+        """Recover x0-hat from x_t and the predicted noise.
+
+        Args:
+            clip_denoised: if True, clamp x0-hat to the DATA range [-1, 1]. This is what
+                Ho et al. (2020) require during SAMPLING. During TRAINING we keep the wider
+                [-2, 2] so gradients still flow at the boundary.
+
+        BUGFIX (B2): this method is shared by training and sampling, and previously always
+        clamped to [-2, 2]. That is correct for training but WRONG for sampling: the data
+        range is exactly [-1, 1], so every reverse step fed out-of-range mass into
+        q_posterior, and it accumulated over ~185 steps before being hard-clipped once at
+        the very end -- costing dynamic range and PSNR. Note ddim_sample already clipped to
+        [-1, 1] correctly, while p_sample did not -- and evaluate_full_volume DEFAULTS to
+        `--sampler ddpm`, i.e. the buggy path.
+        """
         # Add epsilon for numerical stability in division
         sqrt_recip = extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape)
         sqrt_recipm1 = extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
-        
-        # Clamp to prevent extreme values
-        sqrt_recip = torch.clamp(sqrt_recip, max=10.0)
-        sqrt_recipm1 = torch.clamp(sqrt_recipm1, max=10.0)
-        
+
+        # NOTE: with max_safe_timestep = len(betas)-1 these clamps are provably inert over
+        # the sampled range (max sqrt_recip = 128 at t=198, and only t=199 is degenerate).
+        # They are raised from 10.0 (which was also never reached) to a value that cannot
+        # silently distort x0-hat near the top of the chain.
+        sqrt_recip = torch.clamp(sqrt_recip, max=200.0)
+        sqrt_recipm1 = torch.clamp(sqrt_recipm1, max=200.0)
+
         x_0 = sqrt_recip * x_t - sqrt_recipm1 * noise
-        
-        # Clamp reconstructed image to data range with safety margin
-        # Data is [-1, 1], allow [-2, 2] for gradient flow
-        x_0 = torch.clamp(x_0, min=-2.0, max=2.0)
-        
+
+        if clip_denoised:
+            x_0 = torch.clamp(x_0, min=-1.0, max=1.0)   # sampling: true data range
+        else:
+            x_0 = torch.clamp(x_0, min=-2.0, max=2.0)   # training: margin for gradient flow
+
         return x_0
 
     def q_posterior(self, x_start, x_t, t):
@@ -252,10 +277,11 @@ class GaussianDiffusion(nn.Module):
         seg_output = out.get('segmentation')
         
         if self.objective == 'pred_noise':
-            x_start = self.predict_start_from_noise(x, t, model_output)
+            # B2: clip x0-hat to the data range [-1,1] during sampling (Ho et al. 2020).
+            x_start = self.predict_start_from_noise(x, t, model_output, clip_denoised=True)
         else:
-            x_start = model_output
-            
+            x_start = torch.clamp(model_output, -1.0, 1.0)
+
         model_mean, model_variance = self.q_posterior(x_start, x, t)
         
         if t_index == 0:
@@ -271,8 +297,11 @@ class GaussianDiffusion(nn.Module):
         # Start from pure noise
         img = torch.randn(shape, device=device)
         
-        # Use same safe timestep range as training to avoid untrained timesteps
-        max_safe_timestep = len(self.betas) - 15
+        # B1: must MATCH the training range (len(betas)-1). Previously len(betas)-15, which
+        # started the reverse chain at t=184 where alphas_cumprod=0.0136 -- i.e. the model was
+        # always trained to expect ~12% signal there, but we hand it PURE noise (0% signal).
+        # That off-manifold start biased the first several reverse steps toward the mean.
+        max_safe_timestep = len(self.betas) - 1
         final_seg = None
         for i in reversed(range(0, max_safe_timestep)):
             t = torch.full((b,), i, device=device, dtype=torch.long)
@@ -296,7 +325,8 @@ class GaussianDiffusion(nn.Module):
         """
         device = self.betas.device
         b = shape[0]
-        max_safe = len(self.betas) - 15
+        # B1: match the training range (len(betas)-1); see p_sample_loop.
+        max_safe = len(self.betas) - 1
 
         # Uniform subsequence of timesteps
         times = np.linspace(0, max_safe - 1, ddim_steps, dtype=int)
@@ -346,19 +376,37 @@ class GaussianDiffusion(nn.Module):
         """
         b, c, d, h, w = x_start.shape
         
-        # CRITICAL FIX: Exclude last 15 timesteps due to numerical instability
-        # The cosine schedule produces coefficients > 4000x at t > 185 for T=200
-        # This causes catastrophic loss spikes when these timesteps are sampled
-        max_safe_timestep = len(self.betas) - 15
+        # BUGFIX (B1): the old code excluded the last 15 timesteps, claiming the cosine
+        # schedule "produces coefficients > 4000x at t > 185". That premise is FALSE.
+        # Verified numerically for T=200 cosine:
+        #     max sqrt_recip   over t in [0,184] = 8.575   (the clamp is 10.0 -> never fires)
+        #     the 4058x blow-up occurs at t=199 ONLY; t=198 is already fine.
+        # It was a 15x overcorrection for a 1-step problem, and it had a real cost: it left
+        # alphas_cumprod[184]=0.0136 (sqrt=0.117), so at the top of the chain the model always
+        # saw ~12% signal -- while the sampler starts from PURE noise (0% signal). That is an
+        # off-manifold initialisation. Dropping only the single degenerate step t=T-1 restores
+        # a valid pure-noise start (alphas_cumprod[198] = 6.07e-05).
+        max_safe_timestep = len(self.betas) - 1
         t = torch.randint(0, max_safe_timestep, (b,), device=x_start.device).long()
-        
+
         noise = torch.randn_like(x_start)
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
-        
+
         # Model forward
         outputs = self.model(x_noisy, t, conditioning)
         noise_pred = outputs['prediction']
         seg_pred = outputs['segmentation']
+
+        # BUGFIX (A3): the segmentation head is trained here on x_noisy at a UNIFORM RANDOM t,
+        # but at inference the segmentation is only ever read at t=0 (from a near-clean image).
+        # Only 0.54% of training steps land at t=0 and only ~21% have alpha_bar > 0.9, so the
+        # head received a ~5x weaker signal in the ONLY regime it is evaluated in -- and the
+        # topology loss inherited the same dilution. (The regression baseline's head sees the
+        # test-time distribution on 100% of steps, which is why it beat us on Dice AND topology.)
+        # Fix: compute the seg/topology loss on a dedicated t=0 forward pass, matching inference.
+        if seg_target is not None and lambda_topo > 0 and self.seg_at_t0:
+            t0 = torch.zeros_like(t)
+            seg_pred = self.model(x_start, t0, conditioning)['segmentation']
         
         # Clamp noise predictions to prevent numerical instability
         # Noise should theoretically be N(0,1), so clip to [-10, 10] for safety
@@ -375,10 +423,26 @@ class GaussianDiffusion(nn.Module):
             
         # 2. Auxiliary L1 Loss (on predicted Img)
         x_recon = self.predict_start_from_noise(x_noisy, t, noise_pred)
-        
+
         # Calculate pixel loss in float32 for stability
         loss_pixel = F.l1_loss(x_recon.float(), x_start.float())
-        
+
+        # BUGFIX (A2): this term is NOT an independent loss. Since
+        #     x_recon - x_start = -sqrt_recipm1(t) * (noise_pred - noise)   (exactly),
+        # we have  loss_pixel(t) == sqrt_recipm1(t) * L1(noise_pred, noise),
+        # i.e. loss_pixel is loss_diff scaled by a t-dependent factor. Effective weight:
+        #     t=0 -> 1.02   t=100 -> 2.03   t=184 -> 9.52
+        # 86% of the weight mass lands on the noisy half of the chain. That is the EXACT
+        # INVERSE of Min-SNR / P2 weighting: the model trains ~9x harder on the pure-noise
+        # regime (global structure) than on the low-noise regime -- which is precisely where
+        # PSNR/SSIM live. The regression baseline has no such term, and beat us on image
+        # quality. Fix: divide out sqrt_recipm1(t) so the pixel term is an unbiased
+        # (SNR-flat) image-space loss rather than a reweighting of loss_diff.
+        if self.normalize_pixel_loss:
+            snr_scale = extract(self.sqrt_recipm1_alphas_cumprod, t, x_start.shape)
+            per_voxel = (x_recon.float() - x_start.float()).abs() / snr_scale.clamp(min=1e-3)
+            loss_pixel = per_voxel.mean()
+
         # Cap extreme loss spikes to prevent gradient explosion
         loss_pixel = torch.clamp(loss_pixel, max=5.0)
 
