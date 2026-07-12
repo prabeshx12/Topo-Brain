@@ -1,0 +1,92 @@
+{
+  "TopoBrain-110k (diffusion)": {
+    "connectivity": 26,
+    "brain_voxels": 3612363,
+    "brain_fraction": 0.15070481212352616,
+    "image": {
+      "ssim_brain": 0.071012406886064,
+      "psnr_brain": 8.265356995367933
+    },
+    "tissue": {
+      "CSF": {
+        "dice": 0.6810815930293129,
+        "hd95_mm": 45.67932514287513,
+        "assd_mm": 12.77159319038944,
+        "n_components": 753,
+        "largest_cc_frac": 0.6513678989382314
+      },
+      "GM": {
+        "dice": 0.7823438088013471,
+        "hd95_mm": 29.199400678781064,
+        "assd_mm": 3.6203582534751515,
+        "n_components": 5213,
+        "largest_cc_frac": 0.9395956806233716
+      },
+      "WM": {
+        "dice": 0.8820731660742046,
+        "hd95_mm": 1.9500000000000002,
+        "assd_mm": 1.1004908260541149,
+        "n_components": 1393,
+        "largest_cc_frac": 0.9803946284715647
+      }
+    },
+    "brain": {
+      "dice": 0.9197009956811093,
+      "hd95_mm": 49.44701709911327,
+      "assd_mm": 6.895303294448874
+    },
+    "old_harness": {
+      "ssim": 0.8139,
+      "psnr": 16.48
+    },
+    "whole_volume_no_paste": {
+      "ssim": 0.1618,
+      "psnr": 9.45
+    }
+  },
+  "B1 (regression)": {
+    "connectivity": 26,
+    "brain_voxels": 3612363,
+    "brain_fraction": 0.15070481212352616,
+    "image": {
+      "ssim_brain": 0.44355463064249695,
+      "psnr_brain": 14.124929755119526
+    },
+    "tissue": {
+      "CSF": {
+        "dice": 0.8000620411539655,
+        "hd95_mm": 2.343608329051593,
+        "assd_mm": 0.8340678361378543,
+        "n_components": 8,
+        "largest_cc_frac": 0.8568296189791517
+      },
+      "GM": {
+        "dice": 0.8741020229643881,
+        "hd95_mm": 1.4534441853748634,
+        "assd_mm": 0.47403605871496374,
+        "n_components": 6,
+        "largest_cc_frac": 0.9999950757065353
+      },
+      "WM": {
+        "dice": 0.9297571501343603,
+        "hd95_mm": 0.9192388155425119,
+        "assd_mm": 0.3154448622190851,
+        "n_components": 3,
+        "largest_cc_frac": 0.9999968181543386
+      }
+    },
+    "brain": {
+      "dice": 0.9555556953134523,
+      "hd95_mm": 4.110960958218893,
+      "assd_mm": 1.0472260869796084
+    },
+    "old_harness": {
+      "ssim": 0.916,
+      "psnr": 22.34
+    },
+    "whole_volume_no_paste": {
+      "ssim": 0.884,
+      "psnr": 20.24
+    }
+  }
+}

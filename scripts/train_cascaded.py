@@ -1,0 +1,300 @@
+"""
+Train the rebuilt 3T->7T model: deterministic regression U-Net with a CASCADED seg head.
+
+    3T --> UNetGenerator --> synth 7T --> SegHead --> seg
+                                 ^                     |
+                                 +---- gradient -------+
+
+Loss (Phase 3 = no topology term yet; Phase 4 adds it):
+
+    L = L1(img, 7T)
+      + lam_ssim * (1 - SSIM3D(img, 7T))
+      + lam_seg  * ( CE(seg, gt) + Dice(seg, gt) )
+      [+ lam_topo * topology(seg, gt)]        <-- Phase 4
+
+Why this shape (see revision/STRATEGY_2026.md):
+  * L1 + SSIM is the standard objective in this exact subfield (FS-RWKV; LiteMamba-Synth).
+  * The VGG/ImageNet perceptual loss is DROPPED: it is 2D ImageNet features on ~8 slices of
+    a 3D volume, it had zero gradient on 16-26% of voxels, and the regression baseline beat
+    the diffusion model without it. YODA (IEEE TMI 2026) shows perceptual realism does not
+    imply medical accuracy.
+  * The seg loss now backpropagates THROUGH the generator (that is the whole point of the
+    cascade), so it forces the synthesised image to be segmentable with correct anatomy.
+
+Everything runs on the FIXED data pipeline (random patch centres -> ~147x more unique
+patches; a real held-out test fold; idempotent LOOCV folds). See revision/AUDIT.md.
+"""
+import argparse
+import glob
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.amp import GradScaler, autocast
+
+
+def log(*a):
+    print(*a, flush=True)
+
+
+# --------------------------------------------------------------------------- #
+#  Losses
+# --------------------------------------------------------------------------- #
+def _gaussian_kernel3d(ws: int, sigma: float, device) -> torch.Tensor:
+    c = torch.arange(ws, dtype=torch.float32, device=device) - (ws - 1) / 2.0
+    g = torch.exp(-(c ** 2) / (2 * sigma ** 2))
+    g = g / g.sum()
+    k = g[:, None, None] * g[None, :, None] * g[None, None, :]
+    return k[None, None]
+
+
+def ssim3d(x: torch.Tensor, y: torch.Tensor, data_range: float = 2.0,
+           ws: int = 7, sigma: float = 1.5) -> torch.Tensor:
+    """Differentiable 3D SSIM (mean over the volume). x, y: [B,1,D,H,W] in [-1,1]."""
+    k = _gaussian_kernel3d(ws, sigma, x.device).to(x.dtype)
+    pad = ws // 2
+    mu_x = F.conv3d(x, k, padding=pad)
+    mu_y = F.conv3d(y, k, padding=pad)
+    mu_x2, mu_y2, mu_xy = mu_x * mu_x, mu_y * mu_y, mu_x * mu_y
+    sx = F.conv3d(x * x, k, padding=pad) - mu_x2
+    sy = F.conv3d(y * y, k, padding=pad) - mu_y2
+    sxy = F.conv3d(x * y, k, padding=pad) - mu_xy
+    c1 = (0.01 * data_range) ** 2
+    c2 = (0.03 * data_range) ** 2
+    s = ((2 * mu_xy + c1) * (2 * sxy + c2)) / ((mu_x2 + mu_y2 + c1) * (sx + sy + c2))
+    return s.mean()
+
+
+def dice_loss(logits: torch.Tensor, target: torch.Tensor, num_classes: int,
+              eps: float = 1.0) -> torch.Tensor:
+    """Soft multi-class Dice, computed PER SAMPLE then averaged.
+
+    (The old boundary-Dice summed globally over the batch, so one sample's gradient
+    depended on the others and the loss was batch-composition dependent.)
+    """
+    p = torch.softmax(logits, dim=1)
+    t = F.one_hot(target.long(), num_classes).permute(0, 4, 1, 2, 3).to(p.dtype)
+    dims = (2, 3, 4)
+    inter = (p * t).sum(dims)
+    denom = p.sum(dims) + t.sum(dims)
+    dice = (2 * inter + eps) / (denom + eps)          # [B, C]
+    return 1.0 - dice.mean()
+
+
+# --------------------------------------------------------------------------- #
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pairs-csv", type=str, required=True)
+    ap.add_argument("--config", type=str, default="configs/train_diffusion.yaml")
+    ap.add_argument("--out-dir", type=str, default="/kaggle/working")
+    ap.add_argument("--n-iters", type=int, default=40000)
+    ap.add_argument("--batch-size", type=int, default=8)
+    ap.add_argument("--lr", type=float, default=2e-4)
+    ap.add_argument("--lam-ssim", type=float, default=0.5)
+    ap.add_argument("--lam-seg", type=float, default=1.0)
+    ap.add_argument("--lam-topo", type=float, default=0.0)   # Phase 4 turns this on
+    ap.add_argument("--topo-warmup", type=int, default=10000,
+                    help="steps of L1+CE before the topology term ramps in (PH losses are "
+                         "unstable on early garbage predictions)")
+    ap.add_argument("--val-fold", type=int, default=0)
+    ap.add_argument("--test-fold", type=int, default=1)
+    ap.add_argument("--save-freq", type=int, default=5000)
+    ap.add_argument("--log-freq", type=int, default=50)
+    ap.add_argument("--max-hours", type=float, default=10.5)
+    ap.add_argument("--resume", type=str, default=None)
+    ap.add_argument("--detach-seg", action="store_true",
+                    help="ABLATION: sever the cascade (reproduces the old broken design)")
+    ap.add_argument("--seed", type=int, default=42)
+    args = ap.parse_args()
+
+    import yaml
+    CFG = yaml.safe_load(open(args.config))
+    D = CFG["dataset"]
+
+    ROOT = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(ROOT))
+    from src.model_cascaded import CascadedSynthesisNet
+    from src.synthesis_dataset import (
+        create_synthesis_dataloaders, load_pairs_manifest, PatchConfig, SplitConfig,
+    )
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    log(f"device: {dev}")
+    if dev.type == "cuda":
+        # fail fast if CUDA kernels cannot actually run (Kaggle P100 = sm_60)
+        _ = (torch.randn(64, 64, device=dev) @ torch.randn(64, 64, device=dev)).sum().item()
+        _c = torch.nn.Conv3d(1, 4, 3, padding=1).to(dev)
+        _ = _c(torch.randn(1, 1, 8, 8, 8, device=dev)).sum().item()
+        log("CUDA sanity check OK")
+
+    nc = int(CFG["model"]["num_classes"])
+
+    # ---- data (FIXED pipeline: random patch centres, real test fold) ----
+    pairs = load_pairs_manifest(args.pairs_csv)
+    patch_cfg = PatchConfig(
+        patch_size=tuple(D["patch_size"]),
+        patches_per_volume=D["patches_per_volume"],
+        min_brain_fraction=D["min_brain_fraction"],
+        seed=args.seed,
+    )
+    split_cfg = SplitConfig(n_folds=D["n_folds"], val_fold=args.val_fold,
+                            test_fold=args.test_fold, use_loocv=D["use_loocv"],
+                            seed=args.seed)
+    train_loader, val_loader, _ = create_synthesis_dataloaders(
+        pairs, config=patch_cfg, split_config=split_cfg,
+        batch_size=args.batch_size, num_workers=2,
+        val_fold=args.val_fold, test_fold=args.test_fold,
+    )
+    log(f"pairs={len(pairs)}  train batches/epoch={len(train_loader)}")
+
+    # ---- model ----
+    model = CascadedSynthesisNet(
+        in_channels=1, out_channels=1, num_classes=nc,
+        features=tuple(CFG["model"]["features"]),
+        use_attention=CFG["model"]["use_attention"],
+        detach_seg_input=args.detach_seg,
+    ).to(dev)
+    log(f"params: {model.n_params()}  (detach_seg={args.detach_seg})")
+
+    ema = CascadedSynthesisNet(
+        in_channels=1, out_channels=1, num_classes=nc,
+        features=tuple(CFG["model"]["features"]),
+        use_attention=CFG["model"]["use_attention"],
+        detach_seg_input=args.detach_seg,
+    ).to(dev)
+    ema.load_state_dict(model.state_dict())
+    for p in ema.parameters():
+        p.requires_grad_(False)
+    EMA_DECAY, EMA_START = 0.999, 2000
+
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4, eps=1e-5)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.n_iters, eta_min=args.lr * 0.05)
+    scaler = GradScaler(enabled=True, init_scale=4096)
+    CLS_W = torch.tensor([0.5, 2.0, 1.5, 1.0][:nc], device=dev)
+
+    start = 0
+    if args.resume:
+        hits = glob.glob(args.resume) or glob.glob(f"/kaggle/input/**/{args.resume}", recursive=True)
+        if hits:
+            st = torch.load(hits[0], map_location=dev, weights_only=False)
+            model.load_state_dict(st["model"])
+            ema.load_state_dict(st["ema"])
+            opt.load_state_dict(st["optimizer"])
+            scaler.load_state_dict(st["scaler"])
+            if "sched" in st:
+                sched.load_state_dict(st["sched"])
+            start = st["step"] + 1
+            log(f"RESUMED {hits[0]} @ step {start}")
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    t0 = time.time()
+    it = iter(train_loader)
+    hist = []
+    log(f"\n=== training: steps {start} -> {args.n_iters} ===")
+
+    for step in range(start, args.n_iters):
+        try:
+            batch = next(it)
+        except StopIteration:
+            it = iter(train_loader)
+            batch = next(it)
+
+        x3 = batch["input"].to(dev, non_blocking=True)
+        x7 = batch["target"].to(dev, non_blocking=True)
+        seg = batch["seg"].to(dev, non_blocking=True)
+        if seg.dim() == 5:
+            seg = seg.squeeze(1)
+        seg = seg.long().clamp_(0, nc - 1)
+
+        # topology term ramps in only after the model produces something sane
+        if args.lam_topo > 0 and step >= args.topo_warmup:
+            ramp = min(1.0, (step - args.topo_warmup) / max(1, args.topo_warmup))
+            lam_topo = args.lam_topo * ramp
+        else:
+            lam_topo = 0.0
+
+        opt.zero_grad(set_to_none=True)
+        with autocast(device_type=dev.type, enabled=True):
+            out = model(x3)
+
+        img = out["image"].float()
+        seg_logits = out["seg"].float().clamp(-50, 50)
+
+        l_l1 = F.l1_loss(img, x7.float())
+        l_ssim = 1.0 - ssim3d(img, x7.float())
+        l_ce = F.cross_entropy(seg_logits, seg, weight=CLS_W)
+        l_dice = dice_loss(seg_logits, seg, nc)
+        loss = l_l1 + args.lam_ssim * l_ssim + args.lam_seg * (l_ce + l_dice)
+
+        l_topo = torch.zeros((), device=dev)
+        if lam_topo > 0:
+            from src.topology_loss import create_topology_loss
+            if not hasattr(model, "_topo"):
+                model._topo = create_topology_loss(num_classes=nc, use_multiscale=True).to(dev)
+            l_topo = model._topo(seg_logits, seg)["loss"]
+            loss = loss + lam_topo * l_topo
+
+        if not torch.isfinite(loss):
+            log(f"step {step}: non-finite loss (l1={l_l1.item():.4f} ssim={l_ssim.item():.4f} "
+                f"ce={l_ce.item():.4f} dice={l_dice.item():.4f}) -- SKIPPING")
+            scaler.update()
+            continue
+
+        scaler.scale(loss).backward()
+        scaler.unscale_(opt)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        scaler.step(opt)
+        scaler.update()
+        sched.step()
+
+        if step >= EMA_START:
+            with torch.no_grad():
+                for pe, pm in zip(ema.parameters(), model.parameters()):
+                    pe.mul_(EMA_DECAY).add_(pm.detach(), alpha=1 - EMA_DECAY)
+                for be, bm in zip(ema.buffers(), model.buffers()):
+                    be.copy_(bm)
+        elif step == EMA_START - 1:
+            ema.load_state_dict(model.state_dict())
+
+        if step % args.log_freq == 0:
+            el = (time.time() - t0) / 60
+            rec = {"step": step, "l1": round(float(l_l1), 4), "ssim": round(1 - float(l_ssim), 4),
+                   "ce": round(float(l_ce), 4), "dice": round(float(l_dice), 4),
+                   "topo": round(float(l_topo), 4), "total": round(float(loss), 4),
+                   "lr": round(sched.get_last_lr()[0], 6)}
+            hist.append(rec)
+            log(f"step {step:6d} | L1 {rec['l1']:.4f} | SSIM {rec['ssim']:.4f} | "
+                f"CE {rec['ce']:.4f} | Dice {rec['dice']:.4f} | topo {rec['topo']:.4f} | "
+                f"tot {rec['total']:.4f} | {el:.1f}m | {(time.time()-t0)/max(step-start+1,1):.2f}s/it")
+
+        def save(tag):
+            p = os.path.join(args.out_dir, f"cascaded_{tag}.pt")
+            torch.save({"step": step, "model": model.state_dict(), "ema": ema.state_dict(),
+                        "optimizer": opt.state_dict(), "scaler": scaler.state_dict(),
+                        "sched": sched.state_dict(), "config": CFG, "args": vars(args)}, p)
+            with open(os.path.join(args.out_dir, "train_history.json"), "w") as f:
+                json.dump(hist, f, indent=2)
+            log(f"saved {p}")
+            for old in sorted(glob.glob(os.path.join(args.out_dir, "cascaded_*.pt")))[:-2]:
+                os.remove(old)
+
+        if (step + 1) % args.save_freq == 0 or (step + 1) == args.n_iters:
+            save(f"{step+1}")
+
+        if (time.time() - t0) / 3600 > args.max_hours:
+            save(f"{step+1}")
+            log(f"\nTIME LIMIT at step {step}. Resume with --resume cascaded_{step+1}.pt")
+            break
+
+    log("done.")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
