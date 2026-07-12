@@ -1,0 +1,46 @@
+{
+  "checkpoint": "/kaggle/input/notebooks/pratikadhikari9/topobrain-baseline-reg/baseline_reg_17082.pt",
+  "step": 17081,
+  "image_metrics": {
+    "Threshold(-0.95)": {
+      "ssim": 0.9252,
+      "psnr": 22.61,
+      "dice": 0.8626,
+      "hd95_mm": 4.16
+    },
+    "SegMaskGT(seg>0)": {
+      "ssim": 0.9247,
+      "psnr": 22.36,
+      "dice": 0.8586,
+      "hd95_mm": 2.6
+    }
+  },
+  "tissue_dice": {
+    "CSF": 0.8001,
+    "GM": 0.8741,
+    "WM": 0.9298
+  },
+  "topology": {
+    "CSF": {
+      "ncc": 13,
+      "largest_cc": 0.8568,
+      "b0": 8,
+      "b1": 1,
+      "b2": 0
+    },
+    "GM": {
+      "ncc": 28,
+      "largest_cc": 1.0,
+      "b0": 6,
+      "b1": 501,
+      "b2": 455
+    },
+    "WM": {
+      "ncc": 12,
+      "largest_cc": 1.0,
+      "b0": 3,
+      "b1": 40,
+      "b2": 6
+    }
+  }
+}
