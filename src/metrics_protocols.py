@@ -1,0 +1,180 @@
+"""
+Score ONE prediction under EVERY published evaluation convention on this benchmark.
+
+WHY THIS EXISTS
+---------------
+The three papers on the UNC paired 3T-7T dataset do not measure the same quantity, and none of
+them can be compared to the others:
+
+  Acs & Zhuang (PLOS ONE 2025)   23.25 / 0.737   2D per-slice, ALL 308 transverse slices,
+                                                 full-head, NO mask. (Their coronal is 22.48
+                                                 and sagittal 22.05 -- 23.25 is their best plane.)
+  FS-RWKV      (BIBM 2025)       21.00 / 0.726   2D, 101 CENTRAL axial slices, resized 256x256.
+  LiteMamba    (Front.Neuroanat  20.82 / 0.711   2D, full 256x256 image.
+                2026)            23.87 / 0.719   ...THE SAME MODEL, central 128x128 crop.
+
+That last pair is from LiteMamba's own Table 4: +3.05 dB from the evaluation region ALONE, same
+weights, same data. Acs & Zhuang's headline falls INSIDE that spread. Corroborating: SSIM (which
+is far less sensitive to background than PSNR) agrees across all three papers to +/-0.02 while
+PSNR diverges by 2.3 dB -- when one metric agrees and the other doesn't, the disagreement is in
+the MEASUREMENT.
+
+So: rather than argue about it, MEASURE it. Score one model under all of them and publish the
+spread. That is a result the field does not currently have.
+
+THE CONVENTIONS
+---------------
+  A  brain_3d        3D, restricted to the brain mask.          <- honest; what we advocate
+  B  volume_3d       3D, whole volume, unmasked.
+  C  slice_2d_*      2D per-slice, ALL slices, per orientation. <- Acs & Zhuang
+  D  central_101     2D, 101 central axial slices.              <- FS-RWKV
+  E  central_crop    2D, central axial, central 128x128 crop.   <- LiteMamba Table 4
+  F  gt_pasted       the ORIGINAL broken harness (GT pasted outside the ROI). For reference only.
+
+HONEST SCOPE. Our volumes are SKULL-STRIPPED; theirs are full-head. No scoring convention can
+repair a data difference. This module therefore measures HOW MUCH THE CONVENTION MOVES THE
+NUMBER on a fixed prediction -- it does NOT license a claim of parity with their numbers.
+
+A DEGENERACY THE PAPERS DO NOT MENTION. Per-slice PSNR is undefined (MSE = 0 -> PSNR = inf) on a
+slice where prediction and target are both constant -- e.g. the air-only end slices of a head
+volume, and EVERY empty slice of a skull-stripped one. No paper states an exclusion rule. We
+count these explicitly and report the mean over finite slices, because silently dropping them
+(or letting them saturate) is precisely how a per-slice mean gets inflated.
+"""
+from typing import Dict, Optional
+
+import numpy as np
+
+__all__ = ["to_unit", "psnr_2d", "ssim_2d", "score_all_protocols"]
+
+_EPS = 1e-12
+
+
+def to_unit(x: np.ndarray, lo: Optional[float] = None, hi: Optional[float] = None) -> np.ndarray:
+    """Per-volume min-max to [0,1] -- the normalisation all three papers use.
+
+    Acs & Zhuang: "each MRI volume was normalized to a range of [0,1]".
+    LiteMamba:    "min-max normalization ... to the interval [0, 1]".
+    They then use PSNR data_range = 1.0.
+
+    lo/hi let the CALLER pin the scaling to the ground truth, so prediction and target share one
+    scale. Rescaling each independently would silently correct a global intensity error.
+    """
+    lo = float(np.min(x)) if lo is None else lo
+    hi = float(np.max(x)) if hi is None else hi
+    if hi - lo < _EPS:
+        return np.zeros_like(x, dtype=np.float64)
+    return ((x.astype(np.float64) - lo) / (hi - lo)).clip(0.0, 1.0)
+
+
+def psnr_2d(pred: np.ndarray, gt: np.ndarray, data_range: float = 1.0) -> float:
+    """PSNR of one 2D slice. Returns inf when MSE == 0 -- the caller MUST handle it."""
+    mse = float(np.mean((pred.astype(np.float64) - gt.astype(np.float64)) ** 2))
+    if mse <= 0.0:
+        return float("inf")
+    return float(10.0 * np.log10((data_range ** 2) / mse))
+
+
+def ssim_2d(pred: np.ndarray, gt: np.ndarray, data_range: float = 1.0) -> float:
+    """2D SSIM, Wang et al. settings (11x11 Gaussian, sigma=1.5) -- what tf.image.ssim does.
+
+    Acs & Zhuang used "a custom TensorFlow implementation"; FS-RWKV/LiteMamba do not state the
+    window at all. Gaussian-weighted is the standard and the only defensible default.
+    """
+    from skimage.metrics import structural_similarity as _ssim
+    return float(_ssim(gt.astype(np.float64), pred.astype(np.float64),
+                       data_range=data_range, gaussian_weights=True, sigma=1.5,
+                       use_sample_covariance=False))
+
+
+def _slice_stats(pred: np.ndarray, gt: np.ndarray, axis: int,
+                 brain: Optional[np.ndarray] = None) -> Dict[str, float]:
+    """Mean per-slice PSNR/SSIM along `axis`, counting the degenerate slices honestly."""
+    pred = np.moveaxis(pred, axis, 0)
+    gt = np.moveaxis(gt, axis, 0)
+    br = None if brain is None else np.moveaxis(brain, axis, 0)
+
+    psnrs, ssims, n_degen, n_brain = [], [], 0, 0
+    for i in range(gt.shape[0]):
+        p, g = pred[i], gt[i]
+        v = psnr_2d(p, g)
+        if not np.isfinite(v):
+            n_degen += 1                      # pred == gt exactly: PSNR undefined, NOT "perfect"
+            continue
+        psnrs.append(v)
+        ssims.append(ssim_2d(p, g))
+        if br is not None and br[i].any():
+            n_brain += 1
+    return {
+        "psnr": float(np.mean(psnrs)) if psnrs else float("nan"),
+        "ssim": float(np.mean(ssims)) if ssims else float("nan"),
+        "n_slices": int(gt.shape[0]),
+        "n_scored": len(psnrs),
+        "n_degenerate": n_degen,
+        "n_brain_slices": n_brain,
+    }
+
+
+def score_all_protocols(pred: np.ndarray, gt: np.ndarray,
+                        brain: np.ndarray) -> Dict[str, Dict[str, float]]:
+    """Score one prediction under every convention. All inputs are raw 3D volumes.
+
+    Args:
+        pred, gt: [D,H,W] float. Any scale -- both are min-maxed onto the GT's scale.
+        brain:    [D,H,W] bool brain mask (from the ground-truth segmentation).
+    """
+    assert pred.shape == gt.shape == brain.shape, "pred/gt/brain must have the same shape"
+    lo, hi = float(np.min(gt)), float(np.max(gt))       # ONE scale, pinned to the GT
+    p = to_unit(pred, lo, hi)
+    g = to_unit(gt, lo, hi)
+    out: Dict[str, Dict[str, float]] = {}
+
+    # ---- A: brain-masked 3D. The honest one. ----------------------------------------------
+    mse_b = float(np.mean((p[brain] - g[brain]) ** 2))
+    out["A_brain_3d"] = {
+        "psnr": float(10 * np.log10(1.0 / max(mse_b, _EPS))),
+        "n_voxels": int(brain.sum()),
+        "frac_of_volume": float(brain.mean()),
+    }
+
+    # ---- B: whole volume, unmasked, 3D ----------------------------------------------------
+    mse_v = float(np.mean((p - g) ** 2))
+    out["B_volume_3d"] = {
+        "psnr": float(10 * np.log10(1.0 / max(mse_v, _EPS))),
+        "n_voxels": int(g.size),
+        "frac_of_volume": 1.0,
+    }
+
+    # ---- C: 2D per-slice, ALL slices, each orientation (Acs & Zhuang) ----------------------
+    # axis 0/1/2 of a [D,H,W] volume. We report all three because THEY do -- and because their
+    # headline 23.25 is the BEST of the three planes (coronal 22.48, sagittal 22.05).
+    for name, ax in (("C_slice2d_axis0", 0), ("C_slice2d_axis1", 1), ("C_slice2d_axis2", 2)):
+        out[name] = _slice_stats(p, g, ax, brain)
+
+    # ---- D: 101 CENTRAL axial slices (FS-RWKV) ---------------------------------------------
+    d = g.shape[0]
+    c = d // 2
+    k = min(101, d)
+    s0, s1 = c - k // 2, c - k // 2 + k
+    out["D_central_101"] = _slice_stats(p[s0:s1], g[s0:s1], 0, brain[s0:s1])
+
+    # ---- E: central axial slices, central 128x128 crop (LiteMamba Table 4) -----------------
+    h, w = g.shape[1], g.shape[2]
+    ch, cw = h // 2, w // 2
+    hh, ww = min(64, h // 2), min(64, w // 2)
+    out["E_central_crop"] = _slice_stats(
+        p[s0:s1, ch - hh:ch + hh, cw - ww:cw + ww],
+        g[s0:s1, ch - hh:ch + hh, cw - ww:cw + ww], 0,
+        brain[s0:s1, ch - hh:ch + hh, cw - ww:cw + ww])
+
+    # ---- F: the ORIGINAL BROKEN HARNESS -- GT pasted outside the brain. INVALID. -----------
+    # Reproduced only to quantify what the published paper's number actually measured.
+    pasted = g.copy()
+    pasted[brain] = p[brain]
+    mse_f = float(np.mean((pasted - g) ** 2))
+    out["F_gt_pasted"] = {
+        "psnr": float(10 * np.log10(1.0 / max(mse_f, _EPS))),
+        "n_voxels": int(g.size),
+        "frac_actually_predicted": float(brain.mean()),
+    }
+    return out
