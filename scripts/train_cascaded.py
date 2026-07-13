@@ -128,6 +128,15 @@ def main():
     ap.add_argument("--lam-ssim", type=float, default=0.5)
     ap.add_argument("--lam-seg", type=float, default=1.0)
     ap.add_argument("--lam-topo", type=float, default=0.0)   # Phase 4 turns this on
+    ap.add_argument("--topo-kind", choices=("euler", "edge"), default="euler",
+                    help="euler = REAL topological invariant (chi = V-E+F-C, exact vs gudhi). "
+                         "edge = the PUBLISHED 'topology loss' (edge-weighted CE + Sobel Dice), "
+                         "which is not topological at all -- kept only as an ablation arm.")
+    ap.add_argument("--topo-sharpness", type=float, default=20.0,
+                    help="p -> sigmoid(k*(p-0.5)) before chi. Concentrates the term on the "
+                         "decision boundary. At k=0 the loss is UNUSABLE: expected spurious "
+                         "components from an uncertain background cancel real handles, and a "
+                         "BROKEN shape outscores a correct one (test_topology_euler.py, level 4).")
     ap.add_argument("--topo-warmup", type=int, default=10000,
                     help="steps of L1+CE before the topology term ramps in (PH losses are "
                          "unstable on early garbage predictions)")
@@ -277,12 +286,33 @@ def main():
         loss = l_l1 + args.lam_ssim * l_ssim + args.lam_seg * (l_ce + l_dice)
 
         l_topo = torch.zeros((), device=dev)
+        chi_gap = float("nan")
         if lam_topo > 0:
-            from src.topology_loss import create_topology_loss
             if not hasattr(model, "_topo"):
-                model._topo = create_topology_loss(num_classes=nc, use_multiscale=True).to(dev)
-            l_topo = model._topo(seg_logits, seg)["loss"]
+                if args.topo_kind == "euler":
+                    # A REAL topological invariant: chi = V - E + F - C on the cubical complex,
+                    # exact vs gudhi's persistent homology (scripts/test_topology_euler.py).
+                    from src.topology_euler import EulerTopologyLoss
+                    model._topo = EulerTopologyLoss(
+                        num_classes=nc, include_background=False,
+                        sharpness=args.topo_sharpness).to(dev)
+                elif args.topo_kind == "edge":
+                    # The PUBLISHED "topology loss" -- edge-weighted CE + Sobel-edge Dice. It is
+                    # NOT topological (no Betti number, no connectivity, no persistence). Kept
+                    # ONLY so the paper can ablate real topology against what was published.
+                    from src.topology_loss import create_topology_loss
+                    model._topo = create_topology_loss(
+                        num_classes=nc, use_multiscale=True).to(dev)
+                else:
+                    raise ValueError(f"unknown --topo-kind {args.topo_kind!r}")
+            _t = model._topo(seg_logits, seg)
+            l_topo = _t["loss"]
             loss = loss + lam_topo * l_topo
+            # Log the raw chi gap, not just the loss. The loss is normalised and ramped, so it
+            # can look flat while topology is still wrong; |chi_pred - chi_gt| is the thing the
+            # paper actually claims to improve, and it is free to record.
+            if "chi_pred" in _t:
+                chi_gap = float((_t["chi_pred"] - _t["chi_gt"]).abs().mean().detach())
 
         if not torch.isfinite(loss):
             log(f"step {step}: non-finite loss (l1={l_l1.item():.4f} ssim={l_ssim.item():.4f} "
@@ -311,10 +341,12 @@ def main():
             rec = {"step": step, "l1": round(float(l_l1), 4), "ssim": round(1 - float(l_ssim), 4),
                    "ce": round(float(l_ce), 4), "dice": round(float(l_dice), 4),
                    "topo": round(float(l_topo), 4), "total": round(float(loss), 4),
+                   "chi_gap": None if chi_gap != chi_gap else round(chi_gap, 2),
                    "lr": round(sched.get_last_lr()[0], 6)}
             hist.append(rec)
+            _chi = "" if rec["chi_gap"] is None else f" | dchi {rec['chi_gap']:.1f}"
             log(f"step {step:6d} | L1 {rec['l1']:.4f} | SSIM {rec['ssim']:.4f} | "
-                f"CE {rec['ce']:.4f} | Dice {rec['dice']:.4f} | topo {rec['topo']:.4f} | "
+                f"CE {rec['ce']:.4f} | Dice {rec['dice']:.4f} | topo {rec['topo']:.4f}{_chi} | "
                 f"tot {rec['total']:.4f} | {el:.1f}m | {(time.time()-t0)/max(step-start+1,1):.2f}s/it")
 
         def save(tag):
