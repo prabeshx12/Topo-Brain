@@ -1,85 +1,144 @@
-# Benchmark reality check — we are BEHIND the published methods
+# Benchmark reality — the published numbers on this dataset are NOT comparable to each other
 
-**Date: 12 July 2026.** Written to correct a claim I made prematurely: that our regression
-baseline (whole-volume SSIM 0.884 / PSNR 20.24 dB) "beat published SOTA (0.726 / 0.711)".
-**It does not.** Verified against the actual papers.
+**Rewritten 13 July 2026, after reading all three competing papers in full.**
 
-## 1. The decisive arithmetic
+This file previously asserted *"we are BEHIND published SOTA — this conclusion is robust."*
+**That claim was wrong and is retracted.** So was the claim before it (*"we beat SOTA"*). Both
+were made by comparing numbers whose measurement conventions I had not checked. The correct
+answer is narrower, and it is now sourced:
 
-FS-RWKV reports **RMSE alongside PSNR**, which lets us put both on the same footing:
+> **Nobody knows who is ahead on this dataset, because no two papers measure the same quantity.**
 
-```
-FS-RWKV:  20*log10(1/0.0898) = 20.93 dB  ~= their reported 21.00   (confirms data_range=1.0,
-                                                                    whole image)
-Ours:     whole-volume PSNR 20.24 dB @ data_range 2.0
-          -> RMSE = 2/10^(20.24/20) = 0.1945 in [-1,1] units = 0.0973 in [0,1] units
+---
 
-    FS-RWKV    RMSE 0.0898
-    LiteMamba  RMSE 0.0920
-    OURS       RMSE 0.0973   <-- WORSE THAN BOTH
-```
+## 1. The smoking gun — from a competitor's own ablation
 
-**We lose on PSNR even under our own most-favourable convention**, and that 20.24 dB is
-measured on a voxel set where ~85% is trivially exact (pred = target = -1 in the background).
-The easier population still loses. This conclusion is robust.
+LiteMamba-Synth (Front. Neuroanat. 2026) evaluate **the same model, the same weights, the same
+data**, changing only *where they point the metric*:
 
-## 2. The SSIM "win" was a background artifact
-SSIM said +0.16 ahead; PSNR said -0.76 dB behind. **That divergence is the signature of
-background inflation** -- SSIM saturates to 1.0 in flat matching regions, PSNR does not.
-A contradiction between the two metrics should have been read as a warning, not reported as
-a win.
+| Evaluation region | PSNR | SSIM | RMSE |
+|---|---|---|---|
+| Full 256×256 image | 20.820 | 0.711 | 0.092 |
+| Central 128×128 crop | **23.870** | 0.719 | 0.064 |
 
-## 3. Their pixel population is not ours (three compounding differences)
+> *"Compared with the full-image evaluation, the central-region evaluation yields higher
+> reconstruction accuracy, with PSNR increasing from 20.820 dB to 23.870 dB."* — LiteMamba §Table 4
 
-**The UNC dataset is NOT skull-stripped.** Chen et al. (*Scientific Data* 2023) describe the
-entire pipeline as PyDeface + FSL FLIRT linear registration. No brain extraction. So every
-UNC competitor synthesises and scores **full-head** images (skull, scalp, eyes, marrow).
+**A 3.05 dB swing from the evaluation region alone.** Acs & Zhuang's headline 23.254 dB falls
+*inside* that spread. This is a published, same-dataset demonstration that the headline PSNR on
+this benchmark is worth ±3 dB depending purely on where you measure it.
 
-| Paper | Region scored | Range | 2D/3D | Skull-stripped | Split |
-|---|---|---|---|---|---|
-| FS-RWKV (21.00 / 0.726) | whole 256x256 slice, no mask | [0,1] | **2D**, 101 central axial slices | No | fixed 7 train / 3 test |
-| LiteMamba-Synth (20.82 / 0.711) | whole slice, no mask | [0,1] min-max | **2D** axial | No | subject-level split |
-| **Acs & Zhuang (23.25 / 0.737)** | whole volume, no mask | [0,1] | 3D 64^3 patches | **No (explicit)** | **10-fold LOOCV** |
-| WATNet (28.27 / 0.878) | whole image | [0,1] | 2D slices | **Yes** | LOOCV, private data |
-| ~~Cui et al. (25.60 / 0.914)~~ | -- | -- | 3D | -- | **DIFFERENT DATASET (UCSF TBI) -- DROP** |
+**Corroborating signal:** SSIM — which is far less sensitive to the air/background region than
+PSNR — is *consistent* across all three papers (0.737 / 0.726 / 0.711, a ±0.02 spread), while
+PSNR diverges by 2.3 dB. When one metric agrees and the other does not, the disagreement lives
+in the **measurement**, not in the models.
 
-Verified with word-boundary regex over the extracted full text: FS-RWKV, LiteMamba and Cui
-contain **zero** occurrences of `mask`, `background`, `skull`, `foreground`, or
-`brain extraction`. **Not one of the five masks the background out.**
+---
 
-Epistemic status: no paper *explicitly says* "we include background". The whole-image reading
-is a strong inference from (a) the total absence of masking language, (b) pipelines that
-produce full-head images, and (c) the RMSE/PSNR algebra above -- not a direct quote.
+## 2. Why my own "decisive arithmetic" was not decisive
 
-## 4. The real benchmark
-**Acs & Zhuang, PLOS ONE 2025** (doi 10.1371/journal.pone.0333499) is the closest competitor:
-*same dataset, same 64^3 patches, same 10-fold LOOCV*, and explicitly reports results
-*"even without preprocessing steps like skull stripping"*. They achieve
-**PSNR 23.25 / SSIM 0.737**. We are ~3 dB below.
+The old §1 converted PSNR to RMSE and concluded we lose. Recomputed on the **cascaded** model
+(the old version used B1), on the identical footing:
 
-Corroborating signal: WATNet is the only paper with a convention close to ours
-(skull-stripped, [0,1], unmasked whole image) and reports SSIM 0.878 / **PSNR 28.27** --
-essentially our SSIM with 8 dB more PSNR. (Private dataset, so not a strict comparison, but
-it indicates what an unmasked skull-stripped SSIM near 0.88 *should* come with.)
+| System | PSNR | RMSE (in [0,1] units) |
+|---|---|---|
+| B1 regression (whole-vol 3D, skull-stripped) | 20.24 | 0.0973 — *worse* than FS-RWKV |
+| **Cascaded (whole-vol 3D, skull-stripped)** | 21.53 | **0.0838 — *better* than FS-RWKV** |
+| Cascaded, BRAIN-ONLY (the honest number) | 14.01 | 0.1993 — far worse than everyone |
+| *FS-RWKV (2D, 101 central slices, full-head)* | *21.00* | *0.0898* |
+| *LiteMamba (2D, full image, full-head)* | *20.82* | *0.0920* |
 
-## 5. Consequences for the rebuild
+**The conclusion reverses depending on which checkpoint you pick.** A conclusion that flips like
+that was never robust. And the flip must NOT be read as "we are now ahead": our 0.0838 is
+measured on a **skull-stripped** volume where ~85 % of voxels are background that we set to a
+constant and reproduce exactly. FS-RWKV's 0.0898 is measured on **full-head central slices**,
+where the skull, scalp and 7T MP2RAGE background noise are genuinely hard.
 
-1. **No borrowed comparisons.** We cannot put their numbers in a table against ours. The only
-   defensible route is to **run the baselines ourselves, on our pipeline, with our metrics** --
-   which is what reviewer R1.2 demanded anyway.
-2. **The model must actually get better**, not merely be measured honestly. Grounds for
-   optimism: B1 reached 20.24 dB while trained on **288 unique patches for 17k steps**. The
-   Phase-3 run has **147x more unique patches** plus a cascaded seg head whose gradient
-   actually reaches the generator.
-3. **Report both conventions**, transparently: (a) whole-volume, no pasting -- the field's
-   convention; (b) brain-region only -- the honest one. State the protocol difference
-   explicitly rather than letting a reviewer discover it.
-4. If we ever want a literal head-to-head with FS-RWKV/LiteMamba, we must reproduce their
-   protocol exactly: released defaced+FLIRT volumes **without skull-stripping**, min-max to
-   [0,1], 101 central axial slices, resized 256x256, SSIM/PSNR per slice with data_range=1.0,
-   fixed 7/3 split, slice-level averaging (NOT per-subject LOOCV means).
+**Different pixel populations. The comparison is invalid in BOTH directions.**
 
-## Lesson
-A claim of superiority was made from an assumed metric convention. A reviewer holding
-FS-RWKV's RMSE column could have refuted it in one line. Verify the convention before
-comparing -- always.
+---
+
+## 3. What each paper actually does (all sourced from full text)
+
+| | **Acs & Zhuang** (PLOS ONE 2025) | **FS-RWKV** (BIBM 2025) | **LiteMamba** (Front. Neuroanat. 2026) |
+|---|---|---|---|
+| Headline | 23.25 / 0.737 | 21.00 / 0.726 | 20.82 / 0.711 |
+| …which is actually | **transverse plane ONLY** (coronal 22.48, sagittal 22.05) | 2D, 101 central slices | 2D, full image |
+| Architecture | **3D U-Net, 64³ patches, stride 32, 32/64/128/256 ch** | RWKV, 45.4 M | ConvMamba, 2.15 M |
+| Loss | MSE + 0.7·SSIM | smooth-L1 + 0.4·SSIM + 0.3·Sobel | smooth-L1 + SSIM + Sobel |
+| Skull-stripped? | **No — stated 4×, it is their selling point** | Not stated (→ full-head) | Not stated (→ full-head) |
+| Brain mask on metric? | **No** — "mask" never appears in their metrics section | No | No |
+| Slices scored | **ALL 308**, incl. air-only end slices | 101 **central** only | central only |
+| Dimensionality | 3D volume → sliced → **2D per-slice PSNR** | 2D | 2D |
+| Validation | **10-fold LOOCV** | **fixed 7/3 split** | fixed split |
+| Extra harmonisation | none | **+ histogram matching** | **+ N4** |
+| Topology / Betti | **NONE** | **NONE** | **NONE** |
+| Code / weights | **None** | None | None |
+
+**Nobody brain-masks. Nobody reports 3D SSIM. Nobody reports a topological metric. Nobody
+releases code. And FS-RWKV and LiteMamba do not even cite Acs & Zhuang** — the 21-vs-23.25 gap
+has never been adjudicated by anyone in the field.
+
+---
+
+## 4. Their architecture is essentially ours
+
+Acs & Zhuang is **not** an exotic backbone. It is a 3D patch-based U-Net: **64³ patches, stride
+32, encoder 32/64/128/256** — channel for channel, our `UNetGenerator`. No GAN, no diffusion, no
+transformer (they explicitly declined to compare against diffusion or transformers).
+
+**There is therefore nothing to "adopt" from their design to beat them.** Any gap is training
+completeness, data convention, or evaluation convention — not architecture.
+
+---
+
+## 5. Weaknesses in the "SOTA" we were measuring ourselves against
+
+Stated without gloating, because they bear directly on how hard the bar really is:
+
+1. **Acs & Zhuang early-stop on the test subject.** 10 subjects, 9 train + 1 held out, no third
+   split; "validation" and "testing" are used interchangeably (*"Subject 8 was used for
+   validation, while the remaining 9 subjects were used for training"*; 567 × 9 = 5103 training
+   patches leaves no room for a val subject). **This is the identical leak we found and fixed in
+   our own pipeline (bug A4).** They do not list it as a limitation.
+2. **Their own ablation shows PSNR getting WORSE** as they add their contributions (transverse
+   24.98 → 24.76; sagittal 23.40 → 22.91), while the text claims *"each architectural
+   modification progressively improves ... performance metrics."*
+3. **Their headline semi-supervised contribution is statistically null** — no significant
+   difference vs their own supervised baseline on any metric or orientation, **all p > 0.28**.
+   They state this themselves.
+4. Their ablation is reported on a **single favourable fold** (subject 8 → 24.76 dB, well above
+   their own 10-fold mean of 23.25).
+5. **Siam et al. reach SSIM > 80 % *with* skull-stripping**, which beats Acs & Zhuang's 0.737 —
+   a fact Acs & Zhuang acknowledge but frame as a practicality argument rather than a fairness one.
+
+---
+
+## 6. Consequences for the rebuild
+
+1. **No borrowed comparisons. Ever.** Their numbers cannot go in a table against ours. The only
+   defensible route is to **run the baselines ourselves, on our pipeline, with our metrics** —
+   which is exactly what reviewer R1.2/R2.1 demanded anyway.
+2. **Acs & Zhuang is now a CHEAP baseline to reproduce**, because their FR-U-Net is ~90 % our
+   existing code (same patch size, same channels, same stride). Reimplementing it and training it
+   on our splits gives a genuine head-to-head under identical data and identical evaluation.
+   No code is released, so reimplementation from the text is the only route — and the text omits
+   the parameter count, the consistency-loss weights α and λ, the patch-reassembly blending rule,
+   the SSIM window/constants, and the PSNR data_range. **Those omissions must be stated as
+   reproduction caveats.**
+3. **Report multiple conventions, transparently** — brain-masked 3D (honest), whole-volume 3D
+   (nearest to the field), and 2D-per-slice (theirs). Let the reader see the spread instead of
+   discovering it.
+4. **The contribution is not "our PSNR is bigger."** The field has no consistent protocol here,
+   ±3 dB of slack, no masking, no topology, no code. Ours is: **a reproducible evaluation
+   protocol + genuine topological metrics + a verified topology loss.** That ground is
+   unoccupied — confirmed across all three papers.
+
+---
+
+## Lesson (unchanged, and now demonstrated twice)
+
+I claimed superiority from an assumed convention, then claimed inferiority from another assumed
+convention. **Both were wrong for the same reason.** Verify the measurement before comparing —
+and when the measurement cannot be verified, the honest output is "not comparable", not a
+direction.
