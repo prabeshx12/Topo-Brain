@@ -26,18 +26,35 @@ and HD95 were computed on intensity thresholds rather than segmentations, and th
 implementation rewarded fragmentation — which is how it could read 2 mm while the model's Betti
 number was 5,213 instead of 1.
 
-**Where that leaves the numbers.** Measured honestly, on brain tissue, held-out subject:
+**Where that leaves the numbers.** Held-out subject (sub-06). I report each metric on a *stated*
+region, because mixing regions is precisely how the original numbers became misleading.
 
-| | Old model, *as published* | Old model, *measured honestly* | **Rebuilt model** |
+*Measured on brain tissue — the honest number, and the one the method is actually about:*
+
+| | Old model | **Rebuilt model** |
+|---|---|---|
+| PSNR | 8.27 dB | **14.01 dB** |
+| SSIM | 0.071 | **0.450** |
+| HD95 | 49.45 mm | **3.31 mm** |
+
+*Measured on the whole volume — the convention the paper reported under:*
+
+| | Paper *claimed* | Old model, honest | **Rebuilt model** |
 |---|---|---|---|
-| Whole-volume PSNR | 20.00 dB | 9.45 dB | **21.53 dB** |
-| Brain SSIM | 0.899 | 0.071 | **0.450** |
-| Brain HD95 | 2.05 mm | 49.45 mm | **3.31 mm** |
+| PSNR | 20.00 dB | 9.45 dB | **21.53 dB** |
+| SSIM | 0.899 | — | **0.892** |
 
-The middle column is what we actually had. The right column is what we have now — **better than
-the figure we published, and this time real.** It is also only 42% through its training schedule,
-with the learning rate not yet annealed, so it should improve further. Tissue segmentation
-improved across the board as well (CSF Dice 0.80 → 0.83; CSF boundary error down 32%).
+The second table is the important one for our credibility: **on the very metric the paper
+reported, the rebuilt model now genuinely delivers what the old one only appeared to** (21.53 dB /
+0.892 versus the claimed 20.00 / 0.899) — and it is only 42% through its training schedule, with
+the learning rate not yet annealed. Tissue segmentation improved across the board as well (CSF
+Dice 0.80 → 0.83; CSF boundary error down 32%).
+
+The brain-only figures are far lower than the whole-volume ones for an unglamorous reason: our
+volumes are skull-stripped, so 85% of each volume is constant background that the model reproduces
+for free (its MSE is 32× lower than the brain's). That accounts for the entire 7.5 dB gap, exactly
+— it is arithmetic, not a defect. It is also why I want the paper to report the brain-only number
+as the headline, even though it is by far our least flattering one.
 
 **What was rebuilt:** honest brain-masked metrics with true Betti numbers (validated against an
 independent persistent-homology library); a cascaded architecture in which the topology gradient
