@@ -123,8 +123,17 @@ class EulerTopologyLoss(nn.Module):
         detach_gt: chi of the ground truth is a constant; detached for clarity/safety.
     """
 
+    # WHY 32 AND NOT 20. A background voxel is squeezed to p = sigmoid(-k/2), and EVERY such
+    # voxel is an EXPECTED spurious component, so chi_pred carries a floor bias of
+    # ~ sigmoid(-k/2) * (#background voxels). On a 64^3 patch (~190k background voxels):
+    #       k=20 -> sigmoid(-10) = 4.5e-5 -> bias +8.6      <-- the old default. Unusable.
+    #       k=32 -> sigmoid(-16) = 1.1e-7 -> bias +0.02     <-- negligible
+    # The old default only survived because the SAME bias was (wrongly) injected into chi_gt so
+    # the two cancelled. Now that chi_gt is exact, the prediction's floor has to be genuinely
+    # small. The boundary gradient k*sig*(1-sig) at p=0.5 is k/4 = 8 -- still strong where it
+    # matters. See scripts/test_topology_euler.py level 4.
     def __init__(self, num_classes: int = 4, include_background: bool = False,
-                 detach_gt: bool = True, sharpness: float = 20.0):
+                 detach_gt: bool = True, sharpness: float = 32.0):
         super().__init__()
         self.num_classes = num_classes
         self.include_background = include_background
@@ -169,8 +178,25 @@ class EulerTopologyLoss(nn.Module):
         probs = torch.softmax(logits.float(), dim=1)
         tgt = F.one_hot(target.long(), self.num_classes).permute(0, 4, 1, 2, 3).float()
 
+        # The GT is ALREADY binary, so its chi is exact -- do NOT sharpen it.
+        #
+        # An earlier version applied _sharpen to the target too, on the theory that the residual
+        # floor would then cancel. It does cancel asymptotically, but it CORRUPTS chi_gt badly in
+        # the meantime. Measured on a real 64^3 4-class patch (188,697 background voxels):
+        #
+        #       class      TRUE chi     chi_gt as the loss saw it
+        #       CSF          2.000              12.613            (+10.6)
+        #       GM           2.000              13.170            (+11.2)
+        #       WM           1.000              12.832            (+11.8)
+        #       ABSENT       0.000              12.179            (+12.2)   <-- worst
+        #
+        # Two things broke. (a) The relative denominator |chi_gt| + 1 became ~13 for EVERY class,
+        # so the class-adaptive normalisation this loss advertises did not exist -- it was
+        # normalising by the background voxel count, which is near-identical across classes.
+        # (b) A class ABSENT from the patch got a target chi of +12 instead of 0, so the loss
+        # actively pushed the model to hallucinate it.
         probs = self._sharpen(probs)
-        tgt = self._sharpen(tgt)          # the SAME map on the GT, so the residual bias cancels
+        # chi(tgt) is computed from the raw one-hot below -- exact, no bias, no cancellation trick.
 
         first = 0 if self.include_background else 1
         chis_p, chis_g = [], []

@@ -317,7 +317,12 @@ def main():
         if not torch.isfinite(loss):
             log(f"step {step}: non-finite loss (l1={l_l1.item():.4f} ssim={l_ssim.item():.4f} "
                 f"ce={l_ce.item():.4f} dice={l_dice.item():.4f}) -- SKIPPING")
-            scaler.update()
+            # NO scaler.update() HERE. It used to be called, and it CRASHED the run it exists to
+            # save: GradScaler.update() asserts "No inf checks were recorded prior to update"
+            # unless scale()/step() ran this iteration, and on the skip path they did not.
+            # Reproduced on torch 2.9. The FIRST non-finite loss took the process down -- exactly
+            # the event the guard is for. A bare `continue` is correct: the scaler's state is
+            # untouched because nothing was scaled.
             continue
 
         scaler.scale(loss).backward()

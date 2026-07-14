@@ -88,30 +88,62 @@ def ssim_2d(pred: np.ndarray, gt: np.ndarray, data_range: float = 1.0) -> float:
 
 
 def _slice_stats(pred: np.ndarray, gt: np.ndarray, axis: int,
-                 brain: Optional[np.ndarray] = None) -> Dict[str, float]:
-    """Mean per-slice PSNR/SSIM along `axis`, counting the degenerate slices honestly."""
+                 brain: Optional[np.ndarray] = None,
+                 brain_slices_only: bool = False) -> Dict[str, float]:
+    """Mean per-slice PSNR/SSIM along `axis`.
+
+    THE DEGENERACY THAT NO PAPER ADDRESSES, AND THAT I FIRST GOT WRONG.
+    An earlier version of this function guarded only against MSE == 0 exactly (PSNR = inf) and
+    claimed that "counted and excluded" the empty slices. IT DID NOT. A real network's background
+    is not bit-identical to the target's, so MSE is tiny-but-nonzero and the slice scores 60-70 dB
+    instead of inf -- it sails past an is-finite check and SATURATES the mean. Measured on a
+    synthetic skull-stripped volume with a 1e-3 background noise floor:
+
+        brain-only 3D                 22.65 dB
+        per-slice mean, all slices    56.42 dB   <- 40 empty slices average 69.0 dB
+        per-slice mean, brain slices  31.2  dB
+
+    A 1e-3 perturbation of the background noise floor moved the all-slices mean by 25 dB. The
+    statistic is discontinuous exactly where a headline number would sit.
+
+    So we now report BOTH, and state the rule:
+      * `psnr` / `ssim`            -- every slice, i.e. LITERALLY what the papers describe;
+      * `psnr_brain` / `ssim_brain` -- slices containing >=1 brain voxel. A STATED exclusion rule.
+    No paper on this dataset states any exclusion rule at all.
+    """
     pred = np.moveaxis(pred, axis, 0)
     gt = np.moveaxis(gt, axis, 0)
     br = None if brain is None else np.moveaxis(brain, axis, 0)
 
-    psnrs, ssims, n_degen, n_brain = [], [], 0, 0
+    psnrs, ssims, bp, bs, n_degen, n_brain = [], [], [], [], 0, 0
     for i in range(gt.shape[0]):
         p, g = pred[i], gt[i]
+        has_brain = bool(br[i].any()) if br is not None else True
+        n_brain += int(has_brain)
+        if brain_slices_only and not has_brain:
+            continue
         v = psnr_2d(p, g)
         if not np.isfinite(v):
-            n_degen += 1                      # pred == gt exactly: PSNR undefined, NOT "perfect"
+            n_degen += 1        # pred == gt BITWISE: PSNR undefined. Rare -- see the note above.
             continue
+        s = ssim_2d(p, g)
         psnrs.append(v)
-        ssims.append(ssim_2d(p, g))
-        if br is not None and br[i].any():
-            n_brain += 1
+        ssims.append(s)
+        if has_brain:
+            bp.append(v)
+            bs.append(s)
+
+    mean = lambda a: float(np.mean(a)) if a else float("nan")
     return {
-        "psnr": float(np.mean(psnrs)) if psnrs else float("nan"),
-        "ssim": float(np.mean(ssims)) if ssims else float("nan"),
+        "psnr": mean(psnrs),
+        "ssim": mean(ssims),
+        "psnr_brain": mean(bp),          # the same statistic, restricted to brain-bearing slices
+        "ssim_brain": mean(bs),
         "n_slices": int(gt.shape[0]),
         "n_scored": len(psnrs),
         "n_degenerate": n_degen,
         "n_brain_slices": n_brain,
+        "n_empty_slices": int(gt.shape[0]) - n_brain,
     }
 
 
