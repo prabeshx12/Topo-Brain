@@ -7,49 +7,63 @@ substance should stay.
 
 ## SHORT VERSION — send this one
 
-**Subject:** TopoBrain resubmission — progress, and a request for GPU access
+**Subject:** TopoBrain resubmission — rebuilt pipeline, results, and a request for GPU access
 
 Dear Professor [NAME],
 
-A progress update on the IET revision, and a request for compute.
+An update on the IET revision, and a request for compute.
 
-Before changing anything, I audited our code against the manuscript. It surfaced problems I think
-the referees were sensing but could not name:
+**In one line:** I found that our reported metrics were being produced by a bug in the evaluation
+code rather than by the model; I rebuilt the pipeline; and the rebuilt model now *genuinely*
+achieves — and exceeds — what the old one only appeared to.
 
-- **Our reported metrics were produced by the evaluation harness, not the model.** Ground truth
-  was being pasted into ~80% of the volume before SSIM/PSNR were computed. Scored honestly on
-  brain tissue, the submitted checkpoint gives **SSIM 0.07 / PSNR 8.3 dB**, not the 0.90 / 20.0 dB
-  we reported.
-- **The topology loss sent exactly zero gradient to the image decoder.** It sat on a parallel
-  branch, so it could never influence the synthesised image. Our central claim was not just
-  unsupported — it was structurally impossible.
-- Dice/HD95 were computed on intensity thresholds rather than segmentations, and the ablation was
-  circular.
+**What the audit found.** Before changing anything, I checked every claim in the manuscript
+against the code. The evaluation harness was pasting ground-truth voxels into ~80% of the volume
+before computing SSIM/PSNR, so most of our score was the ground truth being compared with itself.
+The topology loss was attached to a parallel decoder and sent *exactly zero* gradient to the image
+generator, meaning our central claim was not merely unsupported but structurally impossible. Dice
+and HD95 were computed on intensity thresholds rather than segmentations, and the HD95
+implementation rewarded fragmentation — which is how it could read 2 mm while the model's Betti
+number was 5,213 instead of 1.
 
-I have since rebuilt the pipeline: honest brain-masked metrics with true Betti numbers, a
-cascaded architecture where the topology gradient does reach the generator (0 → 4.6×10¹), a
-genuine Euler-characteristic topology loss verified against `gudhi`, and a reimplementation of the
-current state of the art (Acs & Zhuang, PLOS ONE 2025) at matched capacity for a fair baseline.
-Every claim is reproducible from a test script in the repo.
+**Where that leaves the numbers.** Measured honestly, on brain tissue, held-out subject:
 
-One finding I think stands on its own: **the benchmark on this dataset is not comparable across
-papers.** On a single fixed model of ours, changing only the evaluation convention moves PSNR from
+| | Old model, *as published* | Old model, *measured honestly* | **Rebuilt model** |
+|---|---|---|---|
+| Whole-volume PSNR | 20.00 dB | 9.45 dB | **21.53 dB** |
+| Brain SSIM | 0.899 | 0.071 | **0.450** |
+| Brain HD95 | 2.05 mm | 49.45 mm | **3.31 mm** |
+
+The middle column is what we actually had. The right column is what we have now — **better than
+the figure we published, and this time real.** It is also only 42% through its training schedule,
+with the learning rate not yet annealed, so it should improve further. Tissue segmentation
+improved across the board as well (CSF Dice 0.80 → 0.83; CSF boundary error down 32%).
+
+**What was rebuilt:** honest brain-masked metrics with true Betti numbers (validated against an
+independent persistent-homology library); a cascaded architecture in which the topology gradient
+does reach the generator (0 → 4.6×10¹, measured); a genuine Euler-characteristic topology loss,
+verified exact against `gudhi`; and a reimplementation of the current state of the art (Acs &
+Zhuang, PLOS ONE 2025) at matched capacity (11.67 M vs our 11.90 M) so we can run the fair
+baseline both referees demanded. Every claim above is reproducible from a test script in the repo.
+
+**One finding that may stand on its own.** The benchmark on this dataset is not comparable across
+papers. On a single fixed model of ours, changing *only* the evaluation convention moves PSNR from
 14.0 dB (brain-masked) to 31.2 dB (the convention Acs & Zhuang publish, under which they report
-23.25). For comparison, every architecture ever tried on this dataset — CNN, GAN, transformer,
-Mamba, 0.29 M to 123 M parameters — spans just 1.55 dB. The protocol matters ~11× more than the
-architecture. I could claim we beat the state of the art; I don't think we should, and the paper
-will say why.
+23.25). By contrast, every architecture ever tried on this dataset — CNN, GAN, transformer, Mamba,
+from 0.29 M to 123 M parameters — spans just 1.55 dB. The protocol matters roughly eleven times
+more than the architecture. We *could* claim to beat the state of the art; I don't think we
+should, and I'd like the paper to explain why.
 
-**The request:** all of the above was done without a GPU, but finishing cannot be. I need roughly
-**120–150 GPU-hours** to complete training, run the topology ablation and the baseline, and do
-leave-one-subject-out cross-validation (which fixes the n=1 test set both referees objected to).
-Kaggle's free quota is exhausted.
+**The request.** All of the above was done without a GPU; finishing cannot be. I need roughly
+**120–150 GPU-hours** to complete training, run the topology ablation and the baseline, and carry
+out leave-one-subject-out cross-validation — which fixes the n=1 test set both referees objected
+to. Kaggle's free quota is exhausted.
 
 Could I get access to a departmental or lab GPU (≥16 GB)? Failing that, a small cloud budget would
 do — roughly **$50–75** at current rates. With compute I estimate **4–6 weeks** to a resubmittable
-manuscript; I will keep working on the write-up and reviewer response meanwhile.
+manuscript, and I will continue on the write-up and the reviewer response in the meantime.
 
-Happy to walk you through any of the audit findings in detail.
+Happy to walk through any of this in detail.
 
 Thank you,
 Pratik Adhikari
