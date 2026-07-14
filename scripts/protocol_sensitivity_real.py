@@ -83,8 +83,9 @@ rows = [
 ]
 
 print()
-print(f"  {'convention':32} {'PSNR':>8} {'SSIM':>8} {'vs honest':>11}  {'degen':>6}  source")
-print("  " + "-" * 90)
+print(f"  {'convention':32} {'PSNR':>8} {'SSIM':>8} {'vs honest':>11} | "
+      f"{'PSNR*':>7} {'SSIM*':>7} {'empty':>6}  source")
+print("  " + "-" * 104)
 finite = []
 for nm, key, src in rows:
     d = R[key]
@@ -93,18 +94,25 @@ for nm, key, src in rows:
         finite.append(p)
     delta = "--" if key == "A_brain_3d" else f"{p - base:+.2f} dB"
     ss = "      --" if not np.isfinite(s) else f"{s:8.4f}"
-    deg = d.get("n_degenerate", 0)
-    dg = f"{deg}" if deg else "-"
-    print(f"  {nm:32} {p:8.2f} {ss} {delta:>11}  {dg:>6}  {src}")
+    bp = d.get("psnr_brain", float("nan"))
+    bs = d.get("ssim_brain", float("nan"))
+    bps = "      -" if not np.isfinite(bp) else f"{bp:7.2f}"
+    bss = "      -" if not np.isfinite(bs) else f"{bs:7.4f}"
+    ne = d.get("n_empty_slices", None)
+    nes = "     -" if ne is None else f"{ne:6d}"
+    print(f"  {nm:32} {p:8.2f} {ss} {delta:>11} | {bps} {bss} {nes}  {src}")
 
 spread = max(finite) - min(finite)
 print()
-print(f"  >>> SPREAD ACROSS CONVENTIONS: {spread:.2f} dB — ONE model, ONE prediction.")
-print(f"  >>> The honest (brain-masked) number is the LOWEST: {base:.2f} dB.")
+print("  * = the SAME statistic restricted to slices that actually contain brain.")
+print("    The gap between the two columns is pure empty-slice inflation.")
 print()
-print("  Every degenerate slice is one where prediction and target are BOTH constant, so MSE = 0")
-print("  and PSNR is undefined (inf). We exclude them. No published paper on this dataset states")
-print("  an exclusion rule -- and on skull-stripped data there are hundreds of such slices.")
+print(f"  >>> SPREAD ACROSS CONVENTIONS: {spread:.2f} dB — ONE model, ONE prediction.")
+print(f"  >>> The honest (brain-masked 3D) number is the LOWEST: {base:.2f} dB.")
+print()
+print("  A per-slice mean over ALL slices averages in the near-empty ones at the ends of the")
+print("  volume, whose MSE is tiny and whose PSNR is therefore enormous. NO published paper on")
+print("  this dataset states any slice-exclusion rule. We state ours, and we report both.")
 
 out = Path(a.out) if a.out else Path(a.pred).parent / "protocol_sensitivity.json"
 out.write_text(json.dumps({"spread_db": spread, "honest_psnr": base, "protocols": R}, indent=2))

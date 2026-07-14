@@ -183,21 +183,32 @@ def score_all_protocols(pred: np.ndarray, gt: np.ndarray,
     for name, ax in (("C_slice2d_axis0", 0), ("C_slice2d_axis1", 1), ("C_slice2d_axis2", 2)):
         out[name] = _slice_stats(p, g, ax, brain)
 
-    # ---- D: 101 CENTRAL axial slices (FS-RWKV) ---------------------------------------------
-    d = g.shape[0]
-    c = d // 2
-    k = min(101, d)
-    s0, s1 = c - k // 2, c - k // 2 + k
-    out["D_central_101"] = _slice_stats(p[s0:s1], g[s0:s1], 0, brain[s0:s1])
+    # ---- D: 101 CENTRAL AXIAL slices (FS-RWKV) ---------------------------------------------
+    # THE AXIS MATTERS AND I FIRST GOT IT WRONG. Volumes are reoriented to RAS
+    # (src/config.py, src/preprocessing.py), so the array axes are (R, A, S):
+    #     axis 0 = R = SAGITTAL   (256)
+    #     axis 1 = A = CORONAL    (304)
+    #     axis 2 = S = AXIAL / TRANSVERSE (308)
+    # Acs & Zhuang state "256 sagittal, 304 coronal, and 308 transverse slices", which confirms
+    # it. An earlier version of this function sliced axis 0 and CALLED IT AXIAL, so protocols D
+    # and E were measuring a plane no competitor ever used.
+    AXIAL = 2
+    n = g.shape[AXIAL]
+    k = min(101, n)
+    s0 = n // 2 - k // 2
+    s1 = s0 + k
+    sl = [slice(None)] * 3
+    sl[AXIAL] = slice(s0, s1)
+    sl = tuple(sl)
+    out["D_central_101"] = _slice_stats(p[sl], g[sl], AXIAL, brain[sl])
 
     # ---- E: central axial slices, central 128x128 crop (LiteMamba Table 4) -----------------
-    h, w = g.shape[1], g.shape[2]
+    # The in-plane axes of an AXIAL slice are 0 (R) and 1 (A) -- not 1 and 2.
+    h, w = g.shape[0], g.shape[1]
     ch, cw = h // 2, w // 2
     hh, ww = min(64, h // 2), min(64, w // 2)
-    out["E_central_crop"] = _slice_stats(
-        p[s0:s1, ch - hh:ch + hh, cw - ww:cw + ww],
-        g[s0:s1, ch - hh:ch + hh, cw - ww:cw + ww], 0,
-        brain[s0:s1, ch - hh:ch + hh, cw - ww:cw + ww])
+    crop = (slice(ch - hh, ch + hh), slice(cw - ww, cw + ww), slice(s0, s1))
+    out["E_central_crop"] = _slice_stats(p[crop], g[crop], AXIAL, brain[crop])
 
     # ---- F: the ORIGINAL BROKEN HARNESS -- GT pasted outside the brain. INVALID. -----------
     # Reproduced only to quantify what the published paper's number actually measured.
