@@ -245,7 +245,14 @@ class PairedPatchDataset(Dataset):
                     sigma_range=(5, 7),
                     magnitude_range=(50, 150),
                     prob=0.3,
-                    padding_mode="zeros",
+                    # NOT "zeros". The background of a diffusion-normalised volume is -1.0, so
+                    # zero-padding fills every rotated-out corner with 0.0 -- a MID-GREY, roughly
+                    # white-matter intensity -- while the seg key (nearest, pad 0) labels those
+                    # same voxels BACKGROUND. Every augmented sample carried a bright rim that the
+                    # network was told was background: directly contradictory supervision, and it
+                    # reappears at tile seams at inference. "border" replicates the edge value, so
+                    # background stays -1.0 and image and label agree.
+                    padding_mode="border",
                 ),
                 # Affine (scaling/rotation/shift)
                 RandAffined(
@@ -254,7 +261,14 @@ class PairedPatchDataset(Dataset):
                     prob=0.3,
                     rotate_range=(0.1, 0.1, 0.1),
                     scale_range=(0.1, 0.1, 0.1),
-                    padding_mode="zeros",
+                    # NOT "zeros". The background of a diffusion-normalised volume is -1.0, so
+                    # zero-padding fills every rotated-out corner with 0.0 -- a MID-GREY, roughly
+                    # white-matter intensity -- while the seg key (nearest, pad 0) labels those
+                    # same voxels BACKGROUND. Every augmented sample carried a bright rim that the
+                    # network was told was background: directly contradictory supervision, and it
+                    # reappears at tile seams at inference. "border" replicates the edge value, so
+                    # background stays -1.0 and image and label agree.
+                    padding_mode="border",
                 ),
             ])
         else:
@@ -400,9 +414,16 @@ class PairedPatchDataset(Dataset):
         
         # Find valid centers (where there's enough brain in the patch)
         # Sample candidates and filter
+        # DETERMINISTIC PER VOLUME, and deliberately NOT from self._rng.
+        # self._rng is now per-worker (see _worker_init), so drawing the candidate pool from it
+        # would make _valid_centers[pair_idx] depend on WHICH WORKER happened to load the volume.
+        # That would make the val/test stride at the bottom of __getitem__ -- which is supposed to
+        # be deterministic -- silently worker-dependent and irreproducible. Seeding per volume
+        # keeps the pool identical everywhere while the augmentation draw stays worker-specific.
         n_candidates = 10000
+        pool_rng = np.random.default_rng(int(self.config.seed) + 7919 * int(pair_idx))
         candidates = np.column_stack([
-            self._rng.integers(min_coords[d], max_coords[d], size=n_candidates)
+            pool_rng.integers(min_coords[d], max_coords[d], size=n_candidates)
             for d in range(3)
         ])
         
@@ -419,7 +440,19 @@ class PairedPatchDataset(Dataset):
             if brain_fraction >= self.config.min_brain_fraction:
                 valid_centers.append(center)
         
-        valid_centers = np.array(valid_centers) if valid_centers else candidates[:100]
+        if not valid_centers:
+            # WAS: `candidates[:100]` -- a SILENT fallback to 100 completely unfiltered centres.
+            # If the mask were ever empty (e.g. a float/partial-volume seg floored to 0 by the
+            # uint8 cast), min_brain_fraction would be quietly disabled and the ENTIRE run would
+            # train on random background crops, with no warning and no exception. Fail loudly.
+            raise ValueError(
+                f"pair {pair_idx}: not one of {n_candidates} candidate patches reached "
+                f"min_brain_fraction={self.config.min_brain_fraction}. "
+                f"mask has {int((mask > 0).sum())} non-zero voxels of {mask.size} "
+                f"(shape {mask.shape}, dtype {mask.dtype}). Refusing to fall back to "
+                f"unfiltered background crops."
+            )
+        valid_centers = np.array(valid_centers)
         
         # Cache valid centers
         self._valid_centers[cache_key] = valid_centers
@@ -838,6 +871,26 @@ def create_synthesis_dataloaders(
     # should be. persistent_workers keeps the workers -- and therefore the volume cache and
     # the valid-centre cache -- alive across epochs.
     _pw = num_workers > 0
+
+    def _worker_init(worker_id: int) -> None:
+        """Give every worker its OWN numpy Generator.
+
+        WITHOUT THIS, THE A1 PATCH-DIVERSITY FIX IS SILENTLY UNDONE. PyTorch's worker loop
+        reseeds `random`, `torch`, and numpy's LEGACY global RandomState per worker -- it does
+        NOT touch an `np.random.Generator` instance that was pickled onto the dataset. So
+        `self._rng = np.random.default_rng(seed)` (set once in __init__) is forked byte-identical
+        into all N workers, and they draw the SAME candidate coordinates, the SAME patch centres
+        and the SAME jitter. persistent_workers=True (the B6 fix above) then keeps them locked in
+        that state for the entire run.
+
+        Net effect: A1 raised the distinct-centre count from 32 to 4,707 per volume, and this bug
+        was quietly dividing the effective diversity back down by the worker count.
+        """
+        info = torch.utils.data.get_worker_info()
+        if info is not None:
+            base = int(getattr(info.dataset.config, "seed", 0))
+            info.dataset._rng = np.random.default_rng(base + 1_000_003 * (worker_id + 1))
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -847,6 +900,7 @@ def create_synthesis_dataloaders(
         drop_last=True,
         persistent_workers=_pw,
         prefetch_factor=4 if _pw else None,
+        worker_init_fn=_worker_init if _pw else None,
     )
 
     val_loader = DataLoader(
