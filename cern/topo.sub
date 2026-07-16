@@ -18,6 +18,11 @@ request_gpus   = 1
 request_cpus   = 4
 request_memory = 16 GB
 
+# stream stdout/stderr to the .out/.err files LIVE (default is to transfer only at job end,
+# which is why the log looks empty mid-run). With this you can `tail -f logs/topo.*.out`.
+stream_output = True
+stream_error  = True
+
 # CERN walltime flavours: espresso=20m microcentury=1h longlunch=2h workday=8h tomorrow=1d testmatch=3d
 +JobFlavour  = "tomorrow"
 
