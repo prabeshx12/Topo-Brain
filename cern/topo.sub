@@ -1,0 +1,40 @@
+# ============================================================================
+# topo.sub -- the HTCondor SUBMIT FILE.
+#
+# This is the form you hand to the scheduler. It says: "run run_job.sh on a
+# machine with 1 GPU, give it this long, and write the logs here." You submit
+# it with:   condor_submit topo.sub
+# ============================================================================
+
+# the script HTCondor runs on the node (our payload)
+executable            = run_job.sh
+
+# where the job's stdout / stderr / condor bookkeeping go.
+# $(ClusterId) and $(ProcId) are filled in by HTCondor so logs never collide.
+output                = logs/topo.$(ClusterId).$(ProcId).out
+error                 = logs/topo.$(ClusterId).$(ProcId).err
+log                   = logs/topo.$(ClusterId).log
+
+# ---- resources ------------------------------------------------------------
+request_gpus          = 1
+request_cpus          = 4          # dataloader workers -- our old bottleneck was CPU, not GPU
+request_memory        = 16 GB
+
+# ---- which GPU? -----------------------------------------------------------
+# THIS is the line that asks for an A100 rather than any GPU. The exact syntax
+# is CERN-specific and I do not want to guess it. ASK YOUR FRIEND:
+#   "what line requests an A100 in an HTCondor submit file here?"
+# It is usually ONE of these two forms -- uncomment the correct one once known:
+#
+# require_gpus        = DeviceName == "NVIDIA A100"
+# requirements        = regexp("A100", TARGET.CUDADeviceName)
+
+# ---- how long may it run? -------------------------------------------------
+# CERN HTCondor uses named walltime "flavours" instead of raw hours:
+#   espresso=20min  microcentury=1h  longlunch=2h  workday=8h
+#   tomorrow=1day   testmatch=3days  nextweek=1week
+# Our run has --max-hours 20 + checkpoint/resume, so "tomorrow" (1 day) is safe.
++JobFlavour           = "tomorrow"
+
+# submit one job
+queue 1
