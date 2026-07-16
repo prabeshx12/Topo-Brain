@@ -1,0 +1,93 @@
+{
+  "connectivity": 26,
+  "brain_voxels": 4332051,
+  "brain_fraction": 0.18072960332738808,
+  "image": {
+    "ssim_brain": 0.412488316548053,
+    "psnr_brain": 14.068991910707371
+  },
+  "tissue": {
+    "CSF": {
+      "dice": 0.8806256608742493,
+      "hd95_mm": 1.9489200146306418,
+      "assd_mm": 0.6971684416841625,
+      "n_components": 7,
+      "largest_cc_frac": 0.9511292939701778,
+      "betti_pred": [
+        7,
+        2,
+        0
+      ],
+      "betti_gt": [
+        3,
+        4,
+        0
+      ],
+      "euler_pred": 5,
+      "euler_gt": -1,
+      "betti_err": [
+        4,
+        2,
+        0
+      ]
+    },
+    "GM": {
+      "dice": 0.8352444753636599,
+      "hd95_mm": 1.5908435726032844,
+      "assd_mm": 0.6067082673649306,
+      "n_components": 78,
+      "largest_cc_frac": 0.9998454943447067,
+      "betti_pred": [
+        78,
+        576,
+        544
+      ],
+      "betti_gt": [
+        3,
+        1077,
+        2645
+      ],
+      "euler_pred": 46,
+      "euler_gt": 1571,
+      "betti_err": [
+        75,
+        501,
+        2101
+      ]
+    },
+    "WM": {
+      "dice": 0.908094782067284,
+      "hd95_mm": 1.451992179334405,
+      "assd_mm": 0.4833530357394732,
+      "n_components": 35,
+      "largest_cc_frac": 0.9998918296474286,
+      "betti_pred": [
+        35,
+        89,
+        24
+      ],
+      "betti_gt": [
+        30,
+        95,
+        358
+      ],
+      "euler_pred": -30,
+      "euler_gt": 293,
+      "betti_err": [
+        5,
+        6,
+        334
+      ]
+    }
+  },
+  "brain": {
+    "dice": 0.9392873980208081,
+    "hd95_mm": 5.844155788421631,
+    "assd_mm": 1.3490414792389682
+  },
+  "whole_volume_no_paste": {
+    "ssim": 0.8785,
+    "psnr": 20.89
+  },
+  "step": 16676
+}
