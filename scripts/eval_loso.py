@@ -60,12 +60,10 @@ def main():
             continue
         ck = cks[-1]                                    # FINAL checkpoint -- no selection
         print(f"\n=== fold {i}: eval {subj} with {Path(ck).name} ===")
-        # eval_cascaded is a script; call it as a subprocess so this stays a thin aggregator
+        # eval_cern reads the NORMALISED pairs (complete segs), same data training used
         import subprocess
-        cmd = [sys.executable, str(ROOT / "scripts" / "eval_cascaded.py"),
-               "--ckpt", ck, "--config", a.config, "--subject", subj, "--out", str(fold_dir)]
-        if a.data_root:
-            cmd += ["--dir", a.data_root]
+        cmd = [sys.executable, str(ROOT / "scripts" / "eval_cern.py"),
+               "--ckpt", ck, "--pairs-csv", a.pairs_csv, "--subject", subj, "--out", str(fold_dir)]
         subprocess.run(cmd, check=False)
         res_path = fold_dir / "cascaded_eval.json"
         if res_path.exists():

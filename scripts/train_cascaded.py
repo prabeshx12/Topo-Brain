@@ -358,6 +358,10 @@ def main():
             log(f"step {step:6d} | L1 {rec['l1']:.4f} | SSIM {rec['ssim']:.4f} | "
                 f"CE {rec['ce']:.4f} | Dice {rec['dice']:.4f} | topo {rec['topo']:.4f}{_chi} | "
                 f"tot {rec['total']:.4f} | {el:.1f}m | {(time.time()-t0)/max(step-start+1,1):.2f}s/it")
+            # flush the structured curve data EVERY log step (not just at 5k checkpoints), so a
+            # crash never loses the tail of the training curves the paper needs.
+            with open(os.path.join(args.out_dir, "train_history.json"), "w") as _hf:
+                json.dump(hist, _hf, indent=2)
 
         def save(tag):
             p = os.path.join(args.out_dir, f"cascaded_{tag}.pt")
