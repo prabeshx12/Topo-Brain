@@ -1,31 +1,32 @@
 # ============================================================================
 # loso.sub -- submit ALL 10 leave-one-subject-out folds at once.
+# `queue 10` launches 10 jobs; $(ProcId) = 0..9 = the FOLD index, so one
+# condor_submit runs the whole cross-validation -- 10 GPUs in parallel.
 #
-# `queue 10` launches 10 jobs. HTCondor sets $(ProcId) = 0,1,...,9 for each,
-# which we pass as the FOLD index. So one `condor_submit loso.sub` runs the
-# entire cross-validation -- 10 GPUs in parallel, each holding out one subject.
+# SUBMIT FROM AFS, NOT /eos (the schedd rejects /eos submit-file paths):
+#   mkdir -p ~/loso_submit/logs
+#   cp /eos/user/p/ppokhrel/topobrain/Topo-Brain/cern/run_loso_fold.sh ~/loso_submit/
+#   cp /eos/user/p/ppokhrel/topobrain/Topo-Brain/cern/loso.sub        ~/loso_submit/
+#   chmod +x ~/loso_submit/run_loso_fold.sh
+#   cd ~/loso_submit && condor_submit loso.sub
 #
-#   condor_submit loso.sub
-#   condor_q                     # watch all 10
-#
-# PREREQUISITE: the step count N_ITERS below is FROZEN FROM THE PILOT. Do not
-# submit this until the sub-06/sub-07 pilot has told us the recipe. Filling it
-# in with a guess would defeat the purpose.
+# args = FOLD  N_ITERS  LAM_TOPO.  LAM_TOPO=0 here = the BASELINE (no topology) sweep.
+# For the topology method, change the last arg (e.g. 0.1) AND the output dir is kept
+# separate automatically (runs/loso_topo0 vs runs/loso_topo0.1).
+# HTCondor does NOT allow inline '#' after a value -- keep comments on their own lines.
 # ============================================================================
-executable   = ../scripts/run_loso_fold.sh
-
-# args: FOLD=$(ProcId)  N_ITERS  OUTDIR  PAIRS_CSV
-# EDIT N_ITERS and the EOS paths once the pilot + data copy are done.
-arguments    = $(ProcId) 40000 /eos/user/p/ppokhrel/topobrain/loso /eos/user/p/ppokhrel/topobrain/data/pairs_cern.csv
+executable   = run_loso_fold.sh
+arguments    = $(ProcId) 40000 0
 
 output       = logs/loso.$(ClusterId).$(ProcId).out
 error        = logs/loso.$(ClusterId).$(ProcId).err
 log          = logs/loso.$(ClusterId).log
 
-request_gpus = 1
-request_cpus = 4
+request_gpus   = 1
+request_cpus   = 4
 request_memory = 16 GB
-# require_gpus = ...   # A100 line -- ask your friend (see topo.sub)
+
+# espresso=20m microcentury=1h longlunch=2h workday=8h tomorrow=1d testmatch=3d
 +JobFlavour  = "tomorrow"
 
 queue 10
