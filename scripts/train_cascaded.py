@@ -308,10 +308,15 @@ def main():
             _t = model._topo(seg_logits, seg)
             l_topo = _t["loss"]
             loss = loss + lam_topo * l_topo
-            # Log the raw chi gap, not just the loss. The loss is normalised and ramped, so it
-            # can look flat while topology is still wrong; |chi_pred - chi_gt| is the thing the
-            # paper actually claims to improve, and it is free to record.
-            if "chi_pred" in _t:
+            # Log the HONEST topology monitor: chi on the BINARISED (argmax) prediction. Both the
+            # soft loss AND the soft chi_pred are confounded with softmax confidence -- they fall
+            # as the head sharpens even when the discrete topology never changes
+            # (test_topology_euler.py). chi_err_hard is the ONLY quantity that reflects the real
+            # topology, so it is what the paper reports. Falls back to the soft gap for the edge
+            # ablation loss, which has no hard monitor.
+            if "topo_monitor" in _t:
+                chi_gap = float(_t["topo_monitor"].detach())
+            elif "chi_pred" in _t:
                 chi_gap = float((_t["chi_pred"] - _t["chi_gt"]).abs().mean().detach())
 
         if not torch.isfinite(loss):

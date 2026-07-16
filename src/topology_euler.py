@@ -213,4 +213,21 @@ class EulerTopologyLoss(nn.Module):
         err = (chi_p - chi_g).abs() / (chi_g.abs() + 1.0)     # relative, O(1)
         if weights is not None:
             err = err * weights.view(1, -1).to(err.dtype)
-        return {"loss": err.mean(), "chi_pred": chi_p, "chi_gt": chi_g, "chi_err": err}
+
+        # --- HONEST MONITOR: chi on the BINARISED prediction (no grad) --------------------
+        # The soft `loss` above is what trains, but it is confounded with softmax confidence:
+        # with a PERFECT-but-diffuse segmentation the soft loss still falls (16.75 -> 0.03) purely
+        # as the head sharpens, WITHOUT the topology changing (test_topology_euler.py). So a
+        # falling soft-loss curve is NOT evidence of topological improvement.
+        # `chi_err_hard` is the ONLY quantity that is: it is |chi(argmax_pred) - chi(gt)|, so it
+        # moves only when the ACTUAL discrete topology changes. Log THIS, never `loss`, as the
+        # topology result.
+        with torch.no_grad():
+            hard = F.one_hot(logits.argmax(dim=1), self.num_classes).permute(0, 4, 1, 2, 3).float()
+            chis_ph = [euler_characteristic(hard[:, c:c + 1]) for c in range(first, self.num_classes)]
+            chi_ph = torch.stack(chis_ph, dim=1)
+            err_hard = (chi_ph - chi_g).abs() / (chi_g.abs() + 1.0)
+
+        return {"loss": err.mean(), "chi_pred": chi_p, "chi_gt": chi_g, "chi_err": err,
+                "chi_pred_hard": chi_ph, "chi_err_hard": err_hard,
+                "topo_monitor": err_hard.mean()}

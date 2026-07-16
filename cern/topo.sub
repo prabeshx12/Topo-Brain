@@ -1,8 +1,12 @@
 # ============================================================================
 # topo.sub -- submit the Phase 3 (clean segs) training to HTCondor.
 #   condor_submit topo.sub
-#   condor_q                    # Idle -> Running -> (gone = done)
-#   tail -f logs/topo.*.out     # live log once Running
+#   condor_q                    (Idle -> Running -> gone = done)
+#   tail -f logs/topo.*.out     (live log once Running)
+#
+# NOTE: HTCondor does NOT allow inline '#' comments after a value on the same
+# line -- it parses the rest of the line as the expression. Keep comments on
+# their own lines.
 # ============================================================================
 executable   = run_job.sh
 
@@ -11,11 +15,10 @@ error        = logs/topo.$(ClusterId).$(ProcId).err
 log          = logs/topo.$(ClusterId).log
 
 request_gpus   = 1
-request_cpus   = 4          # dataloader workers -- the old bottleneck was CPU, not GPU
+request_cpus   = 4
 request_memory = 16 GB
 
-# CERN walltime flavour: espresso=20m microcentury=1h longlunch=2h workday=8h
-# tomorrow=1d testmatch=3d.  Training has --max-hours 20 + checkpointing, so "tomorrow".
+# CERN walltime flavours: espresso=20m microcentury=1h longlunch=2h workday=8h tomorrow=1d testmatch=3d
 +JobFlavour  = "tomorrow"
 
 # To request an A100 specifically, add the line your friend gives you, e.g.:
