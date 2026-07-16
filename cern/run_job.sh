@@ -1,49 +1,43 @@
 #!/bin/bash
 # ============================================================================
-# run_job.sh -- the PAYLOAD that HTCondor runs ON the GPU node.
+# run_job.sh -- the PAYLOAD HTCondor runs on the GPU node.
+# Phase 3 (clean segs): train the cascaded model to 40k steps, topology OFF.
+# This establishes the image-quality baseline on the COMPLETE segmentation and
+# confirms training is healthy at batch 8 on a dedicated GPU. Topology (Phase 4)
+# is a separate job after the entropy fix.
 #
-# HTCondor does NOT run your commands directly. It runs THIS script on whatever
-# GPU machine it allocates. So everything the job needs to do goes in here:
-#   1. show which GPU we got (so the log proves it worked)
-#   2. enter a container that already has torch/monai/gudhi
-#   3. resume training from the checkpoint and run to 40k steps
-#
-# Anything printed here lands in the .out log HTCondor writes back.
+# Uses the LCG_110_cuda view we proved works (torch 2.11 + CUDA) -- NO container.
 # ============================================================================
-set -e                      # stop immediately if any command fails
-echo "=== job started on $(hostname) at $(date) ==="
+set -e
+echo "=== job on $(hostname) @ $(date) ==="
 
-# ---- 1. what GPU did we actually get? -------------------------------------
-nvidia-smi || { echo "NO GPU VISIBLE -- aborting"; exit 1; }
-echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+# 1. environment: the proven CUDA software view + user pip packages (monai/nibabel/gudhi)
+source /cvmfs/sft.cern.ch/lcg/views/LCG_110_cuda/x86_64-el9-gcc13-opt/setup.sh
+export PATH=$HOME/.local/bin:$PATH
 
-# ---- 2. paths (EDIT THESE ONCE YOU KNOW YOUR CERN LAYOUT) ------------------
-# AFS home is small (~10 GB) and slow. Put code+data+checkpoints on EOS or a
-# work area. These are placeholders -- we fill them in after you tell me where
-# your data landed.
-WORK=/eos/user/p/ppokhrel/topobrain      # <-- TBD: your EOS work dir
-CODE=$WORK/Topo-Brain                    # the git repo
-DATA=$WORK/data                          # the normalised nii files
-CKPT=$WORK/checkpoints/cascaded_16677.pt # the checkpoint to resume from
-OUT=$WORK/out_$(date +%Y%m%d_%H%M%S)     # this run's outputs
+# 2. prove we actually got a GPU (fail loudly in the log if not)
+nvidia-smi || { echo "NO GPU -- aborting"; exit 1; }
+python3 -c "import torch; assert torch.cuda.is_available(); print('CUDA', torch.cuda.get_device_name(0))"
+
+# 3. paths (all on EOS)
+BASE=/eos/user/p/ppokhrel/topobrain
+CODE=$BASE/Topo-Brain
+PAIRS=$BASE/data/norm/pairs_cern.csv
+OUT=$BASE/runs/phase3_clean
 mkdir -p "$OUT"
+cd "$CODE"
 
-# ---- 3. run inside a container that has the Python env ---------------------
-# CERN provides GPU-ready container images. apptainer mounts them read-only and
-# runs your command inside. The exact image path is something your friend/CERN
-# docs will give us -- placeholder for now.
-IMAGE=/cvmfs/unpacked.cern.ch/registry.hub.docker.com/pytorch/pytorch:latest  # <-- TBD
+# 4. train. val=sub-06 / test=sub-07 (same split as the pilot, so it is directly comparable
+#    to the old 14.01/21.53 numbers -- now on the COMPLETE segs). Fresh, topology off.
+python scripts/train_cascaded.py \
+    --pairs-csv "$PAIRS" \
+    --config configs/train_diffusion.yaml \
+    --n-iters 40000 \
+    --batch-size 8 \
+    --lam-topo 0 \
+    --val-fold 0 --test-fold 1 \
+    --save-freq 5000 \
+    --max-hours 20 \
+    --out-dir "$OUT"
 
-apptainer exec --nv "$IMAGE" bash -c "
-    set -e
-    cd $CODE
-    pip install --user -q monai gudhi nibabel pyyaml    # anything the image lacks
-    python scripts/train_cascaded.py \
-        --pairs-csv $DATA/pairs_cern.csv \
-        --resume $CKPT \
-        --n-iters 40000 \
-        --batch-size 8 \
-        --max-hours 20 \
-        --out-dir $OUT
-"
-echo "=== job finished at $(date); outputs in $OUT ==="
+echo "=== done @ $(date); checkpoints in $OUT ==="
