@@ -1,0 +1,31 @@
+# ============================================================================
+# loso.sub -- submit ALL 10 leave-one-subject-out folds at once.
+#
+# `queue 10` launches 10 jobs. HTCondor sets $(ProcId) = 0,1,...,9 for each,
+# which we pass as the FOLD index. So one `condor_submit loso.sub` runs the
+# entire cross-validation -- 10 GPUs in parallel, each holding out one subject.
+#
+#   condor_submit loso.sub
+#   condor_q                     # watch all 10
+#
+# PREREQUISITE: the step count N_ITERS below is FROZEN FROM THE PILOT. Do not
+# submit this until the sub-06/sub-07 pilot has told us the recipe. Filling it
+# in with a guess would defeat the purpose.
+# ============================================================================
+executable   = ../scripts/run_loso_fold.sh
+
+# args: FOLD=$(ProcId)  N_ITERS  OUTDIR  PAIRS_CSV
+# EDIT N_ITERS and the EOS paths once the pilot + data copy are done.
+arguments    = $(ProcId) 40000 /eos/user/p/ppokhrel/topobrain/loso /eos/user/p/ppokhrel/topobrain/data/pairs_cern.csv
+
+output       = logs/loso.$(ClusterId).$(ProcId).out
+error        = logs/loso.$(ClusterId).$(ProcId).err
+log          = logs/loso.$(ClusterId).log
+
+request_gpus = 1
+request_cpus = 4
+request_memory = 16 GB
+# require_gpus = ...   # A100 line -- ask your friend (see topo.sub)
++JobFlavour  = "tomorrow"
+
+queue 10
