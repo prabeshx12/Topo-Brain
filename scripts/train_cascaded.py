@@ -132,11 +132,12 @@ def main():
                     help="euler = REAL topological invariant (chi = V-E+F-C, exact vs gudhi). "
                          "edge = the PUBLISHED 'topology loss' (edge-weighted CE + Sobel Dice), "
                          "which is not topological at all -- kept only as an ablation arm.")
-    ap.add_argument("--topo-sharpness", type=float, default=20.0,
+    ap.add_argument("--topo-sharpness", type=float, default=32.0,
                     help="p -> sigmoid(k*(p-0.5)) before chi. Concentrates the term on the "
-                         "decision boundary. At k=0 the loss is UNUSABLE: expected spurious "
-                         "components from an uncertain background cancel real handles, and a "
-                         "BROKEN shape outscores a correct one (test_topology_euler.py, level 4).")
+                         "decision boundary. MUST be 32: at k=20 an uncertain background injects "
+                         "a +8.6 spurious-chi floor bias (UNUSABLE now that chi_gt is exact and no "
+                         "longer shares the cancelling bias); k=32 -> bias +0.02. See "
+                         "src/topology_euler.py:126-134 and test_topology_euler.py level 4.")
     ap.add_argument("--topo-warmup", type=int, default=10000,
                     help="steps of L1+CE before the topology term ramps in (PH losses are "
                          "unstable on early garbage predictions)")
