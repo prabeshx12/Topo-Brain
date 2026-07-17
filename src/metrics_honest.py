@@ -23,7 +23,8 @@ Everything here is computed on the brain region only, on real segmentations, wit
 surface-to-surface distances, and with the voxel connectivity stated explicitly
 (Berger et al., "Pitfalls of topology-aware image segmentation", arXiv:2412.14619).
 """
-from typing import Dict, Optional, Tuple
+import time
+from typing import Callable, Dict, Optional, Tuple
 
 import numpy as np
 from scipy import ndimage
@@ -154,6 +155,23 @@ def assd_surface(pred_bin: np.ndarray, gt_bin: np.ndarray,
     return float(np.mean(d)) if np.isfinite(d).all() and d.size else float("nan")
 
 
+def _hd95_assd_from(d: np.ndarray) -> Tuple[float, float]:
+    """(HD95, ASSD) from ONE precomputed surface-distance array.
+
+    WHY THIS EXISTS. hd95_surface() and assd_surface() each call _surface_distances(),
+    which runs TWO distance_transform_edt passes over the full volume. Calling both (as
+    evaluate_synthesis did) therefore paid for FOUR EDTs per structure where two suffice --
+    on a 256x304x308 volume across 3 tissues + whole brain that is 16 EDTs instead of 8.
+    The distances are identical either way; only the reduction differs (percentile vs mean),
+    so computing d once and deriving both is exactly equivalent and ~2x faster.
+    The public hd95_surface/assd_surface are left untouched for callers/tests.
+    """
+    ok = bool(d.size) and bool(np.isfinite(d).all())
+    if not ok:
+        return float("nan"), float("nan")
+    return float(np.percentile(d, 95)), float(np.mean(d))
+
+
 # --------------------------------------------------------------------------- #
 #  Topology — connectivity is REPORTED, not implicit
 # --------------------------------------------------------------------------- #
@@ -216,41 +234,71 @@ def evaluate_synthesis(
     spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
     connectivity: int = 26,
     with_topology: bool = True,
+    progress: Optional[Callable[[str], None]] = None,
 ) -> Dict:
     """Full honest evaluation of one subject.
 
     Image quality is scored on the brain region only (no GT pasting). Anatomy is scored on
     the segmentations (never on intensity thresholds). HD95/ASSD are surface-to-surface.
     Topology reports Betti numbers, Euler characteristic and the connectivity used.
+
+    progress: optional callable receiving a status line per stage. Default None = silent,
+        so existing callers/tests are unchanged. Pass `progress=lambda m: print(m, flush=True)`
+        for a live log. THIS MATTERS: on a 256x304x308 volume this call runs 8 full-volume
+        distance transforms plus 6 gudhi persistence computations and can take tens of
+        minutes, all CPU-bound. Without a log it looks indistinguishable from a hang.
     """
+    t0 = time.perf_counter()
+
+    def _p(msg: str) -> None:
+        if progress is not None:
+            progress(f"  [{time.perf_counter() - t0:7.1f}s] {msg}")
+
+    n_vox = int(brain_mask.sum())
+    _p(f"image metrics: masked SSIM/PSNR over {n_vox:,} brain voxels ...")
     res: Dict = {
         "connectivity": connectivity,
-        "brain_voxels": int(brain_mask.sum()),
+        "brain_voxels": n_vox,
         "brain_fraction": float(brain_mask.sum() / brain_mask.size),
         "image": {
             "ssim_brain": masked_ssim(pred_img, target_img, brain_mask),
             "psnr_brain": masked_psnr(pred_img, target_img, brain_mask),
         },
     }
+    _p(f"image metrics DONE: SSIM {res['image']['ssim_brain']:.4f} "
+       f"PSNR {res['image']['psnr_brain']:.2f} dB")
 
     if pred_seg is None or gt_seg is None:
+        _p("no segmentations supplied -- skipping anatomy/topology")
         return res
 
+    _p("tissue Dice ...")
     dice = tissue_dice(pred_seg, gt_seg)
     res["tissue"] = {}
-    for lb, name in TISSUE_NAMES.items():
+    n_tis = len(TISSUE_NAMES)
+    for i, (lb, name) in enumerate(TISSUE_NAMES.items(), start=1):
+        tag = f"[{i}/{n_tis}] {name}"
         p, g = pred_seg == lb, gt_seg == lb
-        entry = {
-            "dice": dice[lb],
-            "hd95_mm": hd95_surface(p, g, spacing),
-            "assd_mm": assd_surface(p, g, spacing),
-        }
+
+        _p(f"{tag}: surface distances (2x EDT over full volume -- SLOW) ...")
+        d = _surface_distances(p, g, spacing)
+        hd95, assd = _hd95_assd_from(d)
+        entry = {"dice": dice[lb], "hd95_mm": hd95, "assd_mm": assd}
+        _p(f"{tag}: Dice {dice[lb]:.4f}  HD95 {hd95:.2f} mm  ASSD {assd:.2f} mm")
+
+        _p(f"{tag}: connected components ...")
         ncc, lcc = connected_components(p, connectivity)
         entry["n_components"] = ncc
         entry["largest_cc_frac"] = lcc
+        _p(f"{tag}: {ncc} components, largest holds {100 * lcc:.2f}%")
+
         if with_topology:
+            _p(f"{tag}: Betti of PREDICTION (gudhi cubical complex -- SLOWEST step) ...")
             b0, b1, b2 = betti_numbers(p, connectivity)
+            _p(f"{tag}: Betti pred = ({b0}, {b1}, {b2})")
+            _p(f"{tag}: Betti of GROUND TRUTH (gudhi) ...")
             g0, g1, g2 = betti_numbers(g, connectivity)
+            _p(f"{tag}: Betti gt   = ({g0}, {g1}, {g2})")
             entry["betti_pred"] = [b0, b1, b2]
             entry["betti_gt"] = [g0, g1, g2]
             entry["euler_pred"] = b0 - b1 + b2
@@ -259,13 +307,21 @@ def evaluate_synthesis(
             # error for spatial correspondence; this is the cheaper, standard fallback and
             # must be reported as such.
             entry["betti_err"] = [abs(b0 - g0), abs(b1 - g1), abs(b2 - g2)]
+            _p(f"{tag}: Betti ERR  = {entry['betti_err']}  (chi {entry['euler_pred']} "
+               f"vs gt {entry['euler_gt']})")
         res["tissue"][name] = entry
 
     # whole-brain foreground (any tissue)
+    _p("whole-brain foreground: Dice + surface distances ...")
     p_fg, g_fg = pred_seg > 0, gt_seg > 0
+    d_fg = _surface_distances(p_fg, g_fg, spacing)
+    hd95_fg, assd_fg = _hd95_assd_from(d_fg)
     res["brain"] = {
         "dice": float(2 * np.logical_and(p_fg, g_fg).sum() / (p_fg.sum() + g_fg.sum())),
-        "hd95_mm": hd95_surface(p_fg, g_fg, spacing),
-        "assd_mm": assd_surface(p_fg, g_fg, spacing),
+        "hd95_mm": hd95_fg,
+        "assd_mm": assd_fg,
     }
+    _p(f"whole-brain: Dice {res['brain']['dice']:.4f}  HD95 {hd95_fg:.2f} mm  "
+       f"ASSD {assd_fg:.2f} mm")
+    _p("ALL METRICS DONE")
     return res

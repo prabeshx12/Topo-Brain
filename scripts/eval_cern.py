@@ -18,6 +18,7 @@ import csv
 import importlib.util
 import json
 import sys
+import time
 from pathlib import Path
 
 import nibabel as nib
@@ -87,9 +88,25 @@ def main():
     model.eval()
     print(f"loaded {key} @ step {st['step']} | dev {dev}")
 
+    # ---- stage 1: inference -------------------------------------------------
+    # Everything below logs with flush=True on purpose: over SSH (and especially when
+    # redirected to a condor .out file) Python block-buffers stdout, so an unflushed
+    # print is invisible for minutes and the job looks hung when it is fine.
+    print("[stage 1/2] tiled inference ...", flush=True)
+    t = time.perf_counter()
     img, seg = tiled(model, x3, dev)
+    print(f"[stage 1/2] inference DONE in {time.perf_counter() - t:.1f}s", flush=True)
+
+    # ---- stage 2: metrics ---------------------------------------------------
+    print(f"[stage 2/2] metrics on {x3.shape} = {np.prod(x3.shape):,} voxels. "
+          f"CPU-bound: 8 full-volume distance transforms + 6 gudhi persistence "
+          f"computations. Expect MINUTES. This is NOT a hang -- progress follows.",
+          flush=True)
+    t = time.perf_counter()
     r = mh.evaluate_synthesis(img, x7, brain, pred_seg=seg, gt_seg=gt,
-                              spacing=spacing, connectivity=26, with_topology=True)
+                              spacing=spacing, connectivity=26, with_topology=True,
+                              progress=lambda m: print(m, flush=True))
+    print(f"[stage 2/2] metrics DONE in {time.perf_counter() - t:.1f}s", flush=True)
 
     from skimage.metrics import peak_signal_noise_ratio as psnr
     from skimage.metrics import structural_similarity as ssim
