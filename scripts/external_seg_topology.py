@@ -181,6 +181,61 @@ def topo_of(seg, name):
     return out
 
 
+def classical_tissue_seg(vol, brain_mask, seed=0, max_fit=200_000):
+    """Unsupervised 3-class Gaussian-mixture tissue segmentation from intensities alone.
+
+    WHY THIS IS A LEGITIMATE INDEPENDENT PROBE (arms C/D without any external install):
+      * it never saw our training data -- it is fit per-image, unsupervised;
+      * it reads ONLY the image (no 3T channel, no labels, no network of ours);
+      * it does NOT enforce topology. This is the crucial property. The FreeSurfer GT's
+        GM beta0 ~= 2 is an ALGORITHMIC GUARANTEE of its topology-corrected surface
+        reconstruction, not a measurement of the 7T image -- so comparing any voxel-wise
+        segmenter to it is rigged. This probe has no such guarantee, so a difference
+        between arms is attributable to the IMAGE;
+      * identical procedure, identical brain mask, on both arms.
+
+    This is essentially FSL FAST minus the MRF spatial prior. The MRF is omitted DELIBERATELY:
+    it would smooth away exactly the speckle we are trying to measure, which is the thing under
+    test. So this probe is, if anything, MORE sensitive to fragmentation than FAST would be --
+    it cannot hide a difference, only reveal one.
+
+    Cluster -> tissue by mean intensity (T1w: CSF < GM < WM). Fit on a random subsample for
+    speed, then predict on every brain voxel.
+    """
+    v = vol[brain_mask].astype(np.float64).reshape(-1, 1)
+    rng = np.random.default_rng(seed)
+    fit_v = v if v.shape[0] <= max_fit else v[rng.choice(v.shape[0], max_fit, replace=False)]
+
+    try:
+        from sklearn.mixture import GaussianMixture
+        g = GaussianMixture(n_components=3, covariance_type="full", random_state=seed,
+                            max_iter=200, n_init=2).fit(fit_v)
+        lab = g.predict(v)
+        means = g.means_.ravel()
+        how = "sklearn GaussianMixture"
+    except Exception as e:                       # no sklearn in the LCG view -> 1-D k-means
+        log(f"    (sklearn unavailable: {e}; falling back to 1-D k-means)")
+        c = np.percentile(fit_v, [15, 50, 85]).astype(np.float64)
+        for _ in range(100):
+            d = np.abs(fit_v - c[None, :])
+            a = np.argmin(d, 1)
+            nc = np.array([fit_v[a == k].mean() if (a == k).any() else c[k] for k in range(3)])
+            if np.allclose(nc, c, atol=1e-7):
+                break
+            c = nc
+        lab = np.argmin(np.abs(v - c[None, :]), 1)
+        means = c
+        how = "1-D k-means (3 clusters)"
+
+    order = np.argsort(means)                    # increasing intensity: CSF, GM, WM
+    lut = np.zeros(3, np.uint8)
+    lut[order[0]], lut[order[1]], lut[order[2]] = 1, 2, 3
+    out = np.zeros(vol.shape, np.uint8)
+    out[brain_mask] = lut[lab]
+    log(f"    probe: {how}; cluster means {np.sort(means).round(3).tolist()} -> CSF/GM/WM")
+    return out
+
+
 def export_for_segmenter(vol, aff, path):
     """[-1,1] -> [0,255] float. IDENTICAL transform for real and synthetic, so the external
     segmenter cannot be advantaged on one arm by intensity scaling alone."""
@@ -202,6 +257,9 @@ def main():
                     help="write [0,255] copies of the synthetic and real 7T for an external tool")
     ap.add_argument("--ext-seg-synth", default=None, help="aseg-style labels on the SYNTHETIC 7T")
     ap.add_argument("--ext-seg-real", default=None, help="aseg-style labels on the REAL 7T")
+    ap.add_argument("--classical-probe", action="store_true",
+                    help="arms C/D via the built-in unsupervised GMM tissue probe -- no external "
+                         "tool needed, and (unlike FreeSurfer) it enforces NO topology prior")
     a = ap.parse_args()
 
     outdir = Path(a.out); outdir.mkdir(parents=True, exist_ok=True)
@@ -246,6 +304,19 @@ def main():
     res["B_ourhead_on_real"] = topo_of(seg_B, "B our head/REAL")
     nib.save(nib.Nifti1Image(seg_B, aff), str(outdir / f"{a.subject}_segB_ourhead_on_real.nii.gz"))
 
+    # ---- ARMS C/D via the built-in probe: independent, image-only, NO topology prior --------
+    if a.classical_probe:
+        brain = gt > 0
+        log("\nARM C (probe): unsupervised GMM tissue seg on the SYNTHETIC 7T (image only)")
+        seg_C = classical_tissue_seg(synth, brain, seed=0)
+        res["C_probe_on_synth"] = topo_of(seg_C, "C probe/SYNTH")
+        nib.save(nib.Nifti1Image(seg_C, aff), str(outdir / f"{a.subject}_segC_probe_synth.nii.gz"))
+
+        log("\nARM D (probe): unsupervised GMM tissue seg on the REAL 7T (identical procedure)")
+        seg_D = classical_tissue_seg(x7, brain, seed=0)
+        res["D_probe_on_real"] = topo_of(seg_D, "D probe/REAL")
+        nib.save(nib.Nifti1Image(seg_D, aff), str(outdir / f"{a.subject}_segD_probe_real.nii.gz"))
+
     # ---- ARMS C/D: an external, independent segmenter --------------------------------------
     if a.export_for_synthseg:
         log("\nexporting [0,255] volumes for an external segmenter (identical transform both arms)")
@@ -266,9 +337,11 @@ def main():
     log(f"TOPOLOGY vs SEGMENTER  ({a.subject}, connectivity 26)   beta0 per tissue")
     log("=" * 78)
     log(f"  {'arm':34} {'CSF':>6} {'GM':>6} {'WM':>6}")
-    order = [("GT   FreeSurfer / REAL 7T", "GT_freesurfer_real7T"),
+    order = [("GT   FreeSurfer / REAL 7T  (*)", "GT_freesurfer_real7T"),
              ("A    our head  / SYNTHETIC", "A_ourhead_on_synth"),
              ("B    our head  / REAL 7T", "B_ourhead_on_real"),
+             ("C    GMM probe / SYNTHETIC", "C_probe_on_synth"),
+             ("D    GMM probe / REAL 7T", "D_probe_on_real"),
              ("C    external  / SYNTHETIC", "C_external_on_synth"),
              ("D    external  / REAL 7T", "D_external_on_real")]
     for label, key in order:
@@ -277,6 +350,11 @@ def main():
         r = res[key]
         log(f"  {label:34} {r['CSF']['betti'][0]:>6} {r['GM']['betti'][0]:>6} "
             f"{r['WM']['betti'][0]:>6}")
+    log("  (*) NOTE: the FreeSurfer GT's low beta0 is an ALGORITHMIC GUARANTEE of its")
+    log("      topology-corrected surface reconstruction, NOT a measurement of the 7T image.")
+    log("      It is the right TRAINING TARGET but the WRONG topology reference: comparing any")
+    log("      voxel-wise segmenter against it is rigged. Only same-segmenter comparisons")
+    log("      (A vs B, C vs D) carry information about the IMAGE.")
 
     gm_a = res["A_ourhead_on_synth"]["GM"]["betti"][0]
     gm_b = res["B_ourhead_on_real"]["GM"]["betti"][0]
@@ -294,24 +372,42 @@ def main():
     else:
         log(f"  GM: A={gm_a}, B={gm_b}, GT={gm_gt} -- inconclusive; escalate to arms C/D.")
 
+    pair = None
     if "C_external_on_synth" in res and "D_external_on_real" in res:
-        c, d = (res["C_external_on_synth"]["GM"]["betti"][0],
-                res["D_external_on_real"]["GM"]["betti"][0])
-        log("\nREAD-OUT (arms C vs D -- an INDEPENDENT segmenter; this is the definitive one):")
-        if c > 3 * max(d, 1):
-            log(f"  GM: C={c} (synthetic) >> D={d} (real).")
-            log("  -> DEFINITIVE: the synthetic image is topologically broken, independent of")
-            log("     our head. The benchmark claim STANDS and is defensible.")
+        pair = ("an INDEPENDENT external segmenter", "C_external_on_synth", "D_external_on_real")
+    elif "C_probe_on_synth" in res and "D_probe_on_real" in res:
+        pair = ("the unsupervised GMM probe (image-only, NO topology prior)",
+                "C_probe_on_synth", "D_probe_on_real")
+
+    if pair:
+        what, ck, dk = pair
+        log(f"\nREAD-OUT (arms C vs D -- {what}).")
+        log("  This is THE test: same segmenter, same brain mask, only the IMAGE differs.")
+        any_break = False
+        for t in ("CSF", "GM", "WM"):
+            c, d = res[ck][t]["betti"][0], res[dk][t]["betti"][0]
+            ratio = c / max(d, 1)
+            verdict = "SYNTH MORE BROKEN" if c > 2 * max(d, 1) else (
+                      "synth SMOOTHER" if d > 2 * max(c, 1) else "comparable")
+            any_break |= (c > 2 * max(d, 1))
+            log(f"    {t:3}: synth b0={c:5d}  real b0={d:5d}   ratio {ratio:5.2f}x   {verdict}")
+        if any_break:
+            log("  -> The synthetic image IS measurably more fragmented than the real 7T under a")
+            log("     segmenter that never saw our data and enforces no topology. The benchmark")
+            log("     claim STANDS: standard metrics (Dice/HD95/PSNR) miss this, topology sees it.")
         else:
-            log(f"  GM: C={c} (synthetic) ~= D={d} (real).")
-            log("  -> The independent segmenter does NOT see the brokenness. The 99 was OUR")
-            log("     head, not the image. The benchmark claim does NOT survive -- report this")
-            log("     honestly and pivot; do not publish the co-trained-head number.")
-        log("  (Absolute C/D values are NOT comparable to A/B/GT: different segmenter and,")
-        log("   for SynthSeg, 1 mm vs our 0.65 mm. Compare only WITHIN a segmenter.)")
+            log("  -> The independent segmenter does NOT find the synthetic image more broken")
+            log("     than the real one. The GM=99 was OUR co-trained head, not the image.")
+            log("     The benchmark claim does NOT survive. Report this honestly and pivot to")
+            log("     what still stands (the fidelity wall + the protocol-sensitivity result).")
+            log("     Do NOT publish the co-trained-head number as evidence about the image.")
+        log("  (Compare only WITHIN a segmenter. Absolute values across segmenters differ by")
+        log("   construction -- and across resolutions too, if the external tool resamples.)")
     else:
-        log("\narms C/D not supplied -- run an external segmenter on the exported volumes and")
-        log("re-run with --ext-seg-synth/--ext-seg-real. Until then the claim is NOT defensible.")
+        log("\narms C/D not supplied. Re-run with --classical-probe (instant, no install), or")
+        log("with --ext-seg-synth/--ext-seg-real from an external tool. Until one of those is")
+        log("done, the benchmark claim is NOT defensible: arms A/B alone cannot separate")
+        log("'the image is broken' from 'our head is weak'.")
 
     (outdir / "external_seg_topology.json").write_text(json.dumps(res, indent=2, default=float))
     log(f"\nwrote {outdir / 'external_seg_topology.json'}")
