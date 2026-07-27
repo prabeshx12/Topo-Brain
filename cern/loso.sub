@@ -26,10 +26,9 @@ request_gpus   = 1
 request_cpus   = 4
 request_memory = 16 GB
 
-# stream logs live (default transfers only at job end)
-stream_output = True
-stream_error  = True
-
+# NOTE: stream_output/stream_error REMOVED -- CERN disabled live streaming end-Nov-2025.
+# Watch progress via each fold's train_history.json on EOS, or ls the checkpoint dirs.
+#
 # espresso=20m microcentury=1h longlunch=2h workday=8h tomorrow=1d testmatch=3d
 +JobFlavour  = "tomorrow"
 

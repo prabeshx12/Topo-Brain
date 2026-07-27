@@ -9,7 +9,12 @@
 #   chmod +x ~/detached_submit/run_detached.sh
 #   cd ~/detached_submit && condor_submit detached.sub
 #   condor_q                       (Idle -> Running -> gone = done)
-#   tail -f ~/detached_submit/logs/detached.*.out
+#
+# MONITORING (live streaming was disabled by CERN end-Nov-2025): the .out/.err files only
+# appear when the job FINISHES. To watch progress live, read the training curve, which the
+# trainer flushes to EOS every log step:
+#   tail -f /eos/user/p/ppokhrel/topobrain/runs/phase3_detached/train_history.json
+#   ls -lh  /eos/user/p/ppokhrel/topobrain/runs/phase3_detached/   (checkpoints every 5k steps)
 #
 # HTCondor does NOT allow inline '#' after a value -- keep comments on their own lines.
 # ============================================================================
@@ -22,9 +27,6 @@ log          = logs/detached.$(ClusterId).log
 request_gpus   = 1
 request_cpus   = 4
 request_memory = 16 GB
-
-stream_output = True
-stream_error  = True
 
 # espresso=20m microcentury=1h longlunch=2h workday=8h tomorrow=1d testmatch=3d
 +JobFlavour  = "tomorrow"
