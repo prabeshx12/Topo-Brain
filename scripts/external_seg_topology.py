@@ -166,18 +166,29 @@ def tiled_seg_head(model, img_vol, x3_vol, dev, patch=64, overlap=32):
     return np.argmax(sacc, 0).astype(np.uint8)
 
 
-def topo_of(seg, name):
-    """Betti + component count per tissue, with the honest metrics (connectivity 26)."""
+def topo_of(seg, name, b0_only=False):
+    """beta0 (+ optionally full Betti) and component count per tissue, connectivity 26.
+
+    b0_only=True skips gudhi entirely: beta0 == the number of 26-connected components, which
+    ndimage.label computes in ~1 s vs gudhi's minutes. For the circular-evaluation / over-
+    smoothing result beta0 IS the whole story (b1/b2 are unused), so this turns the n=10 sweep
+    from hours into minutes. betti is stored as [b0, None, None] in that mode; n_cc is always the
+    beta0 source downstream, so old (full-gudhi) and new (b0-only) runs aggregate identically.
+    """
     out = {}
     for lb, tname in TISSUES.items():
         m = seg == lb
         t0 = time.perf_counter()
-        b0, b1, b2 = mh.betti_numbers(m, 26)
-        ncc, lcc = mh.connected_components(m, 26)
+        ncc, lcc = mh.connected_components(m, 26)          # ncc == beta0, cheap (ndimage.label)
+        if b0_only:
+            b0, b1, b2, euler = ncc, None, None, None
+        else:
+            b0, b1, b2 = mh.betti_numbers(m, 26)           # gudhi persistence: slow
+            euler = b0 - b1 + b2
         out[tname] = {"betti": [b0, b1, b2], "n_cc": ncc, "largest_cc_frac": round(lcc, 4),
-                      "euler": b0 - b1 + b2, "voxels": int(m.sum())}
-        log(f"    {name:26} {tname:3}: b0={b0:5d} b1={b1:4d} b2={b2:3d}  "
-            f"cc={ncc:5d}  [{time.perf_counter()-t0:.0f}s]")
+                      "euler": euler, "voxels": int(m.sum())}
+        extra = "" if b0_only else f" b1={b1:4d} b2={b2:3d}"
+        log(f"    {name:26} {tname:3}: b0={b0:5d}{extra}  cc={ncc:5d}  [{time.perf_counter()-t0:.0f}s]")
     return out
 
 
@@ -260,6 +271,10 @@ def main():
     ap.add_argument("--classical-probe", action="store_true",
                     help="arms C/D via the built-in unsupervised GMM tissue probe -- no external "
                          "tool needed, and (unlike FreeSurfer) it enforces NO topology prior")
+    ap.add_argument("--b0-only", action="store_true",
+                    help="skip gudhi; report beta0 = connected components only (~1s vs minutes). "
+                         "beta0 is all the circularity/over-smoothing result needs -- use for the "
+                         "n=10 sweep to keep each subject to a couple of minutes.")
     a = ap.parse_args()
 
     outdir = Path(a.out); outdir.mkdir(parents=True, exist_ok=True)
@@ -275,7 +290,7 @@ def main():
 
     # ---- the reference the model was trained against -------------------------------------
     log("\nGT  (FreeSurfer aparc+aseg of the REAL 7T, the training reference)")
-    res["GT_freesurfer_real7T"] = topo_of(gt, "GT/real7T")
+    res["GT_freesurfer_real7T"] = topo_of(gt, "GT/real7T", a.b0_only)
 
     # ---- the synthetic volume -------------------------------------------------------------
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -296,12 +311,12 @@ def main():
     else:
         log("\nARM A: full model on the 3T -> synthetic 7T + its segmentation")
         synth, seg_A = tiled_full(model, x3, dev)
-    res["A_ourhead_on_synth"] = topo_of(seg_A, "A our head/SYNTH")
+    res["A_ourhead_on_synth"] = topo_of(seg_A, "A our head/SYNTH", a.b0_only)
 
     # ---- ARM B: the controlled swap -- same head, same 3T, REAL image ---------------------
     log("\nARM B: our head on the REAL 7T (ONLY the image channel swapped; weights + 3T fixed)")
     seg_B = tiled_seg_head(model, x7, x3, dev)
-    res["B_ourhead_on_real"] = topo_of(seg_B, "B our head/REAL")
+    res["B_ourhead_on_real"] = topo_of(seg_B, "B our head/REAL", a.b0_only)
     nib.save(nib.Nifti1Image(seg_B, aff), str(outdir / f"{a.subject}_segB_ourhead_on_real.nii.gz"))
 
     # ---- ARMS C/D via the built-in probe: independent, image-only, NO topology prior --------
@@ -309,12 +324,12 @@ def main():
         brain = gt > 0
         log("\nARM C (probe): unsupervised GMM tissue seg on the SYNTHETIC 7T (image only)")
         seg_C = classical_tissue_seg(synth, brain, seed=0)
-        res["C_probe_on_synth"] = topo_of(seg_C, "C probe/SYNTH")
+        res["C_probe_on_synth"] = topo_of(seg_C, "C probe/SYNTH", a.b0_only)
         nib.save(nib.Nifti1Image(seg_C, aff), str(outdir / f"{a.subject}_segC_probe_synth.nii.gz"))
 
         log("\nARM D (probe): unsupervised GMM tissue seg on the REAL 7T (identical procedure)")
         seg_D = classical_tissue_seg(x7, brain, seed=0)
-        res["D_probe_on_real"] = topo_of(seg_D, "D probe/REAL")
+        res["D_probe_on_real"] = topo_of(seg_D, "D probe/REAL", a.b0_only)
         nib.save(nib.Nifti1Image(seg_D, aff), str(outdir / f"{a.subject}_segD_probe_real.nii.gz"))
 
     # ---- ARMS C/D: an external, independent segmenter --------------------------------------
