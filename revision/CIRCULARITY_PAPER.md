@@ -121,7 +121,65 @@ GM, synth/real beta-0 ratio, per subject:
 - [ ] FastSurfer/SynthSeg as a second independent judge — try to install.
 - [ ] Metric-inflation reproduction subsection — mostly have the numbers.
 
-## Venue
+## How to pitch it (framing for maximum HONEST impact)
 
-MELBA (free, best scope fit) primary; Scientific Reports / IEEE Access as reputable/fast
-fallbacks; IET resubmission as the warm-lead backup. MICCAI/SASHIMI workshops closed until 2027.
+The paper is a *finding*, not a method. Pitch the finding, and pitch it as a general principle
+with a concrete fix. The moves, in order:
+
+1. **Lead with the reversal, quantified.** "A generator-coupled segmenter certifies synthetic
+   grey matter as anatomically preserved (median synth/real beta-0 = 0.98); an independent
+   segmenter shows the same images are ~10x topologically simpler than real. The verdict reverses
+   in 9 of 10 subjects." Concrete numbers up front.
+2. **State it as a leakage law, not a one-off.** Any learned structural-fidelity metric that
+   shares data, features, or joint training with the generator measures the generator's own bias,
+   not anatomy -- the synthesis-evaluation analogue of train/test leakage. This makes it general.
+3. **The credibility hook = consistency.** Independent synth/real ratio is 0.09-0.12 in EVERY
+   subject; held-out (06,07) behave identically to in-sample -> not overfitting. Tight, reproducible.
+4. **The "so what" = a protocol.** Only an independent, real-data-trained segmenter is an
+   admissible structural judge; segmentation-consistency results that used coupled segmenters
+   should be re-examined. Give reviewers an actionable prescription.
+5. **Anchor in the Metrics-Reloaded lineage** (Nat. Methods 2023/24) -- extends a respected,
+   high-profile evaluation-pitfalls literature to synthesis. Reputable frame, not a lone claim.
+6. **Own the scope.** "We demonstrate the *existence and mechanism* of the failure mode" -- not
+   universal magnitudes. Existence + mechanism is defensible at n=10; magnitude claims are not.
+
+## Venue ladder (most reputable realistic first)
+
+Probabilities assume the strengtheners (dose-response + cross-method rank-flip) land; the core
+9/10 alone is weaker. "Most reputable" splits two ways -- measurable IF vs community prestige.
+
+**TARGET TIER (aim here):**
+- **Scientific Reports** (Nature Portfolio) -- **Q1, IF 4.9**, soundness-based (novelty NOT
+  required), ~20-day first decision, ~$2.2k APC. The strongest *measurable* credential realistically
+  reachable; "no new method" is not a rejection reason. **Recommended primary for a student CV.**
+- **MELBA** (Machine Learning for Biomedical Imaging) -- best scope fit (evaluation studies
+  explicitly welcomed), MICCAI/MIDL-elite board, **free (diamond OA)**. Highest *community*
+  prestige for this content; caveat: **no JCR IF yet**. Recommended if you value fit/prestige over
+  the IF box-tick, or want a free option.
+
+**SOLID / FAST FALLBACK:**
+- **IEEE Access** -- Q2, IF 4.2, fastest (3-6 wk), soundness-based. The speed option.
+- **Journal of Imaging (MDPI)** -- IF 3.8, fast, good fit, ~$2k APC.
+
+**WARM LEAD:**
+- **IET Image Processing** -- Q3, IF 2.2; you hold a resubmission invitation. Fits the metric-
+  validation angle, but spends the warm lead on a Q3 outcome.
+
+**REACH (low probability at n=10; needs Beijing + multi-method breadth to be viable):**
+- **NeuroImage** -- Q1, IF ~5. A genuine stretch ONLY with the external-cohort replication +
+  cross-method results; do not submit here on the core alone.
+- **IEEE TMI / Medical Image Analysis** -- top-tier; realistically require a comprehensive,
+  multi-dataset, multi-method study. Named for completeness; not a realistic first target now.
+
+**What unlocks the reach tier:** dose-response (mechanism, in progress) + cross-method rank-flip
+(generality) + **Beijing 20-subject external replication** (cross-site breadth) turns "possible at
+Sci Reports/MELBA" into "likely there, and a real shot at NeuroImage."
+
+**Recommendation:** target **Scientific Reports** (Q1/IF for the CV) or **MELBA** (fit/free) with
+the strengtheners done; hold Beijing to either de-risk those or reach for NeuroImage. MICCAI/SASHIMI
+workshops are closed until 2027.
+
+**Note:** the Metrics-Reloaded landmark itself was in *Nature Methods* -- proof that evaluation-
+pitfalls work CAN reach the very top. But that was a large, multi-institution, comprehensive
+effort. Ours is a focused single finding; the honest ceiling is the target tier above unless the
+scope grows substantially.
