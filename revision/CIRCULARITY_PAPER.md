@@ -113,10 +113,34 @@ GM, synth/real beta-0 ratio, per subject:
 - **No new synthesis method / no clinical claim.** The AD downstream is a one-paragraph caveat
   (synthetic-7T AUC 0.66 < native-3T 0.82, n=30, underpowered) — not a contribution.
 
+## Dose-response result (DONE — the coupling axis)
+
+Segmenter GM synth/real beta-0 ratio (median over 10 subjects) as coupling to the generator
+decreases -- MONOTONIC, bias scales with coupling:
+
+| coupling | ratio | reads as |
+|---|---|---|
+| joint (P3, gradient-coupled) | **0.98** | "preserved" (maximally self-confirming) |
+| detached (`--detach-seg`, trained on outputs, no gradient) | **0.41** | partially reveals over-smoothing |
+| independent (GMM probe, uncoupled) | **~0.10** | "~10x over-smoothed" |
+
+This is the paper's key figure: the segmenter's certification of fidelity is a dose-response in
+its coupling to the generator. Report the CONTINUOUS ratio (0.98->0.41->0.10), not the binary
+reversal count (which drops 9/10 -> 2/10 precisely because decoupling already starts revealing
+the defect). Detached checkpoint verified: detach_seg=True, lam_topo=0, val0/test1 (compute-
+matched to P3).
+
+**Confound to close for submission:** joint vs detached have different generators. The airtight
+version applies ALL THREE segmenters (joint head, detached head, GMM) to the SAME images, isolating
+segmenter-coupling from generator differences. Cheap; do before submission. Partial defense
+already present: the independent judge rates both models' synth as severely over-smoothed
+(0.10 vs 0.04), while the co-trained verdict swings far more (0.98 vs 0.41) than true quality does.
+
 ## Experiment status
 
 - [x] Core circularity, n=10 (co-trained vs independent), GM reversal 9/10 — DONE.
-- [ ] Dose-response middle point (detached-head run) — TRAINING (condor).
+- [x] Dose-response (joint 0.98 -> detached 0.41 -> independent 0.10) — DONE.
+- [ ] Confound-free variant: 3 segmenters on the SAME images — small eval, do before submission.
 - [ ] Cross-method rank-flip: FR-U-Net + pix2pix — pending GPU.
 - [ ] FastSurfer/SynthSeg as a second independent judge — try to install.
 - [ ] Metric-inflation reproduction subsection — mostly have the numbers.
