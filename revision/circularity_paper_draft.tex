@@ -1,0 +1,223 @@
+% =============================================================================
+%  DRAFT manuscript -- the circular-evaluation paper (reframed from TopoBrain).
+%  New file; does NOT touch paper_iet/paper.tex (the old, refuted paper).
+%  Venue-neutral article class for now (reformat to Sci Reports / MELBA / IEEE later).
+%  Numbers marked [PENDING] await the confound-free eval and the cross-method baselines.
+%  Everything else is the real, verified n=10 result.
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{lineno}\linenumbers
+
+\title{\bfseries Self-Confirming Fidelity: A Generator-Coupled Segmenter Masks
+Over-Smoothing that an Independent Segmenter Reveals in MRI Synthesis Evaluation}
+\author{P.\ Bashyal, P.\ Adhikari, S.\ Bhandari, N.\ B.\ Adhikari\\
+\small Department of Electronics and Computer Engineering, Pulchowk Campus, IOE, Tribhuvan University}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Structural-fidelity claims for synthesised MRI are increasingly supported by
+segmentation-based evaluation: a segmentation network judges whether synthetic anatomy is
+preserved. We show that this practice is \emph{circular} when the segmenter is coupled to the
+generator, and that the circularity is large enough to invert the conclusion. Using paired
+3\,T/7\,T brain MRI (10 subjects) and a deterministic 3T$\rightarrow$7T translation network with an
+auxiliary segmentation head, we measure the topology (connected-component count, $\beta_0$) of
+synthetic grey matter under two judges applied to the \emph{identical} images: the model's own
+co-trained head, and an independent segmenter that never saw the generator. The co-trained head
+rates synthetic grey matter as structurally comparable to real 7\,T (median synthetic/real
+$\beta_0$ ratio $0.98$), whereas the independent segmenter shows it is roughly ten times
+topologically simpler---severe over-smoothing (median ratio $0.10$). The verdict reverses in
+9 of 10 subjects, including both held-out subjects, so it is a property of the metric, not of
+overfitting. The bias is a dose-response in coupling: as the segmenter is decoupled from the
+generator (joint $\rightarrow$ detached $\rightarrow$ independent), its certification of fidelity
+weakens monotonically ($0.98 \rightarrow 0.41 \rightarrow 0.10$). We further show that standard
+whole-volume PSNR/SSIM overstate fidelity by ${\sim}8$\,dB / $0.45$ SSIM relative to brain-masked
+metrics. We conclude that only an independent, real-data-trained segmenter is an admissible
+structural judge for synthesis, and release the evaluation protocol.
+\end{abstract}
+
+\section{Introduction}
+Cross-field-strength MRI synthesis (e.g.\ 3T$\rightarrow$7T) is evaluated less and less by
+intensity metrics alone, because PSNR/SSIM are known to miss clinically relevant morphological
+error. A common response is to evaluate \emph{structural} fidelity with a segmentation network:
+segment the synthetic image, and check that its anatomy matches the target. When the segmenter is
+\emph{coupled} to the generator---jointly trained, or sharing features or data---this evaluation
+can confirm itself: the metric was optimised to like exactly the outputs it is now asked to judge.
+
+We show this failure mode is real, and large. On paired 3T/7T brain MRI, a segmentation head
+co-trained with a 3T$\rightarrow$7T generator certifies that synthetic grey-matter topology is
+preserved; an independent segmenter applied to the same synthetic images shows the opposite---the
+grey matter is roughly ten times topologically simpler than real 7\,T, the signature of
+over-smoothing. The verdict \emph{reverses} depending only on which segmenter judges it, in 9 of
+10 subjects. We further show the effect scales with coupling.
+
+The contribution is a validation-methodology finding, not a synthesis method; the translation
+network is a demonstration vehicle. Our contributions are:
+\begin{enumerate}
+\item The first empirical demonstration that a generator-coupled segmenter yields a
+self-confirming structural-fidelity verdict for medical image synthesis, and that an independent
+segmenter reverses it, with a consistent, quantified effect (Section~\ref{sec:reversal}).
+\item Evidence that the bias is a \emph{dose-response} in coupling: joint $0.98\rightarrow$
+detached $0.41\rightarrow$ independent $0.10$ (Section~\ref{sec:dose}).
+\item A protocol prescription---only an independent, real-data-trained segmenter is an admissible
+structural judge---together with a corroborating account of whole-volume metric inflation
+(Section~\ref{sec:inflation}).
+\end{enumerate}
+
+\section{Related work}
+This work extends the evaluation-pitfalls literature---exemplified by \emph{Metrics Reloaded}
+\cite{maierhein2024metricsreloaded} and the ``common limitations of image-processing metrics''
+programme---from segmentation/detection to \emph{generative synthesis}. Deo et al.\
+\cite{deo2025metrics} show that no-reference image-quality metrics miss localised morphological
+changes and advocate downstream-task evaluation; Dohmen et al.\ \cite{dohmen2025similarity}
+analyse similarity/quality metrics for MR image-to-image translation. Neither contrasts a
+co-trained against an independent judge, nor reports a verdict reversal. In 3T$\rightarrow$7T
+synthesis specifically, Acs and Zhuang \cite{acs2025semisupervised} evaluate with an
+\emph{independent} segmentation pipeline---thereby avoiding the bias we identify without naming or
+measuring it. Coupled segmenters are, meanwhile, routinely built \emph{into} generator training
+(shape- and cycle-consistency losses \cite{zhang2018translating}); we show that grading such models
+with their own segmenter is circular. Topology in generative MRI has been used as a
+generation-time prior (e.g.\ persistence-guided diffusion \cite{bhattacharya2025brainmrdiff}),
+not as an evaluation diagnostic of output complexity.
+
+\section{Materials and methods}
+\paragraph{Data.} Ten healthy adults with paired 3\,T and 7\,T T1-weighted volumes
+(0.65\,mm isotropic), resampled to a common grid. A complete FreeSurfer \texttt{aparc+aseg}
+parcellation of each real 7\,T volume is mapped to a 4-class tissue label
+(background, CSF, grey matter (GM), white matter (WM)) and used only as \emph{training}
+supervision for the auxiliary head---not as a topology reference (see Section~\ref{sec:reversal}).
+
+\paragraph{Model (a vehicle, not a contribution).} A deterministic cascaded translation network
+maps a 3\,T volume to a synthetic 7\,T image via a 3D U-Net generator, and an auxiliary
+segmentation head reads the generated image to predict tissue class. The head is trained jointly
+with the generator; because its input is the generator's output, it is \emph{coupled} to the
+generator. Training is deterministic and seeded; the same model is used throughout.
+
+\paragraph{Two-judge evaluation.} For each subject we obtain the synthetic 7\,T image and score its
+grey-matter topology under two segmenters applied to the identical image within an identical brain
+mask: (i) the model's own \emph{co-trained head}; (ii) an \emph{independent} judge---an
+unsupervised three-class Gaussian-mixture tissue segmentation of the image intensities, which never
+saw our training data, reads only the image (no conditioning), and---crucially---enforces no
+topology prior. We report per-tissue $\beta_0$ (the number of 26-connected components), and the
+synthetic-vs-real ratio $r = \beta_0(\text{synthetic})/\beta_0(\text{real})$: $r\!\approx\!1$ reads
+as ``structurally comparable / preserved''; $r\!\ll\!1$ reads as ``over-smoothed'' (the synthetic
+tissue is far simpler than real). Comparisons are made only \emph{within} a judge, never across
+judges, since absolute $\beta_0$ is segmenter- and threshold-dependent.
+
+\paragraph{Why FreeSurfer is not the reference.} A FreeSurfer $\beta_0$ is an algorithmic guarantee
+of its topology-corrected surface reconstruction, not a measurement of the image; comparing any
+voxel-wise segmenter to it is confounded. Hence the within-judge synthetic-vs-real design.
+
+\paragraph{Dose-response.} To test whether the bias tracks coupling, we additionally train a
+\emph{detached} variant---identical in every respect (same split, iterations, losses) except that
+the segmentation head's gradient is stopped before the generator, so the head is trained on the
+generator's outputs but does not shape them. This gives a coupling axis:
+joint (gradient-coupled) $\rightarrow$ detached (output-coupled) $\rightarrow$ independent
+(uncoupled).
+
+\section{Results}
+\subsection{The verdict reverses with the choice of segmenter}\label{sec:reversal}
+Table~\ref{tab:reversal} reports the grey-matter synthetic/real $\beta_0$ ratio under each judge,
+per subject. The co-trained head certifies synthetic grey matter as structurally comparable to real
+7\,T (median $r=0.98$). The independent segmenter, on the same images, shows it is roughly ten
+times topologically simpler (median $r=0.10$; per-subject $0.09$--$0.12$, i.e.\ tight). The verdict
+reverses (co-trained ``preserved'', independent ``over-smoothed'') in 9 of 10 subjects. The two
+\emph{held-out} subjects behave identically to the eight in-sample ones, so the reversal is a
+property of the metric, not of the model having memorised the training subjects. The effect is
+specific to grey matter, the most structurally complex tissue; for CSF and WM both judges agree the
+synthesis is over-smoothed (no reversal), which we report as-is.
+
+\begin{table}[t]\centering
+\caption{Grey-matter synthetic/real $\beta_0$ ratio by judge (10 subjects). Co-trained head
+$\approx 1$ (``preserved''); independent segmenter $\approx 0.1$ (``$\sim$10$\times$ over-smoothed'').
+Reversal in 9/10.}\label{tab:reversal}
+\begin{tabular}{lcc}
+\toprule
+Judge & median ratio & reads as \\
+\midrule
+Co-trained head (coupled)     & 0.98 & preserved \\
+Independent GMM (uncoupled)   & 0.10 & $\sim$10$\times$ over-smoothed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The bias scales with coupling}\label{sec:dose}
+Table~\ref{tab:dose} reports the same grey-matter ratio as the segmenter is decoupled from the
+generator. It decreases monotonically---joint $0.98 \rightarrow$ detached $0.41 \rightarrow$
+independent $0.10$---so the segmenter's certification of fidelity is a dose-response in its coupling
+to the generator. The continuous ratio is the effect; the binary reversal count (9/10 at joint,
+2/10 at detached) drops precisely because decoupling already begins to reveal the defect.
+
+\begin{table}[t]\centering
+\caption{Grey-matter synthetic/real $\beta_0$ ratio (median, 10 subjects) vs.\ segmenter--generator
+coupling. Monotonic: bias scales with coupling.}\label{tab:dose}
+\begin{tabular}{lcc}
+\toprule
+Coupling & median ratio & reads as \\
+\midrule
+Joint (gradient-coupled)      & 0.98 & preserved \\
+Detached (output-coupled)     & 0.41 & partially revealed \\
+Independent (uncoupled)       & 0.10 & over-smoothed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Isolating coupling from the generator.} The joint and detached arms use different
+generators, so the dose-response could in principle reflect generator differences rather than
+segmenter coupling. Two observations bound this: the independent judge rates both models' synthesis
+as severely over-smoothed ($0.10$ vs.\ $0.04$), while the \emph{co-trained} verdict swings far more
+($0.98$ vs.\ $0.41$) than the underlying quality does. \textbf{[PENDING]} a confound-free variant
+applies all three segmenters to the \emph{same} images, isolating segmenter coupling entirely.
+
+\subsection{Generality across methods}\label{sec:generality}
+\textbf{[PENDING]} To show the pitfall is not specific to one architecture, we reproduce two
+published synthesis models (FR-U-Net; pix2pix) on the same split and repeat the two-judge
+evaluation, testing whether the method ranking depends on which segmenter judges it.
+
+\subsection{Whole-volume metrics overstate fidelity}\label{sec:inflation}
+As a second, well-known-but-routinely-ignored pitfall in the same lineage, brain-masked SSIM/PSNR
+are substantially lower than the whole-volume values that dominate the literature
+(brain-masked ${\sim}0.45$ SSIM / ${\sim}14.3$\,dB vs.\ whole-volume ${\sim}0.90$ / ${\sim}21.5$\,dB;
+a ${\sim}0.45$ SSIM / ${\sim}8$\,dB inflation driven by the large, easy background), reproducing
+inflated headline figures reported in prior work.
+
+\section{Discussion}
+The finding generalises to a simple principle---a \emph{leakage law} for synthesis evaluation:
+any learned structural-fidelity metric that shares data, features, or joint training with the
+generator measures the generator's own bias, not anatomy. It is the generative-evaluation analogue
+of train/test leakage. The practical prescription follows directly: structural fidelity of
+synthesised images must be judged by an \emph{independent}, real-data-trained segmenter, and
+published results that used a coupled or co-trained segmenter for structural/segmentation-consistency
+evaluation should be re-examined. That the reversal is specific to grey matter is mechanistically
+consistent: a coupled segmenter can only mask a defect where the structure is complex enough to
+hide it; for simpler tissues even the coupled judge reports the over-smoothing.
+
+\section{Limitations}
+The cohort is small ($n=10$), healthy, and single-site; we therefore claim the \emph{existence and
+mechanism} of the failure mode, not universal magnitudes. Eight of ten subjects are in-sample for
+the trained model; this is acceptable because the claim is about the metric, and the two held-out
+subjects behave identically. The reversal is grey-matter-specific. The independent judge is an
+unsupervised intensity segmenter (no topology prior); a standard tool (FastSurfer/SynthSeg) as a
+second independent judge is left to strengthen the claim. $\beta_0$ is segmenter- and
+threshold-dependent, so we compare only within a judge. We make no clinical or diagnostic claim.
+
+\section{Conclusion}
+Whether synthetic MRI ``preserves anatomy'' can depend entirely on who is asked. A segmenter
+coupled to the generator certifies fidelity that an independent segmenter refutes, and the bias
+scales with coupling. Structural-fidelity evaluation of synthesis is only trustworthy when the
+judge is independent of the generator.
+
+\bibliographystyle{plain}
+% \bibliography{circularity}   % TODO: assemble .bib -- keys: maierhein2024metricsreloaded,
+% deo2025metrics, dohmen2025similarity, acs2025semisupervised, zhang2018translating,
+% bhattacharya2025brainmrdiff. NOTE: the paper previously miscited "Onofrey" -> correct is Dohmen.
+\end{document}
