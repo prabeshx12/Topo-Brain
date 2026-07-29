@@ -33,13 +33,14 @@ generator, and that the circularity is large enough to invert the conclusion. Us
 auxiliary segmentation head, we measure the topology (connected-component count, $\beta_0$) of
 synthetic grey matter under two judges applied to the \emph{identical} images: the model's own
 co-trained head, and an independent segmenter that never saw the generator. The co-trained head
-rates synthetic grey matter as structurally comparable to real 7\,T (median synthetic/real
-$\beta_0$ ratio $0.98$), whereas the independent segmenter shows it is roughly ten times
-topologically simpler---severe over-smoothing (median ratio $0.10$). The verdict reverses in
-9 of 10 subjects, including both held-out subjects, so it is a property of the metric, not of
-overfitting. The bias is a dose-response in coupling: as the segmenter is decoupled from the
-generator (joint $\rightarrow$ detached $\rightarrow$ independent), its certification of fidelity
-weakens monotonically ($0.98 \rightarrow 0.41 \rightarrow 0.10$). We further show that standard
+rates synthetic grey matter as structurally comparable to---or richer than---real 7\,T (median
+synthetic/real $\beta_0$ ratio $1.38$), whereas the independent segmenter, on the same images,
+shows it is roughly ten times topologically simpler---severe over-smoothing (median ratio $0.10$;
+$0.09$--$0.12$ in every subject). In all 10 subjects the coupled judge rates grey-matter topology
+$5$--$31\times$ higher than the independent judge, including both held-out subjects, so the reversal
+is a property of the metric, not of overfitting. The bias is a dose-response in coupling: with all
+three segmenters applied to the \emph{same} images, certification of fidelity weakens monotonically
+as the segmenter is decoupled from the generator ($1.38 \rightarrow 0.95 \rightarrow 0.10$). We further show that standard
 whole-volume PSNR/SSIM overstate fidelity by ${\sim}8$\,dB / $0.45$ SSIM relative to brain-masked
 metrics. We conclude that only an independent, real-data-trained segmenter is an admissible
 structural judge for synthesis, and release the evaluation protocol.
@@ -127,24 +128,27 @@ joint (gradient-coupled) $\rightarrow$ detached (output-coupled) $\rightarrow$ i
 \section{Results}
 \subsection{The verdict reverses with the choice of segmenter}\label{sec:reversal}
 Table~\ref{tab:reversal} reports the grey-matter synthetic/real $\beta_0$ ratio under each judge,
-per subject. The co-trained head certifies synthetic grey matter as structurally comparable to real
-7\,T (median $r=0.98$). The independent segmenter, on the same images, shows it is roughly ten
-times topologically simpler (median $r=0.10$; per-subject $0.09$--$0.12$, i.e.\ tight). The verdict
-reverses (co-trained ``preserved'', independent ``over-smoothed'') in 9 of 10 subjects. The two
-\emph{held-out} subjects behave identically to the eight in-sample ones, so the reversal is a
-property of the metric, not of the model having memorised the training subjects. The effect is
-specific to grey matter, the most structurally complex tissue; for CSF and WM both judges agree the
-synthesis is over-smoothed (no reversal), which we report as-is.
+all applied to identical images across the 10 subjects. The co-trained head certifies synthetic
+grey matter as structurally comparable to, or richer than, real 7\,T (median $r=1.38$). The
+independent segmenter, on the same images, shows it is roughly ten times topologically simpler
+(median $r=0.10$; per-subject $0.09$--$0.12$, i.e.\ tight). In every one of the 10 subjects the
+co-trained judge rates grey-matter topology $5$--$31\times$ higher than the independent judge:
+the two disagree on whether the synthesis preserved anatomy in all cases. The two \emph{held-out}
+subjects behave identically to the eight in-sample ones, so the reversal is a property of the
+metric, not of the model having memorised the training subjects. The effect is specific to grey
+matter, the most structurally complex tissue; for CSF and WM both judges agree the synthesis is
+over-smoothed (no reversal), which we report as-is.
 
 \begin{table}[t]\centering
-\caption{Grey-matter synthetic/real $\beta_0$ ratio by judge (10 subjects). Co-trained head
-$\approx 1$ (``preserved''); independent segmenter $\approx 0.1$ (``$\sim$10$\times$ over-smoothed'').
-Reversal in 9/10.}\label{tab:reversal}
+\caption{Grey-matter synthetic/real $\beta_0$ ratio by judge, identical images, 10 subjects.
+Co-trained head $\ge 1$ (``preserved / richer than real''); independent segmenter $\approx 0.1$
+(``$\sim$10$\times$ over-smoothed''). The coupled judge exceeds the independent by $5$--$31\times$
+in every subject.}\label{tab:reversal}
 \begin{tabular}{lcc}
 \toprule
 Judge & median ratio & reads as \\
 \midrule
-Co-trained head (coupled)     & 0.98 & preserved \\
+Co-trained head (coupled)     & 1.38 & preserved / richer than real \\
 Independent GMM (uncoupled)   & 0.10 & $\sim$10$\times$ over-smoothed \\
 \bottomrule
 \end{tabular}
@@ -154,33 +158,30 @@ Independent GMM (uncoupled)   & 0.10 & $\sim$10$\times$ over-smoothed \\
 To test whether the certification tracks coupling---and to rule out that generator differences drive
 it---we apply all three segmenters to the \emph{same} images (one generator's synthetic 7\,T and the
 real 7\,T). Any difference is then attributable to the segmenter's coupling alone.
-Table~\ref{tab:dose} shows the grey-matter synthetic/real $\beta_0$ ratio falling monotonically as
-the segmenter is decoupled from the generator: joint (gradient-coupled) $1.61 \rightarrow$ detached
-(output-coupled) $1.10 \rightarrow$ independent (uncoupled) $0.10$. On identical images, the
-certification is therefore a dose-response in coupling.
+Table~\ref{tab:dose} shows the grey-matter synthetic/real $\beta_0$ ratio (median over all 10
+subjects) falling monotonically as the segmenter is decoupled from the generator: joint
+(gradient-coupled) $1.38 \rightarrow$ detached (output-coupled) $0.95 \rightarrow$ independent
+(uncoupled) $0.10$. On identical images, the certification is therefore a dose-response in coupling.
 
-Two levels are visible. Any segmenter trained on the generator's outputs---joint \emph{or}
-detached---reports synthetic grey matter as structurally comparable to, or richer than, real
-($\ge 1$); only the fully independent segmenter reveals the over-smoothing ($0.10$). Being trained
-on the generator's outputs is thus the dominant leakage; gradient coupling adds a further increment
-($1.61$ vs.\ $1.10$). Equivalently, the coupled head is not merely optimistic---it reports the
-over-smoothed synthesis as \emph{more} structurally complex than the real image it fails to
-reproduce.
+Two levels are visible, of very different size. Any segmenter trained on the generator's outputs
+---joint \emph{or} detached---reports synthetic grey matter as comparable to, or richer than, real
+($0.95$--$1.38$); only the fully independent segmenter reveals the over-smoothing ($0.10$). Being
+trained on the generator's outputs at all is thus the \emph{dominant} leakage---a large step
+present in every subject---whereas gradient coupling adds only a smaller median increment
+($1.38$ vs.\ $0.95$) that is not consistent across every subject. Notably, the coupled head is not
+merely optimistic: it reports the over-smoothed synthesis as \emph{more} structurally complex than
+the real image it fails to reproduce.
 
-% TODO(camera-ready): unify the segmentation-application pipeline between Sec 4.1 (per-patch, n=10)
-% and this confound-free run (stitched, n=5) so the joint-head number is identical across sections;
-% re-run all 10 subjects through the single pipeline for the final tables. Qualitative result is
-% invariant to this (coupled >=1 "preserved", independent ~0.1 "over-smoothed", monotonic).
 \begin{table}[t]\centering
-\caption{Grey-matter synthetic/real $\beta_0$ ratio (median) with all three segmenters applied to
-the \emph{same} images, vs.\ segmenter--generator coupling. Monotonic: the bias is the segmenter's
-coupling, not the generator.}\label{tab:dose}
+\caption{Grey-matter synthetic/real $\beta_0$ ratio (median, 10 subjects) with all three segmenters
+applied to the \emph{same} images, vs.\ segmenter--generator coupling. Monotonic: the bias is the
+segmenter's coupling, not the generator.}\label{tab:dose}
 \begin{tabular}{lcc}
 \toprule
 Coupling (all judges, identical images) & median ratio & reads as \\
 \midrule
-Joint head (gradient-coupled)   & 1.61 & ``richer than real'' \\
-Detached head (output-coupled)  & 1.10 & preserved \\
+Joint head (gradient-coupled)   & 1.38 & ``richer than real'' \\
+Detached head (output-coupled)  & 0.95 & preserved \\
 Independent GMM (uncoupled)     & 0.10 & $\sim$10$\times$ over-smoothed \\
 \bottomrule
 \end{tabular}
