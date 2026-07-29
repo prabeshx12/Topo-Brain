@@ -1,0 +1,31 @@
+# ============================================================================
+# frunet.sub -- submit the FR-U-Net baseline training to HTCondor.
+#
+# SUBMIT FROM AFS, NOT /eos:
+#   cd /eos/user/p/ppokhrel/topobrain/Topo-Brain && git pull
+#   mkdir -p ~/frunet_submit/logs
+#   cp /eos/user/p/ppokhrel/topobrain/Topo-Brain/cern/run_frunet.sh ~/frunet_submit/
+#   cp /eos/user/p/ppokhrel/topobrain/Topo-Brain/cern/frunet.sub    ~/frunet_submit/
+#   chmod +x ~/frunet_submit/run_frunet.sh
+#   cd ~/frunet_submit && condor_submit frunet.sub
+#   condor_q
+#
+# Live streaming was disabled by CERN (end-Nov-2025); watch progress via EOS instead:
+#   tail -f /eos/user/p/ppokhrel/topobrain/runs/frunet_baseline/train_history.json
+#
+# HTCondor does NOT allow inline '#' after a value -- keep comments on their own lines.
+# ============================================================================
+executable   = run_frunet.sh
+
+output       = logs/frunet.$(ClusterId).$(ProcId).out
+error        = logs/frunet.$(ClusterId).$(ProcId).err
+log          = logs/frunet.$(ClusterId).log
+
+request_gpus   = 1
+request_cpus   = 4
+request_memory = 16 GB
+
+# espresso=20m microcentury=1h longlunch=2h workday=8h tomorrow=1d testmatch=3d
++JobFlavour  = "tomorrow"
+
+queue 1
