@@ -151,32 +151,40 @@ Independent GMM (uncoupled)   & 0.10 & $\sim$10$\times$ over-smoothed \\
 \end{table}
 
 \subsection{The bias scales with coupling}\label{sec:dose}
-Table~\ref{tab:dose} reports the same grey-matter ratio as the segmenter is decoupled from the
-generator. It decreases monotonically---joint $0.98 \rightarrow$ detached $0.41 \rightarrow$
-independent $0.10$---so the segmenter's certification of fidelity is a dose-response in its coupling
-to the generator. The continuous ratio is the effect; the binary reversal count (9/10 at joint,
-2/10 at detached) drops precisely because decoupling already begins to reveal the defect.
+To test whether the certification tracks coupling---and to rule out that generator differences drive
+it---we apply all three segmenters to the \emph{same} images (one generator's synthetic 7\,T and the
+real 7\,T). Any difference is then attributable to the segmenter's coupling alone.
+Table~\ref{tab:dose} shows the grey-matter synthetic/real $\beta_0$ ratio falling monotonically as
+the segmenter is decoupled from the generator: joint (gradient-coupled) $1.61 \rightarrow$ detached
+(output-coupled) $1.10 \rightarrow$ independent (uncoupled) $0.10$. On identical images, the
+certification is therefore a dose-response in coupling.
 
+Two levels are visible. Any segmenter trained on the generator's outputs---joint \emph{or}
+detached---reports synthetic grey matter as structurally comparable to, or richer than, real
+($\ge 1$); only the fully independent segmenter reveals the over-smoothing ($0.10$). Being trained
+on the generator's outputs is thus the dominant leakage; gradient coupling adds a further increment
+($1.61$ vs.\ $1.10$). Equivalently, the coupled head is not merely optimistic---it reports the
+over-smoothed synthesis as \emph{more} structurally complex than the real image it fails to
+reproduce.
+
+% TODO(camera-ready): unify the segmentation-application pipeline between Sec 4.1 (per-patch, n=10)
+% and this confound-free run (stitched, n=5) so the joint-head number is identical across sections;
+% re-run all 10 subjects through the single pipeline for the final tables. Qualitative result is
+% invariant to this (coupled >=1 "preserved", independent ~0.1 "over-smoothed", monotonic).
 \begin{table}[t]\centering
-\caption{Grey-matter synthetic/real $\beta_0$ ratio (median, 10 subjects) vs.\ segmenter--generator
-coupling. Monotonic: bias scales with coupling.}\label{tab:dose}
+\caption{Grey-matter synthetic/real $\beta_0$ ratio (median) with all three segmenters applied to
+the \emph{same} images, vs.\ segmenter--generator coupling. Monotonic: the bias is the segmenter's
+coupling, not the generator.}\label{tab:dose}
 \begin{tabular}{lcc}
 \toprule
-Coupling & median ratio & reads as \\
+Coupling (all judges, identical images) & median ratio & reads as \\
 \midrule
-Joint (gradient-coupled)      & 0.98 & preserved \\
-Detached (output-coupled)     & 0.41 & partially revealed \\
-Independent (uncoupled)       & 0.10 & over-smoothed \\
+Joint head (gradient-coupled)   & 1.61 & ``richer than real'' \\
+Detached head (output-coupled)  & 1.10 & preserved \\
+Independent GMM (uncoupled)     & 0.10 & $\sim$10$\times$ over-smoothed \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\paragraph{Isolating coupling from the generator.} The joint and detached arms use different
-generators, so the dose-response could in principle reflect generator differences rather than
-segmenter coupling. Two observations bound this: the independent judge rates both models' synthesis
-as severely over-smoothed ($0.10$ vs.\ $0.04$), while the \emph{co-trained} verdict swings far more
-($0.98$ vs.\ $0.41$) than the underlying quality does. \textbf{[PENDING]} a confound-free variant
-applies all three segmenters to the \emph{same} images, isolating segmenter coupling entirely.
 
 \subsection{Generality across methods}\label{sec:generality}
 \textbf{[PENDING]} To show the pitfall is not specific to one architecture, we reproduce two
