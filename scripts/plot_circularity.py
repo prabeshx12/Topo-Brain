@@ -42,6 +42,21 @@ def gm_ratios_reversal(path):
     return {k: v for k, v in out.items() if v[0] is not None and v[1] is not None}
 
 
+def gm_ratios_reversal_from_confound(path):
+    """Derive the reversal (coupled vs independent) from the confound-free run, so it is CONSISTENT
+    with the dose-response and the paper's final numbers: coupled = joint_head, independent = GMM."""
+    rows = json.load(open(path))
+    out = {}
+    for r in rows:
+        try:
+            jh = r["joint_head"]["synth"]["GM"]["n_cc"] / r["joint_head"]["real"]["GM"]["n_cc"]
+            gm = r["gmm_probe"]["synth"]["GM"]["n_cc"] / r["gmm_probe"]["real"]["GM"]["n_cc"]
+        except (KeyError, ZeroDivisionError):
+            continue
+        out[r["_subject"]] = (jh, gm)
+    return out
+
+
 def gm_ratios_dose(path):
     """From confound_free_dose output: per-subject GM ratio for each of the 3 judges (same images)."""
     rows = json.load(open(path))
@@ -113,13 +128,16 @@ def fig_dose(data, out):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--reversal-json", required=True)
+    ap.add_argument("--reversal-json", default=None,
+                    help="optional aggregate_circularity JSON; if omitted, the reversal is derived "
+                         "from --confound-json (joint_head vs GMM), consistent with the paper's numbers")
     ap.add_argument("--confound-json", required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
 
-    rev = gm_ratios_reversal(a.reversal_json)
+    rev = gm_ratios_reversal(a.reversal_json) if a.reversal_json \
+        else gm_ratios_reversal_from_confound(a.confound_json)
     print(f"reversal: {len(rev)} subjects")
     fig_reversal(rev, out)
     print(f"  wrote {out/'fig_reversal.png'}")
