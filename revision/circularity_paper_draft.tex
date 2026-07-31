@@ -12,6 +12,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{graphicx}
+\graphicspath{{figures/}}
 \usepackage[hidelinks]{hyperref}
 \usepackage{lineno}\linenumbers
 
@@ -133,11 +134,31 @@ grey matter as structurally comparable to, or richer than, real 7\,T (median $r=
 independent segmenter, on the same images, shows it is roughly ten times topologically simpler
 (median $r=0.10$; per-subject $0.09$--$0.12$, i.e.\ tight). In every one of the 10 subjects the
 co-trained judge rates grey-matter topology $5$--$31\times$ higher than the independent judge:
-the two disagree on whether the synthesis preserved anatomy in all cases. The two \emph{held-out}
+the two disagree on whether the synthesis preserved anatomy in all cases
+(Fig.~\ref{fig:montage} visualises this for one subject; Fig.~\ref{fig:reversal}, all ten). The two \emph{held-out}
 subjects behave identically to the eight in-sample ones, so the reversal is a property of the
 metric, not of the model having memorised the training subjects. The effect is specific to grey
 matter, the most structurally complex tissue; for CSF and WM both judges agree the synthesis is
 over-smoothed (no reversal), which we report as-is.
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{fig_montage_sub-06.pdf}
+\caption{The same synthetic image, judged by two segmenters (subject sub-06, one axial slice).
+Grey-matter connected components are individually coloured, so the number of colours \emph{is}
+$\beta_0$. The co-trained head yields a few large components ($\beta_0=134$, ``looks
+preserved''); an independent segmenter reveals the synthesis is shattered into many specks
+($\beta_0=698$, over-smoothed). The verdict depends entirely on who is asked.}
+\label{fig:montage}
+\end{figure}
+
+\begin{figure}[t]\centering
+\includegraphics[width=0.92\linewidth]{fig_reversal.pdf}
+\caption{Per-subject grey-matter synthetic/real $\beta_0$ ratio under the co-trained head (blue,
+$\gtrsim 1$: ``preserved / richer than real'') versus an independent segmenter (orange,
+$\approx 0.1$: $\sim$10$\times$ over-smoothed), on identical images. The coupled judge exceeds the
+independent by $5$--$31\times$ in all 10 subjects.}
+\label{fig:reversal}
+\end{figure}
 
 \begin{table}[t]\centering
 \caption{Grey-matter synthetic/real $\beta_0$ ratio by judge, identical images, 10 subjects.
@@ -161,7 +182,8 @@ real 7\,T). Any difference is then attributable to the segmenter's coupling alon
 Table~\ref{tab:dose} shows the grey-matter synthetic/real $\beta_0$ ratio (median over all 10
 subjects) falling monotonically as the segmenter is decoupled from the generator: joint
 (gradient-coupled) $1.38 \rightarrow$ detached (output-coupled) $0.95 \rightarrow$ independent
-(uncoupled) $0.10$. On identical images, the certification is therefore a dose-response in coupling.
+(uncoupled) $0.10$. On identical images, the certification is therefore a dose-response in coupling
+(Fig.~\ref{fig:dose}).
 
 Two levels are visible, of very different size. Any segmenter trained on the generator's outputs
 ---joint \emph{or} detached---reports synthetic grey matter as comparable to, or richer than, real
@@ -171,6 +193,15 @@ present in every subject---whereas gradient coupling adds only a smaller median 
 ($1.38$ vs.\ $0.95$) that is not consistent across every subject. Notably, the coupled head is not
 merely optimistic: it reports the over-smoothed synthesis as \emph{more} structurally complex than
 the real image it fails to reproduce.
+
+\begin{figure}[t]\centering
+\includegraphics[width=0.82\linewidth]{fig_dose_response.pdf}
+\caption{Dose-response: grey-matter synthetic/real $\beta_0$ ratio as the segmenter is decoupled
+from the generator, all judges applied to the \emph{same} images. Faint lines: per subject; bold:
+median ($1.38 \rightarrow 0.96 \rightarrow 0.10$). The large, universal step is to full
+independence.}
+\label{fig:dose}
+\end{figure}
 
 \begin{table}[t]\centering
 \caption{Grey-matter synthetic/real $\beta_0$ ratio (median, 10 subjects) with all three segmenters
